@@ -3,7 +3,9 @@ name: Update Container Backend Images
 # Keeps every container backend on the newest image upstream publishes. Each
 # pin in backend_versions.json is <tag>@<digest>. A tag with version numbers,
 # such as 0.18.22, moves to the highest-numbered tag of the same shape; every
-# pin then moves to its tag's newest digest. The update PR is opened the same
+# pin then moves to its tag's newest digest. A backend that installs a release
+# build instead on other OSes, such as gufo:rocm on Windows, gets that build's
+# published SHA-256 recorded for the new pin. The update PR is opened the same
 # way as validate_llamacpp.yml's.
 
 on:
@@ -128,7 +130,7 @@ jobs:
 
           # Only a tag of the same shape is a newer version of the pinned one:
           # rocm-10.0 may move to rocm-10.1 but not to rocm-10.0_20261103T122023
-          # or rocm-10.0-gufo. A tag with no numbers, such as latest, never moves.
+          # or rocm-10.0-rocmfpx. A tag with no numbers, such as latest, never moves.
           def shape(tag):
               return re.sub(r"\d+", "#", tag)
 
@@ -141,7 +143,8 @@ jobs:
               same_shape = [t for t in registry.tags() if shape(t) == shape(tag)]
               return max([tag] + same_shape, key=numbers)
 
-          rows = []
+          rows = {}
+          old_pins = {}
           for (recipe, backend), image in sorted(images.items()):
               pin = versions.get(recipe, {}).get(backend, "")
               match = PIN_RE.match(pin)
@@ -156,17 +159,58 @@ jobs:
               print(f"{recipe}:{backend} {image} {tag}@{digest[:19]} -> {new_tag}@{new_digest[:19]} ({state})")
               if new_pin != pin:
                   versions[recipe][backend] = new_pin
-                  rows.append(
+                  old_pins[(recipe, backend)] = pin
+                  rows[(recipe, backend)] = (
                       f"| `{recipe}:{backend}` | `{image}` "
                       f"| `{tag}@{digest[:19]}` | `{new_tag}@{new_digest[:19]}` |"
                   )
+
+          # Pins whose release also publishes the build a backend installs on
+          # other OSes (see its get_install_params), and that build's asset. The
+          # asset's published SHA-256 moves with the pin, and an asset re-uploaded
+          # under a release already recorded fails the run. An image can appear
+          # hours before its release attaches the build; until then the pin
+          # stays where it was, so every OS keeps running the same version.
+          HOST_BUILDS = {
+              ("gufo", "rocm"): ("gufo-org/gufo", "v{tag}", "gufo-v{tag}-windows-x86_64.zip"),
+          }
+          checksums = versions["checksums"]["github"]
+          for (recipe, backend), (repo, release, asset) in sorted(HOST_BUILDS.items()):
+              tag = PIN_RE.match(versions[recipe][backend]).group("tag")
+              release, asset = release.format(tag=tag), asset.format(tag=tag)
+              url = f"https://github.com/{repo}/releases/download/{release}/{asset}.sha256"
+              try:
+                  with urllib.request.urlopen(url, timeout=30) as response:
+                      fields = response.read().decode("ascii").split()
+              except urllib.error.HTTPError as e:
+                  if e.code == 404 and (recipe, backend) in old_pins:
+                      versions[recipe][backend] = old_pins[(recipe, backend)]
+                      del rows[(recipe, backend)]
+                      print(f"{recipe}:{backend}: {release} has no {asset} yet; keeping "
+                            f"{versions[recipe][backend][:26]}")
+                      continue
+                  raise SystemExit(f"{recipe}:{backend}: {url} returned HTTP {e.code}")
+              if (len(fields) != 2 or fields[1].lstrip("*") != asset
+                      or not re.fullmatch(r"[0-9a-f]{64}", fields[0])):
+                  raise SystemExit(f"{url} is not a SHA-256 line for {asset}")
+              published = f"sha256:{fields[0]}"
+              recorded = checksums.get(repo, {}).get(release, {}).get(asset)
+              print(f"{recipe}:{backend} {repo} {release} {asset} {published[:19]}"
+                    f" ({'current' if recorded == published else 'update'})")
+              if recorded and recorded != published:
+                  raise SystemExit(f"{repo} {release} {asset} was recorded as {recorded}, "
+                                   f"but the release now publishes {published}")
+              if recorded != published:
+                  checksums[repo] = {release: {asset: published}}
+                  rows[(recipe, backend, asset)] = (f"| `{recipe}:{backend}` | `{repo}` `{asset}` "
+                                                    f"| | `{release}@{published[:19]}` |")
 
           with open(path, "w", encoding="utf-8") as out:
               json.dump(versions, out, indent=2)
               out.write("\n")
           with open("pr_body.md", "w", encoding="utf-8") as out:
               out.write("| Backend | Image | Old pin | New pin |\n|---|---|---|---|\n")
-              out.write("\n".join(rows) + "\n")
+              out.write("\n".join(rows.values()) + "\n")
           PY
           git diff src/cpp/resources/backend_versions.json
 

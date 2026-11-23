@@ -11,6 +11,8 @@
 #include <vector>
 #include <nlohmann/json.hpp>
 
+#include "lemon/cost_metadata.h"
+
 // Contract surface for the generic routing engine (the "Lemonade Router").
 //
 // This header is the foundation: the shared types, interfaces, and the engine
@@ -227,23 +229,23 @@ struct CostInfo {
     std::optional<std::string> cost_tier;              // "free" | "low" | "medium" | "high"
     std::optional<double> cost_input_per_million;      // USD per 1M input tokens
     std::optional<double> cost_output_per_million;     // USD per 1M output tokens
-    std::optional<double> latency_ms_hint;             // local/compute proxy
+    std::optional<double> latency_ms_hint;             // author's estimate, in ms
 
     // Serialize recognized fields for Decision::outputs["estimated_cost"].
     // Returns {} when every field is empty so callers can skip attachment.
     json to_json() const {
         json estimated = json::object();
         if (cost_tier) {
-            estimated["cost_tier"] = *cost_tier;
+            estimated[kCostTierKey] = *cost_tier;
         }
         if (cost_input_per_million) {
-            estimated["cost_input_per_million"] = *cost_input_per_million;
+            estimated[kCostInputPerMillionKey] = *cost_input_per_million;
         }
         if (cost_output_per_million) {
-            estimated["cost_output_per_million"] = *cost_output_per_million;
+            estimated[kCostOutputPerMillionKey] = *cost_output_per_million;
         }
         if (latency_ms_hint) {
-            estimated["latency_ms_hint"] = *latency_ms_hint;
+            estimated[kLatencyMsHintKey] = *latency_ms_hint;
         }
         return estimated;
     }

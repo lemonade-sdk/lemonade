@@ -24,6 +24,7 @@
 #include <lemon/model_manager.h>
 #include <mutex>
 #include <queue>
+#include <stdexcept>
 #include <thread>
 #include "lemon/utils/aixlog.hpp"
 #include "lemon/global_vram_monitor.h"
@@ -162,6 +163,8 @@ WrappedServer* Router::find_server_by_model_name(const std::string& model_name) 
 std::string Router::resolve_model_name(const std::string& model_name) const {
     return model_name.empty() ? model_name : model_manager_->resolve_model_name(model_name);
 }
+
+std::uint64_t Router::models_generation() const { return model_manager_->models_generation(); }
 
 uint64_t Router::registry_generation() const {
     return model_manager_->snapshot()->generation;
@@ -1147,6 +1150,11 @@ void Router::load_model(const std::string& model_name,
             new_server->set_load_duration_ms(std::chrono::duration_cast<std::chrono::milliseconds>(load_end - load_start).count());
             LOG(DEBUG, "Router") << "Backend started successfully in " << new_server->get_load_duration_ms() << "ms" << std::endl;
         } catch (const ConfigurationException& e) {
+            error_message = e.what();
+            load_success = false;
+            unrecoverable_config = true;
+            LOG(ERROR, "Router") << "Backend load failed: " << error_message << std::endl;
+        } catch (const std::invalid_argument& e) {
             error_message = e.what();
             load_success = false;
             unrecoverable_config = true;
@@ -2413,7 +2421,11 @@ AudioFormatMetadata Router::audio_speech_format_metadata(
                       : AudioFormatMetadata{};
 }
 
-json Router::image_generations(const json& request) {
+json Router::image_generations(const json& request, std::atomic<bool>* cancel) {
+    std::optional<WrappedServer::RequestCancelScope> cancel_scope;
+    if (cancel) {
+        cancel_scope.emplace(utils::RequestCancelToken{cancel});
+    }
     return execute_inference(request, [&](WrappedServer* server) {
         auto image_server = dynamic_cast<IImageServer*>(server);
         if (!image_server) {
@@ -2425,7 +2437,11 @@ json Router::image_generations(const json& request) {
     });
 }
 
-json Router::image_edits(const json& request) {
+json Router::image_edits(const json& request, std::atomic<bool>* cancel) {
+    std::optional<WrappedServer::RequestCancelScope> cancel_scope;
+    if (cancel) {
+        cancel_scope.emplace(utils::RequestCancelToken{cancel});
+    }
     return execute_inference(request, [&](WrappedServer* server) {
         auto image_server = dynamic_cast<IImageServer*>(server);
         if (!image_server) {
@@ -2437,7 +2453,11 @@ json Router::image_edits(const json& request) {
     });
 }
 
-json Router::image_variations(const json& request) {
+json Router::image_variations(const json& request, std::atomic<bool>* cancel) {
+    std::optional<WrappedServer::RequestCancelScope> cancel_scope;
+    if (cancel) {
+        cancel_scope.emplace(utils::RequestCancelToken{cancel});
+    }
     return execute_inference(request, [&](WrappedServer* server) {
         auto image_server = dynamic_cast<IImageServer*>(server);
         if (!image_server) {

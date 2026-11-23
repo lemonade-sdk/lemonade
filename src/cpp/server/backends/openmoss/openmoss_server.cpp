@@ -169,7 +169,6 @@ void OpenMossServer::load(const std::string& model_name,
     };
     if (backend == "cuda") {
         prepend_loader_path("");
-        BackendUtils::apply_cuda_env_vars(env_vars, "openmoss-server");
     }
 
     std::unique_lock<std::shared_mutex> lock(request_mutex_);
