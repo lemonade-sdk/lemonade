@@ -125,7 +125,8 @@ runs:
         # Check for key binaries
         $expectedBinaries = @(
             "bin\LemonadeServer.exe",
-            "bin\lemonade.exe"
+            "bin\lemonade.exe",
+            "bin\lemonade-hip-probe.exe"
         )
 
         $missingItems = @()

@@ -87,6 +87,7 @@ void TrellisServer::load(const std::string& model_name,
         backend = supported.backends[0];
     }
     RuntimeConfig::validate_backend_choice("trellis", backend);
+    const bool is_cuda = backend.rfind("cuda", 0) == 0;
     const std::string exe_path = resolve_binary_path(backend);
 
     port_ = choose_port();
@@ -128,12 +129,12 @@ void TrellisServer::load(const std::string& model_name,
                 BackendUtils::get_therock_lib_paths(arch));
         }
         prepend_loader_path(dirs);
-    } else if (backend.rfind("cuda", 0) == 0) {
+    } else if (is_cuda) {
         prepend_loader_path("");
-        BackendUtils::apply_cuda_env_vars(env_vars, "trellis-server");
     }
 
     LOG(INFO, "trellis-server") << "Starting " << exe_path << " on port " << port_ << std::endl;
+
     ServerCommand command;
     command.program = exe_path;
     command.args = std::move(args);
@@ -191,7 +192,8 @@ void TrellisServer::model_3d_generations(const json& request, httplib::DataSink&
             get_base_url() + "/generate",
             fields,
             1800,
-            utils::HttpSecurityPolicy::TrustedLoopback);
+            utils::HttpSecurityPolicy::TrustedLoopback,
+            current_request_cancel_context());
         if (resp.curl_code != 0) {
             LOG(ERROR, "trellis-server") << "generation transport error: " << resp.curl_error << std::endl;
             fail("generation transport error: " + resp.curl_error);

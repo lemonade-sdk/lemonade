@@ -7,6 +7,7 @@
 
 #include "lemon/backend_manager.h"
 #include "lemon/backends/backend_descriptor_registry.h"
+#include "lemon/backends/backend_registry.h"
 #include "lemon/cloud_provider_registry.h"
 #include "lemon/model_manager.h"
 #include "lemon/runtime_config.h"
@@ -115,25 +116,41 @@ json get_model_storage_stats(const std::string& model_storage_path) {
 }
 
 void enrich_recipes(BackendManager* backend_manager, json& recipes) {
-    if (!backend_manager) return;
-
     for (auto& [recipe_name, recipe_info] : recipes.items()) {
         if (!recipe_info.contains("backends")) continue;
         for (auto& [backend_name, backend_info] : recipe_info["backends"].items()) {
-            try {
-                auto enrichment = backend_manager->get_backend_enrichment(recipe_name, backend_name);
-                if (!enrichment.release_url.empty()) {
-                    backend_info["release_url"] = enrichment.release_url;
-                }
-                if (!enrichment.download_filename.empty()) {
-                    backend_info["download_filename"] = enrichment.download_filename;
-                }
-                if (!backend_info.contains("version") || backend_info["version"].get<std::string>().empty()) {
-                    if (!enrichment.version.empty()) {
-                        backend_info["version"] = enrichment.version;
+            if (backend_manager) {
+                try {
+                    auto enrichment = backend_manager->get_backend_enrichment(recipe_name, backend_name);
+                    if (!enrichment.release_url.empty()) {
+                        backend_info["release_url"] = enrichment.release_url;
                     }
+                    if (!enrichment.download_filename.empty()) {
+                        backend_info["download_filename"] = enrichment.download_filename;
+                    }
+                    if (!backend_info.contains("version") || backend_info["version"].get<std::string>().empty()) {
+                        if (!enrichment.version.empty()) {
+                            backend_info["version"] = enrichment.version;
+                        }
+                    }
+                } catch (...) {}
+            }
+
+            // Only probe installed builds, and let each backend own its discovery.
+            const std::string state = backend_info.value("state", "");
+            if (state != "installed" && state != "update_available") continue;
+            try {
+                const auto devices = backends::ops_for(recipe_name)->runtime_devices(backend_name);
+                if (!devices) continue;
+                json discovered = json::array();
+                for (const auto& [name, description] : *devices) {
+                    discovered.push_back({{"name", name}, {"description", description}});
                 }
-            } catch (...) {}
+                backend_info["runtime_devices"] = std::move(discovered);
+            } catch (const std::exception& e) {
+                LOG(WARNING, "Server") << "Could not list " << recipe_name << " "
+                                       << backend_name << " devices: " << e.what() << std::endl;
+            }
         }
     }
 }
@@ -163,7 +180,7 @@ ordered_json system_info_schema() {
                 "description": "Hardware devices detected on the system (no software/support information)",
                 "properties": {
                     "cpu": {"type": "object", "description": "CPU information (name, cores, threads)"},
-                    "amd_gpu": {"type": "array", "description": "Usable AMD GPUs, both integrated and discrete; empty when there are none."},
+                    "amd_gpu": {"type": "array", "description": "Usable AMD GPUs, both integrated and discrete, integrated first; empty when there are none. Each entry may carry `hip_index`, the number HIP gives the GPU (`ROCm<hip_index>` is what the `*_device` options select), which need not follow this list's order; `pci_bus_id`, such as `0000:c3:00.0`; and, on Linux, `uuid`, the ROCr agent UUID. Each is absent when it could not be determined."},
                     "nvidia_gpu": {"type": "array", "description": "NVIDIA GPUs. When none is found, it holds one entry whose `available` is `false` and whose `error` says why."},
                     "amd_npu": {"type": "object", "description": "The AMD NPU. Always present; `available` is `false` when none is found, and `error` says why."}
                 }
@@ -197,6 +214,7 @@ ordered_json system_info_schema() {
                                 "required": ["devices", "state", "tier", "format"],
                                 "properties": {
                                     "devices": {"type": "array", "items": {"type": "string"}, "description": "Devices **on this system** that support this backend; empty when none do."},
+                                    "runtime_devices": {"type": "array", "items": {"type": "object"}, "description": "Optional devices enumerated by an installed backend, as `{name, description}` in the runtime's own order."},
                                     "state": {"enum": ["unsupported", "installable", "update_required", "update_available", "action_required", "installed"], "description": "Backend lifecycle state: `unsupported`, `installable`, `update_required`, `update_available`, `action_required` or `installed`."},
                                     "message": {"type": "string", "description": "Human-readable status text for GUI and CLI users. Required for `unsupported`, `installable`, and `update_required`; empty for `installed`."},
                                     "action": {"type": "string", "description": "An instruction for the user: for install and update, usually the exact CLI command; for other states it may be empty or another action, such as a URL."},
