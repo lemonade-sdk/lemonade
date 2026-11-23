@@ -1950,6 +1950,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     // Models already known to lemond are downloaded by their server-owned ID.
     const registeredModel = findRegisteredRemoteModel(allModels, provider, modelId, variantName, recipe, vdata);
     if (registeredModel) {
+      setSelectedRemoteModel(null);
+      setSelectedDetailModelId(modelName(registeredModel));
       await handlePull(registeredModel);
       return;
     }
@@ -1978,8 +1980,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         setPullingRemote(p => { const next = { ...p }; delete next[key]; return next; });
         await refresh();
         if (selectedRemoteModelRef.current?.id === modelId) {
+          const targetKey = customModelNameKey(targetModelName);
+          const fresh = await api.models(true).catch(() => null);
+          const pulled = fresh?.data.find(m => customModelNameKey(modelName(m)) === targetKey);
           setSelectedRemoteModel(null);
-          setSelectedDetailModelId(targetModelName);
+          setSelectedDetailModelId(pulled ? modelName(pulled) : targetModelName);
         }
       },
       onError: (err) => {
