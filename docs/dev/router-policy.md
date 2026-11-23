@@ -444,11 +444,15 @@ whichever candidate is cheapest. Provide a `routing.router` block with no
 
 At request time the engine ranks every candidate by `cost_input_per_million +
 cost_output_per_million` — the same per-million prices behind
-`outputs.estimated_cost` (see the [cloud guide](../guide/configuration/cloud.md)
-for where those numbers come from) — and routes to the cheapest. A candidate
-whose registry entry sets `cost_tier: "free"` (in its `extras`/recipe
-options) always scores as the cheapest, regardless of any per-million
-fields — this is how a free local model wins against a priced cloud one.
+`outputs.estimated_cost` — and routes to the cheapest. A candidate whose
+model entry sets `cost_tier: "free"` always scores as the cheapest,
+regardless of any per-million fields — this is how a free local model wins
+against a priced cloud one. Cloud models get their prices from the provider
+(see the [cloud guide](../guide/configuration/cloud.md)). A local model gets
+them from its own entry: pass the fields to `/v1/pull` when you register it,
+or write them in `user_models.json`, which is read at startup (see
+[Cost metadata](../guide/configuration/custom-models.md#cost-metadata)).
+`recipe_options.json` does not carry them, and built-in models have none.
 Cost selection is deterministic: no helper model, no `model`/`prompt`
 fields, and it desugars into the same first-match engine and `Decision`/trace
 as every other router form. The chosen candidate's own cost is still
@@ -456,9 +460,7 @@ surfaced on `outputs.estimated_cost` exactly as it would be for a rule- or
 LLM-chosen `route_to` — cost reporting and cost selection compose.
 
 A candidate that's neither `cost_tier: "free"` nor resolves both per-million
-prices (most local GGUF models today, since `server_models.json` ships no
-cost metadata by default — mark a local recipe `cost_tier: "free"` yourself
-to make it selectable), or reports a negative/non-finite/overflowing price,
+prices (any local model registered without them), or reports a negative/non-finite/overflowing price,
 is excluded from ranking. If **no** candidate in the list has usable cost
 data, the router falls open to `default_model` — the same fail-open contract
 as the `"llm"` router when it can't use a reply.

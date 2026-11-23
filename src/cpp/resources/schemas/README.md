@@ -150,9 +150,10 @@ caveat as the per-million fields on `/v1/models`.
 | `cost_tier` | `extras` only (`"free"` \| `"low"` \| `"medium"` \| `"high"`) |
 | `latency_ms_hint` | `extras` only (the author's estimate, in milliseconds) |
 
-No `server_models.json` schema change is required: unrecognized keys already land
-in `extras`. Authors can add e.g. `"cost_tier": "free"` or
-`"cost_input_per_million": 3.0` on a model entry today.
+A user model carries these fields on its own entry: pass e.g.
+`"cost_tier": "free"` or `"cost_input_per_million": 3.0` to `/v1/pull`, or
+write them in `user_models.json`, which is read at startup. Built-in models
+in `server_models.json` carry none.
 
 **Phase B — automated cheapest-candidate selection.** `routing.router.type:
 "cost_select"` (see the levels table above and `l0b_cost_select.json`) picks
