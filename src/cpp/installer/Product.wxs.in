@@ -160,6 +160,11 @@
 
       <!-- lemond.exe is not installed on Windows; LemonadeServer.exe embeds the server -->
 
+      <!-- LemonadeServer.exe runs this from its own directory to read HIP's device order -->
+      <Component Id="LemonadeHipProbe" Guid="91f90b40-90e4-4176-bc85-c99aa7ac9abe">
+        <File Id="lemonade_hip_probe.exe" Source="$(var.BuildDir)\Release\lemonade-hip-probe.exe" KeyPath="yes" />
+      </Component>
+
       <Component Id="LemonadeCli" Guid="12ffa6b7-831b-4d56-889c-3e7f43c8d134">
         <File Id="lemonade.exe" Source="$(var.BuildDir)\Release\lemonade.exe" KeyPath="yes" />
       </Component>
