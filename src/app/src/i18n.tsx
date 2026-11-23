@@ -777,6 +777,8 @@ const ZH_CN: Record<string, string> = {
   'Thinking text': '思考文本',
   'Of context window: {value}%': '占上下文窗口的 {value}%',
   'Approximate usage; based on available text.': '根据可用文本估算的上下文用量。',
+  'This request may have omitted configured system or tool instructions.': '本次请求可能未包含已配置的系统或工具指令。',
+  'Approximate usage; image tokens vary by model.': '上下文用量为估算值；图像令牌数因模型而异。',
   'Backend total measured; breakdown estimated from text.': '总量由后端测量；分类用量根据文本估算。',
   'Thinking is included in the output total, not in the next prompt.': '思考令牌已包含在输出总量中，不会加入下一次提示词。',
   'Output is estimated while streaming or when backend usage is unavailable.': '流式生成中或后端缺少用量信息时，输出量为估算值。',

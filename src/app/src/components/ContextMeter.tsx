@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import api, { type LoadedModel, type ModelInfo } from '../api';
-import { estimateChatContextUsage, type ChatContextUsage } from '../features/chat/contextUsage';
+import api, { type ChatMessage, type LoadedModel, type ModelInfo } from '../api';
+import { carryMeasuredImageCost, effectiveSlotContextSize, estimateChatContextUsage, withPendingImageCost, type ChatContextUsage } from '../features/chat/contextUsage';
 import { useI18n } from '../i18n';
 import './ContextMeter.css';
 
@@ -8,6 +8,9 @@ interface ContextMeterProps {
   model: LoadedModel | null;
   modelInfo?: ModelInfo | null;
   usage: ChatContextUsage | null;
+  history?: ChatMessage[];
+  previousUsage?: ChatContextUsage | null;
+  pendingImageCount?: number;
   mcpEnabled?: boolean;
   mcpServerIds?: string[];
   mcpToolNames?: string[] | null;
@@ -21,14 +24,18 @@ interface Part { id: PartId; label: string; tokens: number; estimated: boolean }
 
 /** One 30px circular button, directly before Effective Settings. */
 const ContextMeter: React.FC<ContextMeterProps> = ({
-  model, modelInfo, usage, mcpEnabled = false, mcpServerIds = [], mcpToolNames = null,
+  model, modelInfo, usage, history = [], previousUsage = null, pendingImageCount = 0,
+  mcpEnabled = false, mcpServerIds = [], mcpToolNames = null,
 }) => {
   const { t } = useI18n();
   const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const [highlighted, setHighlighted] = useState<PartId | null>(null);
   const [windowTokens, setWindowTokens] = useState<number | null>(null);
-  const [preflight, setPreflight] = useState<{ key: string; usage: ChatContextUsage } | null>(null);
+  const [preflight, setPreflight] = useState<{
+    key: string; tools: Record<string, unknown>[]; runtimePrompt: string;
+  } | null>(null);
 
   // Use the effective *runtime* context, not the GGUF's trained maximum.
   useEffect(() => {
@@ -36,31 +43,22 @@ const ContextMeter: React.FC<ContextMeterProps> = ({
     setWindowTokens(null);
     if (model) {
       void api.loadedModelContextSize(model).then(size => {
-        if (!cancelled) setWindowTokens(size);
+        if (!cancelled) setWindowTokens(effectiveSlotContextSize(size, model.recipe, model.launch_command));
       }).catch(() => { if (!cancelled) setWindowTokens(null); });
     }
     return () => { cancelled = true; };
-  }, [model?.model_name, model?.pid, model?.recipe_options?.ctx_size]);
+  }, [model?.model_name, model?.pid, model?.recipe_options?.ctx_size, model?.recipe, model?.launch_command?.join(' ')]);
 
   const systemPrompt = typeof modelInfo?.system_prompt === 'string' ? modelInfo.system_prompt : '';
   const selectionKey = `${mcpEnabled}:${mcpServerIds.join(',')}:${mcpToolNames?.join(',') ?? '*'}`;
   const preflightKey = `${model?.model_name ?? modelInfo?.id ?? ''}:${systemPrompt}:${selectionKey}`;
 
-  // These are exactly the selected tool schemas and tool-system instructions
-  // Lemonade will use when it builds the request. Approximate input cost is
-  // visible before the first chat response, even for a too-small context.
+  // Resolve tool schemas only when the selection changes. Conversation updates
+  // and image attachments should not clear the baseline or refetch the runtime.
   useEffect(() => {
     let cancelled = false;
-    setPreflight(null);
     const publish = (tools: Record<string, unknown>[] = [], runtimePrompt = '') => {
-      if (cancelled) return;
-      const system = [systemPrompt, runtimePrompt].filter(Boolean).join('\n\n');
-      setPreflight({
-        key: preflightKey,
-        usage: estimateChatContextUsage(
-          system ? [{ role: 'system', content: system }] : [], tools,
-        ),
-      });
+      if (!cancelled) setPreflight({ key: preflightKey, tools, runtimePrompt });
     };
     if (mcpEnabled && mcpServerIds.length) {
       void import('../tools/mcpRuntime')
@@ -75,6 +73,15 @@ const ContextMeter: React.FC<ContextMeterProps> = ({
     return () => { cancelled = true; };
   }, [preflightKey]);
 
+  const baseline = useMemo(() => {
+    const active = preflight?.key === preflightKey ? preflight : null;
+    const system = [systemPrompt, active?.runtimePrompt].filter(Boolean).join('\n\n');
+    return estimateChatContextUsage(
+      system ? [{ role: 'system', content: system }, ...history] : history,
+      active?.tools || [],
+    );
+  }, [preflight, preflightKey, systemPrompt, history]);
+
   useEffect(() => { setOpen(false); setHighlighted(null); }, [model?.model_name]);
   useEffect(() => {
     if (!open) return;
@@ -82,7 +89,10 @@ const ContextMeter: React.FC<ContextMeterProps> = ({
       if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
     };
     const onEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false);
+      if (event.key === 'Escape') {
+        if (rootRef.current?.contains(document.activeElement)) triggerRef.current?.focus();
+        setOpen(false);
+      }
     };
     document.addEventListener('pointerdown', onOutside);
     document.addEventListener('keydown', onEscape);
@@ -92,7 +102,13 @@ const ContextMeter: React.FC<ContextMeterProps> = ({
     };
   }, [open]);
 
-  const displayed = usage ?? (preflight?.key === preflightKey && preflight.usage.promptTokens > 0 ? preflight.usage : null);
+  const candidate = usage ?? (baseline.promptTokens > 0 || pendingImageCount > 0 ? baseline : null);
+  const displayed = candidate ? withPendingImageCost(
+    carryMeasuredImageCost(candidate, previousUsage), pendingImageCount, previousUsage,
+  ) : null;
+  const instructionsOmitted = !!usage && !usage.promptEstimated
+    && ((baseline.systemTokens > 0 && usage.systemTokens === 0)
+      || (baseline.toolDefinitionTokens > 0 && usage.toolDefinitionTokens === 0));
   const used = displayed ? displayed.promptTokens + (displayed.completionTokens ?? 0) : null;
   const percent = used !== null && windowTokens !== null && windowTokens > 0
     ? Math.min(100, Math.round((used / windowTokens) * 100)) : null;
@@ -133,6 +149,7 @@ const ContextMeter: React.FC<ContextMeterProps> = ({
   return (
     <div className="composer__context-meter" ref={rootRef}>
       <button
+        ref={triggerRef}
         type="button"
         className="composer__tools-toggle composer__context-trigger"
         aria-label={`${t('Context usage')}: ${percent === null ? t('Unavailable') : percentLabel}`}
@@ -160,7 +177,7 @@ const ContextMeter: React.FC<ContextMeterProps> = ({
             <span>{percentLabel}</span>
           </div>
           <div className="context-meter__total">
-            <strong>{used === null ? '—' : `${displayed?.promptEstimated || displayed?.completionEstimated ? '~' : ''}${format(used)}`}</strong>
+            <strong>{used === null ? '—' : format(used)}</strong>
             <span> / {windowTokens === null ? '—' : format(windowTokens)} {t('Tokens')}</span>
           </div>
           {displayed && windowTokens !== null && (
@@ -193,11 +210,11 @@ const ContextMeter: React.FC<ContextMeterProps> = ({
                     title={windowTokens ? t('Of context window: {value}%', { value: (part.tokens / windowTokens * 100).toFixed(2) }) : undefined}
                   >
                     <dt><span className={`context-meter__dot context-meter__part--${part.id}`} />{part.label}</dt>
-                    <dd>{part.estimated ? '~' : ''}{format(part.tokens)}</dd>
+                    <dd>{format(part.tokens)}</dd>
                   </div>
                 ))}
                 <div className="context-meter__row context-meter__row--total">
-                  <dt>{t('Prompt total')}</dt><dd>{displayed.promptEstimated ? '~' : ''}{format(displayed.promptTokens)}</dd>
+                  <dt>{t('Prompt total')}</dt><dd>{format(displayed.promptTokens)}</dd>
                 </div>
                 {displayed.cachedTokens !== null && (
                   <div className="context-meter__row context-meter__row--quiet">
@@ -206,15 +223,20 @@ const ContextMeter: React.FC<ContextMeterProps> = ({
                 )}
                 {remaining !== null && (
                   <div className="context-meter__row context-meter__row--total">
-                    <dt>{t('Available')}</dt><dd>{displayed.promptEstimated || displayed.completionEstimated ? '~' : ''}{format(remaining)}</dd>
+                    <dt>{t('Available')}</dt><dd>{format(remaining)}</dd>
                   </div>
                 )}
               </dl>
               <p className="context-meter__note">
                 {displayed.promptEstimated
-                  ? t('Approximate usage; based on available text.')
+                  ? (displayed.imageCount
+                    ? t('Approximate usage; image tokens vary by model.')
+                    : t('Approximate usage; based on available text.'))
                   : t('Backend total measured; breakdown estimated from text.')}
               </p>
+              {instructionsOmitted && (
+                <p className="context-meter__note">{t('This request may have omitted configured system or tool instructions.')}</p>
+              )}
               {!!displayed.thinkingTokens && (
                 <p className="context-meter__note">{t('Thinking is included in the output total, not in the next prompt.')}</p>
               )}

@@ -10,6 +10,8 @@ export interface ChatContextUsage {
   conversationTokens: number;
   toolResultTokens: number;
   otherTokens: number;
+  /** Image attachments in the request; image tokenization is backend-specific. */
+  imageCount?: number;
   /** The model tokenizer is not available before the first completed request. */
   promptEstimated?: boolean;
   /** Live output or missing backend usage: output is estimated from text length. */
@@ -23,8 +25,49 @@ export function estimatedTextTokensFromLength(length: number): number {
   return length > 0 ? Math.ceil(length / 4) : 0;
 }
 
+/**
+ * llama.cpp divides configured ctx_size between parallel slots unless the KV
+ * cache is unified. Use the model's launch arguments: /slots belongs to the
+ * most recently used model, which may not be this conversation's model.
+ */
+export function effectiveSlotContextSize(
+  configured: number | null,
+  recipe: string | null | undefined,
+  launchCommand: string[] | null | undefined,
+): number | null {
+  if (configured === null || !Number.isFinite(configured) || configured <= 0) return null;
+  if (!recipe?.toLowerCase().startsWith('llamacpp') || !launchCommand?.length) return configured;
+
+  let parallel = 1;
+  let unified = false;
+  for (let i = 0; i < launchCommand.length; i++) {
+    const arg = launchCommand[i];
+    const eq = arg.indexOf('=');
+    const flag = eq < 0 ? arg : arg.slice(0, eq);
+    const value = eq < 0 ? launchCommand[i + 1] : arg.slice(eq + 1);
+    if (flag === '--parallel' || flag === '-np') {
+      const n = Number(value);
+      if (Number.isInteger(n)) parallel = n;
+    } else if (flag === '--kv-unified' || flag === '-kvu') {
+      unified = true;
+    } else if (flag === '--no-kv-unified' || flag === '-no-kvu') {
+      unified = false;
+    }
+  }
+  return parallel > 1 && !unified ? Math.max(1, Math.floor(configured / parallel)) : configured;
+}
+
 function estimatedTextTokens(text: string): number {
   return estimatedTextTokensFromLength(text.length);
+}
+
+// Placeholder until the backend reports real multimodal prompt usage.
+// Never count base64 bytes as tokens: image encoders use model-specific patches.
+export const ESTIMATED_IMAGE_TOKENS = 1024;
+
+function imageCountInMessage(message: ChatMessage): number {
+  return Array.isArray(message.content)
+    ? message.content.filter(part => part.type === 'image_url').length : 0;
 }
 
 function messageText(message: ChatMessage): string {
@@ -53,8 +96,13 @@ export function estimateChatContextUsage(
   let systemTokens = 0;
   let conversationTokens = 0;
   let toolResultTokens = 0;
+  let imageCount = 0;
   for (const message of messages) {
-    const estimate = estimatedTextTokens(messageText(message));
+    imageCount += imageCountInMessage(message);
+    const toolCallText = message.role === 'assistant'
+      ? (message.tool_calls || []).map(call => `${call.function.name} ${call.function.arguments}`).join('\n')
+      : '';
+    const estimate = estimatedTextTokens(messageText(message)) + estimatedTextTokens(toolCallText);
     if (message.role === 'system') systemTokens += estimate;
     else if (message.role === 'tool') toolResultTokens += estimate;
     else conversationTokens += estimate;
@@ -65,14 +113,15 @@ export function estimateChatContextUsage(
     catch { /* Bad tool schema must not break a completion. */ }
   }
   return {
-    promptTokens: systemTokens + toolDefinitionTokens + conversationTokens + toolResultTokens,
+    promptTokens: systemTokens + toolDefinitionTokens + conversationTokens + toolResultTokens + imageCount * ESTIMATED_IMAGE_TOKENS,
     completionTokens: null,
     cachedTokens: null,
     systemTokens,
     toolDefinitionTokens,
     conversationTokens,
     toolResultTokens,
-    otherTokens: 0,
+    otherTokens: imageCount * ESTIMATED_IMAGE_TOKENS,
+    imageCount,
     promptEstimated: true,
     completionEstimated: true,
     thinkingTokens: 0,
@@ -95,8 +144,14 @@ export function buildChatContextUsage(
   const measuredPrompt = tokenCount(promptTokens);
   if (measuredPrompt === null) return null;
   const rough = estimateChatContextUsage(messages, tools);
-  const subtotal = rough.promptTokens;
-  const scale = subtotal > measuredPrompt ? measuredPrompt / subtotal : 1;
+  // A zero-token timing can mean fully cached/unsupported accounting, not an
+  // empty prompt. Do not erase real system/tool categories in that case.
+  if (measuredPrompt === 0 && rough.promptTokens > 0) return null;
+  // Only scale the known text slices. The image placeholder is not a measured
+  // cost and must never shrink the system prompt or tool definitions.
+  const textSubtotal = rough.systemTokens + rough.toolDefinitionTokens
+    + rough.conversationTokens + rough.toolResultTokens;
+  const scale = textSubtotal > measuredPrompt ? measuredPrompt / textSubtotal : 1;
   const systemTokens = Math.floor(rough.systemTokens * scale);
   const toolDefinitionTokens = Math.floor(rough.toolDefinitionTokens * scale);
   const conversationTokens = Math.floor(rough.conversationTokens * scale);
@@ -112,10 +167,53 @@ export function buildChatContextUsage(
     conversationTokens,
     toolResultTokens,
     otherTokens,
+    imageCount: rough.imageCount,
     promptEstimated: false,
     completionEstimated: reportedCompletion === null,
     thinkingTokens: 0,
     answerTokens: reportedCompletion ?? 0,
+  };
+}
+
+/**
+ * Keep a previously observed image footprint while estimating the next request.
+ * It is still an estimate, but avoids dropping a large multimodal contribution
+ * to zero between completed requests and during the next stream.
+ */
+export function carryMeasuredImageCost(
+  current: ChatContextUsage,
+  previous: ChatContextUsage | null | undefined,
+): ChatContextUsage {
+  if (!current.promptEstimated || !current.imageCount || !previous?.imageCount
+      || previous.promptEstimated || previous.otherTokens <= 0) return current;
+  const observedPerImage = Math.max(
+    ESTIMATED_IMAGE_TOKENS, Math.round(previous.otherTokens / previous.imageCount),
+  );
+  const estimatedOther = Math.max(current.otherTokens, current.imageCount * observedPerImage);
+  return {
+    ...current,
+    promptTokens: current.promptTokens + estimatedOther - current.otherTokens,
+    otherTokens: estimatedOther,
+  };
+}
+
+/** Preview newly attached images before sending them to the model. */
+export function withPendingImageCost(
+  current: ChatContextUsage,
+  pendingCount: number,
+  previous: ChatContextUsage | null | undefined,
+): ChatContextUsage {
+  if (!Number.isSafeInteger(pendingCount) || pendingCount <= 0) return current;
+  const observedPerImage = previous?.imageCount && !previous.promptEstimated
+    ? Math.max(ESTIMATED_IMAGE_TOKENS, Math.round(previous.otherTokens / previous.imageCount))
+    : ESTIMATED_IMAGE_TOKENS;
+  const added = pendingCount * observedPerImage;
+  return {
+    ...current,
+    promptTokens: current.promptTokens + added,
+    otherTokens: current.otherTokens + added,
+    imageCount: (current.imageCount ?? 0) + pendingCount,
+    promptEstimated: true,
   };
 }
 

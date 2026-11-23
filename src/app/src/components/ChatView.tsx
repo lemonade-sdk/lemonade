@@ -2188,8 +2188,26 @@ const ChatView: React.FC<ChatViewProps> = ({
     }
     return null;
   }, [activeConvo?.messages, currentModel]);
-  const liveContextUsage = activeId && isStreaming ? streaming.getLiveStats(activeId)?.context ?? null : null;
+  const liveModel = activeId ? streamModelsRef.current[activeId] : null;
+  const liveContextUsage = activeId && isStreaming
+    && liveModel?.name?.toLowerCase() === currentModel.toLowerCase()
+    ? streaming.getLiveStats(activeId)?.context ?? null : null;
   const displayedContextUsage = isStreaming ? liveContextUsage : contextUsage;
+  const contextHistory = useMemo(() => (activeConvo?.messages || [])
+    .filter(message => {
+      if (message.role === 'assistant' && !isPersistableAssistantMessage(message)) return false;
+      if (message.generatedImages?.length || message.audioUrl || message.model3dUrl) return false;
+      return true;
+    })
+    .map(message => ({
+      role: message.role,
+      content: message.images?.length && supportsChatImageInput && !isCollectionModel(currentKnownModelInfo)
+        ? [
+          { type: 'text' as const, text: message.content },
+          ...message.images.map(url => ({ type: 'image_url' as const, image_url: { url } })),
+        ]
+        : message.content,
+    })), [activeConvo?.messages, supportsChatImageInput, currentKnownModelInfo]);
   const incomingPromptPending = !activeId && !!incomingPrompt && !incomingPromptHandledRef.current;
   const toolsUnavailable = hasBrowserPromptContext(messages) || incomingPromptPending;
   useEffect(() => {
@@ -4240,6 +4258,9 @@ ${index}`;
               model={currentLoadedModel}
               modelInfo={currentEffectiveSettingsModelInfo}
               usage={displayedContextUsage}
+              history={contextHistory}
+              previousUsage={contextUsage}
+              pendingImageCount={supportsChatImageInput && !isCollectionModel(currentKnownModelInfo) ? pendingImages.length : 0}
               mcpEnabled={useMcp && !toolsUnavailable}
               mcpServerIds={selectedMcpServerIds}
               mcpToolNames={selectedMcpToolNames}

@@ -29,7 +29,10 @@ compile(meterPath, true);
 
 const moduleRef = { exports: {} };
 new Function('module', 'exports', compiled)(moduleRef, moduleRef.exports);
-const { newChatTokenCounts, collectChatTokenCounts, buildChatContextUsage } = moduleRef.exports;
+const {
+  newChatTokenCounts, collectChatTokenCounts, buildChatContextUsage, effectiveSlotContextSize,
+  carryMeasuredImageCost, withPendingImageCost, ESTIMATED_IMAGE_TOKENS,
+} = moduleRef.exports;
 
 // llama.cpp final timings: the cache is a *part* of the input, not extra input.
 const t = newChatTokenCounts();
@@ -91,7 +94,7 @@ assert.equal(partial.completionTokens, null, 'unknown answer tokens must not sil
 
 // Wiring and placement: the button belongs directly before Effective Settings.
 const chat = fs.readFileSync(path.join(root, 'src/components/ChatView.tsx'), 'utf8');
-assert.match(chat, /<ContextMeter[\s\S]{0,200}model=\{currentLoadedModel\}[\s\S]{0,200}usage=\{displayedContextUsage\}[\s\S]{0,260}\/>[\s\S]{0,90}\{canShowEffectiveSettings && \(/);
+assert.match(chat, /<ContextMeter[\s\S]{0,200}model=\{currentLoadedModel\}[\s\S]{0,200}usage=\{displayedContextUsage\}[\s\S]{0,450}\/>[\s\S]{0,90}\{canShowEffectiveSettings && \(/);
 assert.match(chat, /message\.model\?\.name\?\.toLowerCase\(\) === currentModel\.toLowerCase\(\)/);
 const hook = fs.readFileSync(path.join(root, 'src/hooks/useChatStreaming.ts'), 'utf8');
 assert.match(hook, /api\.chatCompletion\([\s\S]{0,190}includeUsage: true/);
@@ -146,3 +149,104 @@ assert.match(apiSource, /context: currentContext\(\)/);
 assert.match(apiSource, /streamedAnswerLength \+= tc.function.arguments.length/);
 assert.match(chat, /setLiveError\(t\('Realtime microphone disconnected\.'\)\)/);
 console.log('PASS: early baseline, streaming 35K tokens, thinking split, hover highlighting, i18n fix');
+
+assert.equal(effectiveSlotContextSize(4096, 'llamacpp', ['llama-server', '-c', '4096', '--parallel', '2']), 2048);
+assert.equal(effectiveSlotContextSize(8192, 'llamacpp', ['llama-server', '-np=2']), 4096);
+assert.equal(effectiveSlotContextSize(8192, 'llamacpp', ['llama-server', '-np', '2', '--kv-unified']), 8192);
+assert.equal(effectiveSlotContextSize(8192, 'llamacpp', ['llama-server', '--kv-unified', '-np', '2', '--no-kv-unified']), 4096);
+assert.equal(effectiveSlotContextSize(8192, 'llamacpp', ['llama-server', '-np', '-1']), 8192);
+assert.equal(effectiveSlotContextSize(8192, 'vllm', ['vllm', '-np', '2']), 8192);
+assert.equal(effectiveSlotContextSize(null, 'llamacpp', ['llama-server', '-np', '2']), null);
+
+const toolCallEstimate = estimateChatContextUsage([
+  { role: 'assistant', content: '', tool_calls: [{
+    id: 'call_1', type: 'function', function: { name: 'long_tool', arguments: 'X'.repeat(16000) },
+  }] },
+], []);
+assert.ok(toolCallEstimate.conversationTokens > 4000, 'tool-call arguments count toward the next prompt');
+assert.match(chat, /streamModelsRef\.current\[activeId\]/);
+assert.match(chat, /history=\{contextHistory\}/);
+assert.match(component, /triggerRef\.current\?\.focus\(\)/);
+assert.match(component, /\.\.\.history/);
+assert.doesNotMatch(component, /\? '~' : ''/);
+console.log('PASS: parallel slot sizing, model guard, history fallback, Escape focus and simplified numbers');
+
+// A pending image must show before any completion, without counting its base64
+// bytes as text. Use the most recently observed image cost if available.
+const freshImage = estimateChatContextUsage([
+  { role: 'system', content: 'System is present' },
+  { role: 'user', content: [
+    { type: 'text', text: 'What is this?' },
+    { type: 'image_url', image_url: { url: `data:image/png;base64,${'A'.repeat(400000)}` } },
+  ] },
+], tools);
+assert.equal(freshImage.imageCount, 1);
+assert.equal(freshImage.otherTokens, ESTIMATED_IMAGE_TOKENS);
+assert.ok(freshImage.systemTokens > 0 && freshImage.toolDefinitionTokens > 0);
+const measuredImage = buildChatContextUsage([
+  { role: 'system', content: 'System is present' },
+  { role: 'user', content: [
+    { type: 'text', text: 'What is this?' },
+    { type: 'image_url', image_url: { url: 'data:image/png;base64,A' } },
+  ] },
+], tools, 3300, 100, 200);
+assert.equal(measuredImage.imageCount, 1);
+assert.ok(measuredImage.systemTokens > 0 && measuredImage.toolDefinitionTokens > 0);
+assert.ok(measuredImage.otherTokens > 3000);
+// Next streamed request starts with an estimate; the observed image contribution
+// must stay visible until actual backend totals arrive.
+const nextImageStream = carryMeasuredImageCost(freshImage, measuredImage);
+assert.ok(nextImageStream.otherTokens >= measuredImage.otherTokens);
+assert.ok(nextImageStream.systemTokens > 0 && nextImageStream.toolDefinitionTokens > 0);
+assert.equal(nextImageStream.promptTokens,
+  freshImage.promptTokens + nextImageStream.otherTokens - freshImage.otherTokens);
+const pendingImage = withPendingImageCost(measuredImage, 1, measuredImage);
+assert.equal(pendingImage.imageCount, 2);
+assert.ok(pendingImage.promptTokens > measuredImage.promptTokens);
+assert.equal(withPendingImageCost(measuredImage, 0, measuredImage), measuredImage);
+assert.equal(carryMeasuredImageCost(measuredImage, measuredImage), measuredImage);
+// Backends reporting a zero prompt for a cached image request must not zero
+// the system and tool categories.
+assert.equal(buildChatContextUsage([
+  { role: 'system', content: 'S'.repeat(200) },
+], tools, 0, 10, 0), null);
+const nearLimit = buildChatContextUsage([
+  { role: 'system', content: 'S'.repeat(100) },
+  { role: 'user', content: [
+    { type: 'text', text: 'Caption this' },
+    { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,Q' } },
+  ] },
+], tools, 2048, 80, 0);
+assert.ok(nearLimit.systemTokens > 0 && nearLimit.toolDefinitionTokens > 0);
+assert.equal(nearLimit.systemTokens + nearLimit.toolDefinitionTokens +
+  nearLimit.conversationTokens + nearLimit.toolResultTokens + nearLimit.otherTokens,
+  2048);
+assert.match(component, /pendingImageCount/);
+assert.match(component, /previousUsage/);
+assert.match(component, /This request may have omitted configured system or tool instructions/);
+assert.match(chat, /pendingImageCount=\{supportsChatImageInput/);
+assert.match(chat, /previousUsage=\{contextUsage\}/);
+assert.match(chat, /images\.map\(url =>/);
+// A second image request during streaming must retain BOTH image contributions
+// and continue to count generated output without waiting for final usage.
+const secondImageStream = withGeneratedContextUsage(carryMeasuredImageCost(
+  estimateChatContextUsage([
+    { role: 'system', content: 'System is present' },
+    { role: 'user', content: [
+      { type: 'text', text: 'Image one' },
+      { type: 'image_url', image_url: { url: 'data:image/png;base64,A' } },
+    ] },
+    { role: 'assistant', content: 'First response' },
+    { role: 'user', content: [
+      { type: 'text', text: 'Image two' },
+      { type: 'image_url', image_url: { url: 'data:image/png;base64,B' } },
+    ] },
+  ], tools), measuredImage,
+), 120000, 20000, null);
+assert.equal(secondImageStream.imageCount, 2);
+assert.ok(secondImageStream.otherTokens >= 2 * measuredImage.otherTokens);
+assert.equal(secondImageStream.completionTokens, 35000);
+assert.ok(secondImageStream.systemTokens > 0 && secondImageStream.toolDefinitionTokens > 0);
+assert.equal(withPendingImageCost(estimateChatContextUsage([], []), 1, null).otherTokens,
+  ESTIMATED_IMAGE_TOKENS, 'first image in an otherwise empty chat is visible before sending');
+console.log('PASS: pending images, carried media usage, stable system/tools and zero-prompt protection');
