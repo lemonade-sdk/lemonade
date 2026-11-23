@@ -197,11 +197,13 @@ public:
                                         HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly,
                                         const CancelToken& cancel = CancelToken());
 
-    // Check if URL is reachable. Redirects are never followed.
+    // Check if URL is reachable. Redirects are never followed; with accept_redirect,
+    // a 3xx answer also counts as reachable.
     static bool is_reachable(
         const std::string& url,
         int timeout_seconds = 5,
-        HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly);
+        HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly,
+        bool accept_redirect = false);
 
 private:
     static std::atomic<long> default_timeout_seconds_;

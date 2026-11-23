@@ -273,8 +273,10 @@ std::string latest_unavailable_on_modelscope(const std::string& repo) {
 bool backend_download_service_reachable() {
     const std::string source = backends::BackendUtils::effective_backend_source();
     const char* endpoint = std::getenv("MODELSCOPE_ENDPOINT");
+    // The ModelScope site root answers with a redirect.
     return utils::HttpClient::is_reachable(
-        backend_source::reachability_probe_url(source, endpoint ? endpoint : ""), 2);
+        backend_source::reachability_probe_url(source, endpoint ? endpoint : ""), 2,
+        utils::HttpSecurityPolicy::ExternalHttpsOnly, /*accept_redirect=*/true);
 }
 
 bool has_matching_system_rocm_runtime(const fs::path& rocm_root, bool resolved_explicitly,
