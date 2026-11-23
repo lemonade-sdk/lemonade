@@ -78,14 +78,22 @@ runs:
             if [ "$SUDO" = "none" ]; then
                 echo "No root/passwordless sudo available; assuming runtime dependencies are already installed."
             else
-                $SUDO apt-get update
-                if ! $SUDO apt-get satisfy -y "$DEB_DEPENDS"; then
+                # Launchpad serves 503s for hours at a time, but only on some requests, so retry.
+                # Each attempt overwrites APT_LOG, so the checks below see only the final attempt's output.
+                APT_LOG="$(mktemp)"
+                if ! bash "$GITHUB_WORKSPACE/.github/scripts/retry.sh" bash -c \
+                    '{ $1 apt-get update && $1 apt-get satisfy -y "$2"; } >"$3" 2>&1; rc=$?; cat "$3"; exit $rc' \
+                    _ "$SUDO" "$DEB_DEPENDS" "$APT_LOG"; then
+                    # A source whose index failed to download is missing from
+                    # apt-cache policy too, so check for Launchpad errors first.
+                    if grep -Eq '(^Err:|Failed to fetch).*ppa\.launchpad(content)?\.net' "$APT_LOG"; then
+                        echo "::error title=Lemonade PPA unreachable::ppa.launchpadcontent.net kept failing (see the Err / Failed to fetch lines above). This is a Launchpad outage, not a runner problem; re-run the job later."
                     # On Ubuntu some runtime deps (e.g. libcpp-httplib0.26 on
                     # 24.04) exist only in the lemonade PPA, so a runner
                     # provisioned without it fails here on every job.
                     # apt-cache policy lists only enabled sources, so disabled
                     # entries don't count.
-                    if ( . /etc/os-release 2>/dev/null && [ "${ID:-}" = "ubuntu" ] ) \
+                    elif ( . /etc/os-release 2>/dev/null && [ "${ID:-}" = "ubuntu" ] ) \
                         && ! grep -qs "lemonade-team/bleeding-edge/ubuntu" <<<"$(apt-cache policy 2>/dev/null)"; then
                         echo "::error title=Runner is missing the lemonade PPA::This runner's apt sources do not include ppa:lemonade-team/bleeding-edge, which provides some of this .deb's runtime dependencies on Ubuntu. Run: sudo add-apt-repository -y ppa:lemonade-team/bleeding-edge && sudo apt-get update"
                     fi
