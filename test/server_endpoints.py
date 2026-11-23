@@ -8199,9 +8199,8 @@ class EndpointTests(ServerTestBase):
         self.assertEqual(response.status_code, 400)
         print("[OK] /install returns 400 for missing 'backend' parameter")
 
-    MIRROR_PREFIX = (
-        "https://modelscope.cn/api/v1/datasets/lemonade-sdk/backends/repo"
-        "?Revision=master&FilePath="
+    MIRROR_PATH = (
+        "/api/v1/datasets/lemonade-sdk/backends/repo?Revision=master&FilePath="
     )
 
     def _dry_run(self, recipe, backend, source):
@@ -8219,7 +8218,11 @@ class EndpointTests(ServerTestBase):
 
         mirror = self._dry_run("onnxruntime", "cpu", "modelscope")
         path = f"github/{mirror['repo']}/{mirror['version']}/{mirror['filename']}"
-        self.assertEqual(mirror["url"], self.MIRROR_PREFIX + quote(path, safe=""))
+        # The host follows MODELSCOPE_ENDPOINT, so only the dataset path is fixed.
+        self.assertTrue(
+            mirror["url"].endswith(self.MIRROR_PATH + quote(path, safe="")),
+            mirror["url"],
+        )
 
         github = self._dry_run("onnxruntime", "cpu", "github")
         self.assertEqual(
@@ -8256,18 +8259,17 @@ class EndpointTests(ServerTestBase):
         try:
             with requests.get(url, stream=True, timeout=30) as probe:
                 if probe.status_code == 404:
-                    self.skipTest(
-                        "the mirror does not have this pin yet; "
-                        "the mirror workflow reports that"
-                    )
+                    self.skipTest("the mirror does not have this pin yet")
         except requests.RequestException as e:
             self.skipTest(f"ModelScope is not reachable from this runner: {e}")
 
-        requests.post(
+        uninstall = requests.post(
             f"{self.base_url}/uninstall",
             json={"recipe": recipe, "backend": backend},
             timeout=TIMEOUT_MODEL_OPERATION,
         )
+        # An installed copy would make the install succeed without downloading.
+        self.assertEqual(uninstall.status_code, 200, uninstall.text)
         try:
             response = requests.post(
                 f"{self.base_url}/install",

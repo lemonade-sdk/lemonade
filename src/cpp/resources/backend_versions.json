@@ -60,7 +60,7 @@
       }
     },
     "modelscope": {
-      "comment": "Generated; do not edit. SHA-256 of every file backend_source=modelscope can download: checksums.modelscope.github.<owner/repo>.<tag>.<asset> from GitHub's published digests, checksums.modelscope.therock.<version>.<tarball> hashed from stable.repo.amd.com. A ModelScope download without an entry here (or in checksums.github) is refused. Regenerate after changing a pin: python tools/modelscope_mirror/modelscope_mirror.py --write-checksums",
+      "comment": "Generated; do not edit by hand. SHA-256 of every file backend_source=modelscope can download: checksums.modelscope.github.<owner/repo>.<tag>.<asset> from GitHub's published digests, checksums.modelscope.therock.<version>.<tarball> hashed from stable.repo.amd.com. A ModelScope download without an entry here (or in checksums.github) is refused; GitHub downloads ignore this section.",
       "github": {
         "ROCm/FastFlowLM": {
           "v1.0.13": {

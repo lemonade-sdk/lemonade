@@ -925,8 +925,6 @@ jobs:
           python3 .github/scripts/update_sdcpp_versions.py \
             --path "$WORKTREE/src/cpp/resources/backend_versions.json" \
             --release "$CUDA_RELEASE" --backends "$SDCPP_CUDA_UPDATE_BACKENDS"
-          python3 tools/modelscope_mirror/modelscope_mirror.py --write-checksums \
-            --versions-file "$WORKTREE/src/cpp/resources/backend_versions.json"
           git -C "$WORKTREE" add -- src/cpp/resources/backend_versions.json
           if [[ "$VALIDATED" == true ]]; then
             # Replay only verified changes, preserving branch-only documentation.

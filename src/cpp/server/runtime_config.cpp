@@ -562,7 +562,13 @@ std::string RuntimeConfig::default_model_source() const {
 }
 
 std::string RuntimeConfig::backend_source() const {
-    return get_string_opt("LEMONADE_BACKEND_SOURCE", {"backend_source"}, "github");
+    const std::string source = get_string_opt("LEMONADE_BACKEND_SOURCE", {"backend_source"}, "github");
+    if (backend_source::is_valid(source)) {
+        return source;
+    }
+    LOG(WARNING, "RuntimeConfig") << "Ignoring backend_source '" << source
+                                  << "': expected 'github' or 'modelscope'" << std::endl;
+    return backend_source::kGitHub;
 }
 
 std::string RuntimeConfig::rocm_channel() const {

@@ -303,7 +303,6 @@ jobs:
       - name: Update backend_versions.json
         env:
           VLLM_ROCM_RELEASE: ${{ needs.get-latest-releases.outputs.vllm_rocm_release }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           python3 - << 'PY'
           import json, os
@@ -317,7 +316,6 @@ jobs:
               f.write('\n')
           print(f"Updated: vllm.rocm = {rocm}")
           PY
-          python3 tools/modelscope_mirror/modelscope_mirror.py --write-checksums
 
       - name: Generate PR body
         env:

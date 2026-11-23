@@ -1240,7 +1240,6 @@ jobs:
       - name: Update backend_versions.json with verified releases
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LLAMACPP_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_release }}
           LLAMACPP_ROCM_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_rocm_release }}
           LLAMACPP_LEMONADE_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_lemonade_release }}
@@ -1251,7 +1250,6 @@ jobs:
           set -euo pipefail
 
           python3 .github/scripts/update_backend_versions.py
-          python3 tools/modelscope_mirror/modelscope_mirror.py --write-checksums
 
       - name: Update supported llama.cpp architectures
         env:
@@ -1548,8 +1546,7 @@ jobs:
             trap 'git worktree remove --force "$worktree" >/dev/null 2>&1 || true; rm -rf "$worktree"' EXIT
             git fetch --no-tags origin "refs/heads/$BRANCH"
             git worktree add --detach "$worktree" FETCH_HEAD
-            (cd "$worktree" && python3 "$GITHUB_WORKSPACE/.github/scripts/update_backend_versions.py" &&
-              python3 "$GITHUB_WORKSPACE/tools/modelscope_mirror/modelscope_mirror.py" --write-checksums)
+            (cd "$worktree" && python3 "$GITHUB_WORKSPACE/.github/scripts/update_backend_versions.py")
             cp src/cpp/include/lemon/llamacpp_architectures_generated.h "$worktree/src/cpp/include/lemon/"
             git -C "$worktree" add -- src/cpp/resources/backend_versions.json \
               src/cpp/include/lemon/llamacpp_architectures_generated.h

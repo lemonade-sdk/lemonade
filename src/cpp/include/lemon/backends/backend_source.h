@@ -1,7 +1,7 @@
 #pragma once
 
 // Backend downloads come from GitHub, or from the lemonade-sdk/backends ModelScope
-// dataset, which keeps GitHub's file names (synced by tools/modelscope_mirror).
+// dataset, which keeps GitHub's file names.
 
 #include <stdexcept>
 #include <string>

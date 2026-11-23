@@ -243,21 +243,20 @@ FLM manages its own model storage, so it does not persist a registry source with
 
 ### Downloading backends from ModelScope
 
-On networks where GitHub is slow or unreachable, for example in mainland China, set `backend_source` to `modelscope`. Lemonade then downloads backend binaries and the ROCm runtime from the [`lemonade-sdk/backends`](https://modelscope.cn/datasets/lemonade-sdk/backends) dataset on ModelScope instead of GitHub Releases. The dataset mirrors the release files that Lemonade pins in `backend_versions.json`, with the same file names, except the `thinksound`, `acestep`, `trellis` and `openmoss` backends (install those with `--source github`) and datacenter GPU builds, and is kept in sync by `tools/modelscope_mirror/modelscope_mirror.py`. Pair it with `default_model_source` so models come from ModelScope too:
+Where GitHub is slow or unreachable, such as in mainland China, set `backend_source` to `modelscope` to download backends and the ROCm runtime from the [`lemonade-sdk/backends`](https://modelscope.cn/datasets/lemonade-sdk/backends) dataset instead of GitHub Releases. It mirrors the files `backend_versions.json` pins, with the same names. Pair it with `default_model_source` so models come from ModelScope too:
 
 ```bash
 lemonade config set backend_source=modelscope
 lemonade config set default_model_source=modelscope
 ```
 
-To use ModelScope for one install without changing the config, pass `--source modelscope` to `lemonade backends install` (or `"source": "modelscope"` to `POST /v1/install`), or `--backend-source modelscope` to `lemonade load` and `lemonade run` (`"backend_source"` on `POST /v1/load`) for a backend that a load installs. The same setting is available as the `LEMONADE_BACKEND_SOURCE` environment variable. `MODELSCOPE_ENDPOINT` moves the ModelScope API, as it does for model pulls. The dataset is public, so backend downloads send no ModelScope token. With `backend_source=modelscope`:
+`LEMONADE_BACKEND_SOURCE` sets it for the process. For one request, pass `--source` to `lemonade backends install` (`"source"` on `POST /v1/install`), or `--backend-source` to `lemonade load` and `lemonade run` (`"backend_source"` on `POST /v1/load`). With `modelscope`:
 
-- Every file is checked against the SHA-256 that `backend_versions.json` pins for it in `checksums.modelscope` (taken from the digests GitHub publishes, and hashed from AMD's server for TheRock). A file with no pinned SHA-256 is not installed from the mirror. Downloads from GitHub do not use these hashes.
-- Only pinned versions are available. A `*_bin` value of `latest` fails with a clear error; use `builtin` or a pinned tag.
-- `rocm_install_method=auto` installs the TheRock tarball, because the mirror does not carry AMD's pip wheel index. A ROCm runtime already installed from wheels keeps being used, and an explicit `wheel` is still honoured.
-- Container backends still pull their images from their own registries.
-
-The mirror sync runs when a pin changes on `main`, after every release build, and daily. Each run checks the pins of `main`, the newest stable release and the newest release candidate, and a run that leaves any pinned file missing opens a `ModelScope backend mirror is incomplete` issue.
+- Each file must match the SHA-256 pinned for it in `checksums.modelscope`; a file without one is refused. GitHub downloads do not use these hashes.
+- Only pinned versions are mirrored. With a `*_bin` of `latest`, the installed version is reused; with none installed, the install fails.
+- `thinksound`, `acestep`, `trellis`, `openmoss` and datacenter GPU builds are not mirrored; install them with `--source github`. Container backends pull from their own registries.
+- `rocm_install_method=auto` installs the TheRock tarball, since the mirror has no pip wheel index. A runtime already installed from wheels keeps working.
+- `MODELSCOPE_ENDPOINT` moves the API, as for model pulls. No token is sent: the dataset is public.
 
 Both `models_dir` and `extra_models_dir` can be changed at runtime through [`POST /internal/set`](../../api/internal.md#post-internalset). Existing `extra_models_dir` paths are preflighted as directories and must be enumerable by the `lemond` process. Nonexistent paths are accepted so the directory watcher can observe them if they are created later.
 

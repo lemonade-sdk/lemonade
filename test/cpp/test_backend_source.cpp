@@ -122,6 +122,8 @@ int main() {
         set_env("LEMONADE_BACKEND_SOURCE", "modelscope");
         RuntimeConfig config(json{{"backend_source", "github"}});
         check(config.backend_source() == "modelscope", "LEMONADE_BACKEND_SOURCE overrides the config file");
+        set_env("LEMONADE_BACKEND_SOURCE", "modelScope");
+        check(config.backend_source() == "github", "an invalid LEMONADE_BACKEND_SOURCE falls back to github");
         set_env("LEMONADE_BACKEND_SOURCE", nullptr);
     }
 
