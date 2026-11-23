@@ -517,6 +517,7 @@ std::string BackendManager::get_version_from_config(const std::string& recipe, c
 std::string BackendManager::fetch_latest_github_tag(const std::string& repo,
                                                      bool throw_on_failure) {
     if (backend_source::is_modelscope(backends::BackendUtils::effective_backend_source())) {
+        // "latest" needs the GitHub API, and a tag cached from it may not be mirrored.
         if (throw_on_failure) {
             throw std::runtime_error(latest_unavailable_on_modelscope(repo));
         }
