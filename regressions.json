@@ -1,32 +1,6 @@
 {
-  "generated_at": "2026-11-22T10:12:10.648447+00:00",
+  "generated_at": "2026-11-23T09:02:49.157104+00:00",
   "regressions": [
-    {
-      "severity": "WARN",
-      "fork_id": "halo-box-strix",
-      "model": "Gemma-4-26B-A4B-it-GGUF",
-      "scenario": "context-4k",
-      "metric": "tps",
-      "delta_pct": -7.39,
-      "prev": 42.83,
-      "curr": 39.67,
-      "timestamp": "2026-10-23T17:56:08.087753+00:00",
-      "run_id": "39891125132",
-      "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/39891125132"
-    },
-    {
-      "severity": "WARN",
-      "fork_id": "halo-box-strix",
-      "model": "Gemma-4-31B-it-MTP-GGUF",
-      "scenario": "context-4k",
-      "metric": "tps",
-      "delta_pct": -8.59,
-      "prev": 22.3,
-      "curr": 20.38,
-      "timestamp": "2026-10-23T17:56:08.087753+00:00",
-      "run_id": "39891125132",
-      "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/39891125132"
-    },
     {
       "severity": "WARN",
       "fork_id": "halo-box-strix",
@@ -2600,6 +2574,32 @@
       "timestamp": "2026-11-21T10:16:15.922056+00:00",
       "run_id": "44873533003",
       "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/44873533003"
+    },
+    {
+      "severity": "CRITICAL",
+      "fork_id": "llamacpp-hrx",
+      "model": "Qwen3.8-27B-HRX",
+      "scenario": "context-4k",
+      "metric": "tps",
+      "delta_pct": -100.0,
+      "prev": 8.52,
+      "curr": 0,
+      "timestamp": "2026-11-23T09:02:49.157104+00:00",
+      "run_id": "45098632605",
+      "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/45098632605"
+    },
+    {
+      "severity": "CRITICAL",
+      "fork_id": "llamacpp-hrx",
+      "model": "Qwen3.8-27B-HRX",
+      "scenario": "context-32k",
+      "metric": "tps",
+      "delta_pct": -100.0,
+      "prev": 6.32,
+      "curr": 0,
+      "timestamp": "2026-11-23T09:02:49.157104+00:00",
+      "run_id": "45098632605",
+      "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/45098632605"
     }
   ]
 }
