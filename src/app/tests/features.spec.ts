@@ -1806,8 +1806,10 @@ test.describe('Lemonade UI — Feature Parity', () => {
     expect(loadRequestBody).not.toHaveProperty('llamacpp_args');
     expect(loadRequestBody).not.toHaveProperty('ctx_size');
 
-    // Loading switches to Chat, so come back before reading the panel again.
+    // Loading switches to Chat once the load and a refresh finish. Wait for that
+    // before coming back, or the late switch hides the panel again mid-test.
     releaseB?.();
+    await expect(page.locator('.titlebar__nav button.is-active')).toContainText('Chat');
     await page.locator('.titlebar__nav').getByText('Models').click();
     await expect(panel.getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
     loadRequestBody = null;
@@ -2003,8 +2005,10 @@ test.describe('Lemonade UI — Feature Parity', () => {
       .toBe('--temp 1.05 --top-k 20 --presence-penalty 0.05 --zeta 1 --no-mmap');
     expect(loadRequestBody?.merge_args).toBe(false);
 
-    // Loading swaps the view, so come back before editing the form again. The
-    // section stays open across the trip, which is the point of remembering it.
+    // Loading swaps the view once the load and a refresh finish, so wait for it
+    // and come back before editing the form again.
+    // The section stays open across the trip, which is the point of remembering it.
+    await expect(page.locator('.titlebar__nav button.is-active')).toContainText('Chat');
     await page.locator('.titlebar__nav').getByText('Models').click();
     await expect(field('Temperature')).toBeVisible();
     await expect(details).toHaveAttribute('aria-expanded', 'true');
@@ -2042,6 +2046,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
 
     // The axis says where the advised range ends, so a value outside it reads as
     // a choice rather than a surprise.
+    await expect(page.locator('.titlebar__nav button.is-active')).toContainText('Chat');
     await page.locator('.titlebar__nav').getByText('Models').click();
     await expect(panel.locator('.detail-configuration__axis-caution')).toHaveCount(0);
     await field('Temperature').fill('1.6');
