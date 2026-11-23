@@ -314,8 +314,10 @@ Requires `LEMONADE_API_KEY` when it is set.
   - `registry_source` - Remote registry the checkpoint downloads from: `huggingface` or `modelscope`.
   - `recipe_options` - The model's own options: those its registry row authors, with what was saved in `recipe_options.json` on top.
   - `cloud_provider` - Cloud models only: the provider that serves the model.
-  - `cost_input_per_million` - Cloud models only: USD per million input tokens, when the provider reports it.
-  - `cost_output_per_million` - Cloud models only: USD per million output tokens, when the provider reports it.
+  - `cost_tier` - `free`, `low`, `medium` or `high`, when the model's entry sets it.
+  - `cost_input_per_million` - USD per million input tokens: the provider's price for a cloud model, or the model entry's own.
+  - `cost_output_per_million` - USD per million output tokens: the provider's price for a cloud model, or the model entry's own.
+  - `latency_ms_hint` - Expected latency in milliseconds, when the model's entry sets it.
   - `system_prompt` - Omni collections only: the collection's system prompt override.
   - `version` - Router collections only: the policy document's version.
   - `routing` - Router collections only: the routing policy.
@@ -2106,7 +2108,7 @@ This endpoint does not take any parameters.
 
 `gpu_percent` and `vram_gb` come from the primary GPU: the one with the largest known GPU-accessible memory capacity (ties broken by ID), whatever its current utilization, and not necessarily the GPU a model recipe targets. `vram_gb` keeps its historical name but reports GPU memory usage, which can be shared system memory on AMD APUs.
 
-GPU, VRAM and NPU telemetry depends on the operating system and installed drivers. On Linux, AMD and NVIDIA GPUs are enumerated; on Windows, NVIDIA GPUs through NVML and AMD GPUs through DXGI, DXCore and PDH; on macOS `gpus` is empty. NVML does not report whether memory is dedicated or shared, so NVIDIA GPUs report `memory_type` as `unknown`.
+GPU, VRAM and NPU telemetry depends on the operating system and installed drivers. On Linux, AMD and NVIDIA GPUs are enumerated; on Windows, NVIDIA GPUs through NVML and AMD GPUs through DXGI, DXCore, D3DKMT and PDH; on macOS `gpus` is empty. NVML does not report whether memory is dedicated or shared, so NVIDIA GPUs report `memory_type` as `unknown`.
 
 ### Example
 
@@ -2393,7 +2395,7 @@ The same backend can carry different labels on different operating systems. Each
   - `error` - Only when the drive could not be measured.
 - `devices` - Hardware devices detected on the system (no software/support information)
   - `cpu` - CPU information (name, cores, threads)
-  - `amd_gpu` - Usable AMD GPUs, both integrated and discrete; empty when there are none.
+  - `amd_gpu` - Usable AMD GPUs, both integrated and discrete, integrated first; empty when there are none. Each entry may carry `hip_index`, the number HIP gives the GPU (`ROCm<hip_index>` is what the `*_device` options select), which need not follow this list's order; `pci_bus_id`, such as `0000:c3:00.0`; and, on Linux, `uuid`, the ROCr agent UUID. Each is absent when it could not be determined.
   - `nvidia_gpu` - NVIDIA GPUs. When none is found, it holds one entry whose `available` is `false` and whose `error` says why.
   - `amd_npu` - The AMD NPU. Always present; `available` is `false` when none is found, and `error` says why.
 - `recipes` - Software recipes and their backend support status
@@ -2413,6 +2415,7 @@ The same backend can carry different labels on different operating systems. Each
     - `backends` - Available backends for this recipe
       - One entry per backend.
         - `devices` - Devices **on this system** that support this backend; empty when none do.
+        - `runtime_devices` - Optional devices enumerated by an installed backend, as `{name, description}` in the runtime's own order.
         - `state` - Backend lifecycle state: `unsupported`, `installable`, `update_required`, `update_available`, `action_required` or `installed`.
         - `message` - Human-readable status text for GUI and CLI users. Required for `unsupported`, `installable`, and `update_required`; empty for `installed`.
         - `action` - An instruction for the user: for install and update, usually the exact CLI command; for other states it may be empty or another action, such as a URL.

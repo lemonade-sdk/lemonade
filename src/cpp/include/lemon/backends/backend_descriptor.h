@@ -47,6 +47,9 @@ struct ContainerPolicy {
     std::vector<std::string> devices;   // device nodes the container can open, e.g. "/dev/dri"
     std::vector<std::string> cap_add;   // capabilities given back after --cap-drop=all
     std::optional<utils::ContainerUser> user;  // nullopt when the image runs as root
+    // Repositories the image was published under before, whose images an
+    // older install may still hold.
+    std::vector<std::string> former_images;
 };
 
 // What one backend is and where it comes from, shown to people choosing among
@@ -157,6 +160,11 @@ struct BackendDescriptor {
     // for models that also carry one of the capability labels, and the only mode
     // such a model may deploy in. Registration refuses the mode without one.
     std::vector<std::pair<std::string, std::vector<std::string>>> mode_capability_requirements;
+
+    // The common subprocess launcher applies *_device selection via the
+    // CUDA/ROCm/Vulkan visibility environment for this native GGML recipe.
+    // Engines with native selection (llama.cpp, sd.cpp) keep their own path.
+    bool common_gpu_visibility = false;
 
     const ContainerPolicy* container_for(const std::string& backend) const {
         auto it = containers.find(backend);

@@ -21,6 +21,8 @@ Rootful Podman and Docker give that account root-equivalent control of the host'
 | `halogen:rocm` | Halogen; needs Linux 6.18.4 or newer, built with `CONFIG_HSA_AMD_SVM` | [peonist-ai/halogen-flash-server](https://github.com/orgs/peonist-ai/packages/container/package/halogen-flash-server) |
 | `gufo:rocm` | Gufo | [gufo-org/toolboxes/gufo-runtime](https://github.com/gufo-org/toolboxes) |
 
+On Windows, `gufo:rocm` is a native backend instead: it installs the Windows build that the same release attaches to [Gufo's release](https://github.com/gufo-org/gufo/releases).
+
 ## Setup
 
 When `lemond` runs under your own account, from a shell, a `systemctl --user` unit, or an app that embeds it, its containers sit beside your own in `podman ps`, and it uses whatever `CONTAINER_HOST` your environment sets. The `systemctl --user` unit sets it to your `podman.socket`, so Podman's API service starts the containers outside the unit's sandbox. If the unit is ever killed outright, as with `systemctl --user kill -s KILL lemond`, a container can keep running; loading the same model replaces it, or `podman rm -f` removes it.
