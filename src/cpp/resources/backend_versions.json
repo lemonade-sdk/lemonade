@@ -63,16 +63,20 @@
       "comment": "Generated; do not edit. SHA-256 of every file backend_source=modelscope can download: checksums.modelscope.github.<owner/repo>.<tag>.<asset> from GitHub's published digests, checksums.modelscope.therock.<version>.<tarball> hashed from stable.repo.amd.com. A ModelScope download without an entry here (or in checksums.github) is refused. Regenerate after changing a pin: python tools/modelscope_mirror/modelscope_mirror.py --write-checksums",
       "github": {
         "ROCm/FastFlowLM": {
-          "v1.0.11": {
-            "HRX_fastflowlm_1.0.11_linux.tar.gz": "sha256:1ae4f6aef1ecaac52c2f03089ada6a27d3a59e8b302a98beff28aa4834c4c655",
-            "HRX_fastflowlm_1.0.11_windows_amd64.zip": "sha256:aa1847ab2c7a62001ca49863e532120ad5205e1c2765bed17350c149a64a8681",
-            "fastflowlm_1.0.11_debian13_amd64.deb": "sha256:f2dedb0b0bb88f8c6e162caad00267f6520b47c8da8176ed0c2f067ab1fac6c2",
-            "fastflowlm_1.0.11_linux.tar.gz": "sha256:008aaff62cdab8163a63eb079b38b1191fbdfc59b1fcad2ec0f1e1599e6f490e",
-            "fastflowlm_1.0.11_ubuntu24.04_amd64.deb": "sha256:a5d2838931a5e8c74a75a29d61dc8110796fcd74562d979b548545aee0abb462",
-            "fastflowlm_1.0.11_ubuntu25.10_amd64.deb": "sha256:91d9815a3edc5105576d55574fd40f4fd492d2da9bd5fcefd977eabdc8690ee2",
-            "fastflowlm_1.0.11_ubuntu26.04_amd64.deb": "sha256:80af0679b151b4e52c54bb65757f3635b00089449f0cefc249f8db86c9b5ab01",
-            "fastflowlm_1.0.11_windows_amd64.zip": "sha256:e1e0f457c2e46517700b2448ab669b67e2aaa45d266910f21300d61b8b3e0cce",
-            "flm-setup.msi": "sha256:ee3fbaa5d302ee1d7a339ae7c2c70740d3aa993395b8368bd202f0faf047e092"
+          "v1.0.13": {
+            "HRX_fastflowlm_1.0.13_debian13_amd64.deb": "sha256:9ef55906fa435264e8875eb75a8e86d4c5d815f0aaa5e6ce816001a8bef904b9",
+            "HRX_fastflowlm_1.0.13_linux.tar.gz": "sha256:14f3f81fb5a46e10db29416890a99e01da859741d72ae8356a41bf1db11ddb03",
+            "HRX_fastflowlm_1.0.13_ubuntu24.04_amd64.deb": "sha256:39fd8abc57ab64bc0291bdfd4561e3beac1c629abf0249c8785c6ec2265e07f1",
+            "HRX_fastflowlm_1.0.13_ubuntu25.10_amd64.deb": "sha256:d92c962a54074963aff1436e7eee322258b42c88e894f92722611b183715ece4",
+            "HRX_fastflowlm_1.0.13_ubuntu26.04_amd64.deb": "sha256:e64fae81ae78ff8360d913caa0553cfc13b046474c2c0d4e15bc0abd04968f51",
+            "HRX_fastflowlm_1.0.13_windows_amd64.zip": "sha256:b3991d04bfc7efa317737ab70b7b5e0db14f9d488193c2a481ec1e734e57bcd9",
+            "fastflowlm_1.0.13_debian13_amd64.deb": "sha256:4a000939ac05e9a868b705cbe5f6c7689290a9e1fed461d8cc0eda7f15106879",
+            "fastflowlm_1.0.13_linux.tar.gz": "sha256:7c2ee388f23503f323d6c21beca8401e7ef675ce700a92f2c786ca6581322a72",
+            "fastflowlm_1.0.13_ubuntu24.04_amd64.deb": "sha256:48483a6757522be1dcdb33f85bbd41630f72819f5d1f2d81c79848cdd5902ea7",
+            "fastflowlm_1.0.13_ubuntu25.10_amd64.deb": "sha256:e602c2c564ddc54a6a1e164302e7b3f30f845b1db412f774c50d320bf31f2097",
+            "fastflowlm_1.0.13_ubuntu26.04_amd64.deb": "sha256:b7e5132e6053736776f726c24b69017625237278bc8a1f22d9e12ec13c15abc7",
+            "fastflowlm_1.0.13_windows_amd64.zip": "sha256:c174605585334103b912f703eb753fda37fb9257d1e7bfe40c62bcd6286517ba",
+            "flm-setup.msi": "sha256:33ddd35470b99659f3f52abdc91da8de53ed6829315ddacc89bd5abf7703e0f5"
           }
         },
         "ROCm/ggml-staging-automation": {
