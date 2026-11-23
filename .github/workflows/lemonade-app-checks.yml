@@ -11,6 +11,13 @@ on:
       - 'mkdocs.yml'
       - 'test/app/**'
       - '.github/workflows/lemonade-app-checks.yml'
+      # Read by the runtime tests in src/app/tests.
+      - 'docs/api/openai.md'
+      - 'src/cpp/resources/server_models.json'
+      - 'src/cpp/resources/architecture_defaults.json'
+      - 'src/cpp/server/runtime_config.cpp'
+      - 'src/cpp/server/model_manager.cpp'
+      - 'src/cpp/server/models/scan_catalog.cpp'
   merge_group:
 
 permissions:
