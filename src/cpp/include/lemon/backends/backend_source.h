@@ -1,7 +1,5 @@
 #pragma once
 
-// Backend downloads come from GitHub, or from the lemonade-sdk/backends ModelScope
-// dataset, which keeps GitHub's file names.
 
 #include <stdexcept>
 #include <string>
@@ -25,7 +23,6 @@ inline bool is_valid(const std::string& source) {
     return source == kGitHub || source == kModelScope;
 }
 
-// Thread-local, so a request's source applies only to the installs it starts.
 inline thread_local std::string request_override;
 
 class ScopedOverride {
@@ -43,7 +40,6 @@ private:
     std::string previous_;
 };
 
-/** Runs fn under the calling thread's request source, on whichever thread calls it. */
 template <typename Fn>
 auto carry_to_worker(Fn fn) {
     return [source = request_override, fn = std::move(fn)](auto&&... args) mutable {
@@ -52,7 +48,6 @@ auto carry_to_worker(Fn fn) {
     };
 }
 
-// The mirror is a third party: only take files backend_versions.json can verify.
 inline std::string require_pinned_hash(const std::string& source, std::string expected_hash,
                                        const std::string& file) {
     if (expected_hash.empty() && is_modelscope(source)) {

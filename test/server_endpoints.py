@@ -8218,7 +8218,6 @@ class EndpointTests(ServerTestBase):
 
         mirror = self._dry_run("onnxruntime", "cpu", "modelscope")
         path = f"github/{mirror['repo']}/{mirror['version']}/{mirror['filename']}"
-        # The host follows MODELSCOPE_ENDPOINT, so only the dataset path is fixed.
         self.assertTrue(
             mirror["url"].endswith(self.MIRROR_PATH + quote(path, safe="")),
             mirror["url"],
@@ -8268,7 +8267,6 @@ class EndpointTests(ServerTestBase):
             json={"recipe": recipe, "backend": backend},
             timeout=TIMEOUT_MODEL_OPERATION,
         )
-        # An installed copy would make the install succeed without downloading.
         self.assertEqual(uninstall.status_code, 200, uninstall.text)
         try:
             response = requests.post(
@@ -8281,7 +8279,6 @@ class EndpointTests(ServerTestBase):
                 },
                 timeout=TIMEOUT_MODEL_OPERATION,
             )
-            # Unpinned or mismatched files are refused, so success proves the hash.
             self.assertEqual(response.status_code, 200, response.text)
             self.assertEqual(response.json()["status"], "success")
         finally:
