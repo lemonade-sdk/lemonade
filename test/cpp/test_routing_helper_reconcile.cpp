@@ -733,6 +733,25 @@ static void test_last_transient_lease_release_waits_for_inference_and_can_be_res
               reclaimed_after_final_release);
 }
 
+static void test_last_transient_lease_release_waits_for_inference_without_rescue(
+    Router& router) {
+    const std::string model_name = "lease.inference-no-rescue";
+    StubWrappedServer* helper = RoutingHelperTestHook::add_server(
+        router, make_helper(model_name));
+    helper->acquire_for_inference();
+    {
+        auto lease = RoutingHelperTestHook::lease_transient(router, {model_name});
+    }
+
+    const bool resident_while_busy =
+        RoutingHelperTestHook::has_helper(router, model_name);
+    helper->release_inference();
+    const bool reclaimed_after_inference = wait_for_helper_eviction(router, model_name);
+
+    check("last transient lease release while busy reclaims without rescue or reconcile",
+          resident_while_busy && reclaimed_after_inference);
+}
+
 static void test_registered_policy_promotes_standard_model(Router& router) {
     RoutingHelperTestHook::add_server(router, make_standard("registered.standard"));
     RoutingHelperTestHook::reconcile(router, {"registered.standard"});
@@ -851,6 +870,8 @@ int main() {
         test_last_transient_lease_release_waits_for_load(router);
         test_last_transient_lease_release_waits_for_exclusive(router);
         test_last_transient_lease_release_waits_for_inference_and_can_be_rescued(
+            router);
+        test_last_transient_lease_release_waits_for_inference_without_rescue(
             router);
     }
 
