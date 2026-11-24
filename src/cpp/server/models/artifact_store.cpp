@@ -1104,14 +1104,58 @@ SupersededReport ModelArtifactStore::remove_superseded_files(
     std::set<std::string> repo_dir_names;
     for (const auto& path : replaced) {
         if (path.empty() || !safe_exists(path)) continue;
-        for (const auto& file : with_shard_family(path.lexically_normal())) {
+        const fs::path normal = path.lexically_normal();
+        std::vector<fs::path> files;
+        if (safe_is_directory(normal)) {
+            // A directory checkpoint: what the new version dropped or renamed is only
+            // found by walking the old directory.
+            std::error_code ec;
+            for (auto it = fs::recursive_directory_iterator(normal, safe_dir_options, ec);
+                 !ec && it != fs::recursive_directory_iterator(); it.increment(ec)) {
+                std::error_code type_ec;
+                if (it->is_symlink(type_ec) || it->is_regular_file(type_ec)) {
+                    files.push_back(it->path().lexically_normal());
+                }
+            }
+        } else {
+            files = with_shard_family(normal);
+        }
+        for (const auto& file : files) {
             const fs::path repo_dir = repo_dir_of(file);
             if (repo_dir.empty() || safe_is_directory(file) || !seen.insert(file).second) continue;
+            // The active snapshot is the version in use: a model's companion files
+            // there (config, tokenizer) are claimed by no checkpoint path, so only
+            // a superseded snapshot may be cleaned. No refs/main, no proof either way.
+            const std::string active = active_snapshot_ref(repo_dir);
+            const fs::path relative = file.lexically_relative(repo_dir / "snapshots");
+            if (active.empty() || relative.empty() ||
+                *relative.begin() == utils::path_from_utf8(active)) {
+                continue;
+            }
             candidates.push_back({file, repo_dir});
             repo_dir_names.insert(repo_dir.filename().string());
         }
     }
     if (candidates.empty()) return report;
+
+    const auto location_of = [](const fs::path& path) {
+        std::error_code ec;
+        const fs::path parent = fs::weakly_canonical(path.parent_path(), ec);
+        return ec ? path.lexically_normal() : (parent / path.filename()).lexically_normal();
+    };
+
+    std::set<fs::path> in_use_hops;
+    const auto record_hops = [&](fs::path path) {
+        for (int hop = 0; hop < 40; ++hop) {
+            const fs::path here = location_of(path);
+            in_use_hops.insert(here);
+            std::error_code ec;
+            if (!fs::is_symlink(here, ec) || ec) return;
+            const fs::path target = fs::read_symlink(here, ec);
+            if (ec) return;
+            path = target.is_absolute() ? target : here.parent_path() / target;
+        }
+    };
 
     // Where every model finds its bytes now. A model sharing one of these
     // repositories is resolved again, since refs/main has just moved under it.
@@ -1131,24 +1175,35 @@ SupersededReport ModelArtifactStore::remove_superseded_files(
                 break;
             }
         }
-        if (shares_repo && current.source.empty()) resolve_all(current);
+        // A model the hardware filter hides was never resolved; it still has bytes.
+        if ((shares_repo && current.source.empty()) || current.resolved_paths.empty()) {
+            resolve_all(current);
+        }
         for (const auto& [type, resolved] : current.resolved_paths) {
             (void)type;
             if (resolved.empty()) continue;
             const fs::path path = utils::path_from_utf8(resolved).lexically_normal();
             if (safe_is_directory(path)) {
                 in_use_dirs.push_back(path);
+                std::error_code ec;
+                const fs::path real = fs::weakly_canonical(path, ec);
+                if (!ec) in_use_dirs.push_back(real);
                 continue;
             }
-            for (const auto& file : with_shard_family(path)) in_use_files.insert(file);
+            for (const auto& file : with_shard_family(path)) {
+                in_use_files.insert(file);
+                record_hops(file);
+            }
         }
     }
 
     for (const auto& candidate : candidates) {
+        const fs::path location = location_of(candidate.file);
         const bool in_use =
-            in_use_files.count(candidate.file) != 0 ||
+            in_use_files.count(candidate.file) != 0 || in_use_hops.count(location) != 0 ||
             std::any_of(in_use_dirs.begin(), in_use_dirs.end(), [&](const fs::path& dir) {
-                return path_inside_lexically(candidate.file, dir);
+                return path_inside_lexically(candidate.file, dir) ||
+                       path_inside_lexically(location, dir);
             });
         if (in_use) {
             ++report.kept_in_use;
@@ -1174,7 +1229,9 @@ SupersededReport ModelArtifactStore::remove_superseded_files(
                                << std::endl;
             continue;
         }
-        if (!blob.empty()) remove_blob_if_unreferenced(blob, candidate.repo_dir, {});
+        if (!blob.empty() && in_use_hops.count(location_of(blob)) == 0) {
+            remove_blob_if_unreferenced(blob, candidate.repo_dir, {});
+        }
         cleanup_empty_parents(candidate.file, candidate.repo_dir / "snapshots");
         ++report.removed;
         report.bytes += bytes;

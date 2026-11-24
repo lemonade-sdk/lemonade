@@ -3,6 +3,9 @@
 // never quietly in the managed cache.
 
 #include <lemon/model_manager.h>
+#include <lemon/models/artifact_source.h>
+#include <lemon/models/artifact_store.h>
+#include <lemon/models/backend_availability.h>
 #include <lemon/models/fetchable_repository.h>
 #include <lemon/models/registry_types.h>
 #include <lemon/utils/path_utils.h>
@@ -21,6 +24,7 @@
 #include <iostream>
 #include <map>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -209,9 +213,25 @@ Fixture make_fixture(const std::string& prefix, const std::string& extra_leaf = 
     return fx;
 }
 
-std::unique_ptr<ModelManager> make_manager(const Fixture& fx, const std::string& extra_dir) {
+// A machine that cannot run `missing_recipe`, so the hardware filter hides its models.
+lemon::models::BackendAvailability machine_without(const std::string& missing_recipe) {
+    lemon::models::BackendAvailability machine;
+    machine.system_ram_gb = 32.0;
+    machine.largest_mem_pool_gb = 24.0;
+    machine.recipes[missing_recipe].unsupported_reason = "not on this test machine";
+    return machine;
+}
+
+std::unique_ptr<ModelManager> make_manager(
+    const Fixture& fx, const std::string& extra_dir,
+    std::optional<lemon::models::BackendAvailability> machine = std::nullopt) {
     ModelManagerConfig config;
     config.extra_models_dir = extra_dir;
+    if (machine) {
+        config.availability = [machine](const std::map<std::string, lemon::ModelInfo>&) {
+            return *machine;
+        };
+    }
     config.default_model_source = [] { return std::string("huggingface"); };
     const Remote* remote = &fx.remote;
     const std::string stage = fx.stage.generic_string();
@@ -689,6 +709,173 @@ void test_a_linked_blob_is_freed() {
     check(!fs::exists(blob), "and the blob behind it is freed");
 }
 
+// ---- remove_superseded_files on its own, with the model set spelled out ----
+
+struct CleanupFixture {
+    fs::path root;
+    fs::path managed;
+    fs::path repo;
+    std::unique_ptr<lemon::models::ModelArtifactStore> store;
+};
+
+CleanupFixture make_cleanup_fixture(const std::string& prefix) {
+    CleanupFixture fx;
+    fx.root = lemon::test::make_scratch_dir(prefix);
+    fx.managed = fx.root / "hf";
+    fx.repo = fx.managed / repo_dir_name("vendor/repo");
+    write_file(fx.repo / "refs" / "main", "snap-2");
+    const std::string managed = path_to_utf8(fx.managed);
+    fx.store = std::make_unique<lemon::models::ModelArtifactStore>(
+        lemon::models::ModelArtifactStore::Hooks{
+            [managed] { return managed; },
+            [](const lemon::ModelInfo&, const std::string&)
+                -> std::unique_ptr<lemon::models::ArtifactSource> { return nullptr; },
+            [] { return std::string(); },
+        });
+    return fx;
+}
+
+// A model whose resolved paths are given, so the cleanup takes them as they are.
+lemon::ModelInfo reading(const fs::path& path) {
+    lemon::ModelInfo info;
+    info.recipe = "llamacpp";
+    info.source = "local_path";
+    info.checkpoints["main"] = path_to_utf8(path);
+    info.resolved_paths["main"] = path_to_utf8(path);
+    return info;
+}
+
+bool link(const fs::path& target, const fs::path& at) {
+    fs::create_directories(at.parent_path());
+    std::error_code ec;
+    fs::create_symlink(target, at, ec);
+    if (ec) std::printf("[SKIP] cannot create symlinks here (%s)\n", ec.message().c_str());
+    return !ec;
+}
+
+void test_a_directory_checkpoint_loses_its_dropped_files() {
+    CleanupFixture fx = make_cleanup_fixture("cleanup_dir");
+    const fs::path old_dir = fx.repo / "snapshots" / "snap-1" / "weights";
+    const fs::path new_dir = fx.repo / "snapshots" / "snap-2" / "weights";
+    write_file(old_dir / "dropped.onnx", "old");
+    write_file(old_dir / "kept-name.onnx", "old");
+    write_file(new_dir / "kept-name.onnx", "new");
+    write_file(new_dir / "added.onnx", "new");
+
+    const auto report = fx.store->remove_superseded_files(
+        {old_dir / "kept-name.onnx", old_dir}, {{"Model", reading(new_dir)}});
+    check(!fs::exists(old_dir / "dropped.onnx"),
+          "a file the new version dropped from a directory checkpoint is removed");
+    check(!fs::exists(fx.repo / "snapshots" / "snap-1"), "and the emptied snapshot goes with it");
+    check(fs::exists(new_dir / "kept-name.onnx") && fs::exists(new_dir / "added.onnx"),
+          "the new directory is untouched");
+    check(report.removed == 2, "both old files are counted");
+}
+
+void test_a_hidden_model_keeps_its_file_through_an_update() {
+    Fixture fx = make_fixture("extra_hidden");
+    const fs::path main_repo = make_legacy_multi(fx);
+    const fs::path legacy_proj = main_repo / "snapshots" / "snap-1" / "proj.gguf";
+    // A model the hardware filter hides here, reading the legacy auxiliary file that
+    // the update moves Extra-Multi away from.
+    add_user_models(fx, {
+        {"Extra-Hidden", {{"checkpoint", "vendor/repo:proj.gguf"}, {"recipe", "gufo"}}},
+    });
+    auto mm = make_manager(fx, path_to_utf8(fx.extra), machine_without("gufo"));
+    check(mm->get_supported_models().count("user.Extra-Hidden") == 0 &&
+              mm->get_supported_models().count("Extra-Hidden") == 0,
+          "the gufo model is hidden on this declared machine");
+
+    check_synced(*mm, "Extra-Multi", "the update beside a hidden model succeeds");
+    check(read_file(legacy_proj) == gguf("old-proj"),
+          "a file only a hidden model still reads is kept");
+    check(!fs::exists(main_repo / "snapshots" / "snap-1" / "model.gguf"),
+          "while the replaced file beside it goes");
+}
+
+void test_the_active_snapshot_is_never_cleaned() {
+    CleanupFixture fx = make_cleanup_fixture("cleanup_active");
+    const fs::path active = fx.repo / "snapshots" / "snap-2";
+    write_file(active / "model.gguf", gguf("new"));
+    write_file(active / "config.json", "{}");  // claimed by no checkpoint path
+
+    const auto report = fx.store->remove_superseded_files(
+        {active, active / "config.json"}, {{"Model", reading(active / "model.gguf")}});
+    check(fs::exists(active / "config.json") && fs::exists(active / "model.gguf") &&
+              report.removed == 0,
+          "nothing in the snapshot refs/main names is removed, claimed or not");
+}
+
+void test_an_unresolved_local_model_is_protected() {
+    CleanupFixture fx = make_cleanup_fixture("cleanup_hidden");
+    const fs::path old_snapshot = fx.repo / "snapshots" / "snap-1";
+    write_file(old_snapshot / "model.gguf", gguf("old"));
+    write_file(old_snapshot / "shared.gguf", gguf("shared"));
+    write_file(fx.repo / "snapshots" / "snap-2" / "model.gguf", gguf("new"));
+
+    // What the hardware filter hands back: checkpoints, never resolved. A local
+    // model names its file directly, so only resolving it finds the claim.
+    lemon::ModelInfo hidden;
+    hidden.recipe = "llamacpp";
+    hidden.source = "local_path";
+    hidden.checkpoints["main"] = path_to_utf8(old_snapshot / "shared.gguf");
+
+    const auto report = fx.store->remove_superseded_files(
+        {old_snapshot / "model.gguf", old_snapshot / "shared.gguf"},
+        {{"Hidden", hidden},
+         {"Model", reading(fx.repo / "snapshots" / "snap-2" / "model.gguf")}});
+    check(read_file(old_snapshot / "shared.gguf") == gguf("shared"),
+          "a file a hidden model reads is kept");
+    check(!fs::exists(old_snapshot / "model.gguf"), "while the replaced file beside it goes");
+    check(report.kept_in_use == 1 && report.removed == 1, "the report says which was which");
+}
+
+void test_a_file_reached_through_a_local_link_is_kept() {
+    CleanupFixture fx = make_cleanup_fixture("cleanup_alias");
+    const fs::path old_file = fx.repo / "snapshots" / "snap-1" / "model.gguf";
+    write_file(old_file, gguf("old"));
+    write_file(fx.repo / "snapshots" / "snap-2" / "model.gguf", gguf("new"));
+    const fs::path alias = fx.root / "local" / "alias.gguf";
+    if (!link(old_file, alias)) return;
+
+    fx.store->remove_superseded_files(
+        {old_file}, {{"Local", reading(alias)},
+                     {"Model", reading(fx.repo / "snapshots" / "snap-2" / "model.gguf")}});
+    check(read_file(alias) == gguf("old"), "a local model's link into the old snapshot still reads");
+}
+
+void test_a_link_chain_through_a_snapshot_keeps_entry_and_blob() {
+    CleanupFixture fx = make_cleanup_fixture("cleanup_chain");
+    const fs::path blob = fx.repo / "blobs" / "aaaa";
+    write_file(blob, gguf("old"));
+    const fs::path old_entry = fx.repo / "snapshots" / "snap-1" / "model.gguf";
+    if (!link(fs::path("..") / ".." / "blobs" / "aaaa", old_entry)) return;
+    write_file(fx.repo / "snapshots" / "snap-2" / "model.gguf", gguf("new"));
+    const fs::path alias = fx.root / "local" / "alias.gguf";
+    if (!link(old_entry, alias)) return;
+
+    fx.store->remove_superseded_files(
+        {old_entry}, {{"Local", reading(alias)},
+                      {"Model", reading(fx.repo / "snapshots" / "snap-2" / "model.gguf")}});
+    check(fs::is_symlink(old_entry) && fs::exists(blob) && read_file(alias) == gguf("old"),
+          "a local link through a snapshot entry keeps the entry and its blob");
+}
+
+void test_snapshot_links_to_one_blob_stay_separately_removable() {
+    CleanupFixture fx = make_cleanup_fixture("cleanup_shared_blob");
+    const fs::path blob = fx.repo / "blobs" / "bbbb";
+    write_file(blob, gguf("same"));
+    const fs::path old_entry = fx.repo / "snapshots" / "snap-1" / "model.gguf";
+    const fs::path new_entry = fx.repo / "snapshots" / "snap-2" / "model.gguf";
+    if (!link(fs::path("..") / ".." / "blobs" / "bbbb", old_entry)) return;
+    if (!link(fs::path("..") / ".." / "blobs" / "bbbb", new_entry)) return;
+
+    fx.store->remove_superseded_files({old_entry}, {{"Model", reading(new_entry)}});
+    check(!fs::exists(fx.repo / "snapshots" / "snap-1"),
+          "the old snapshot's link goes, though it shares a blob with the new one");
+    check(read_file(new_entry) == gguf("same"), "the blob stays for the new link");
+}
+
 }  // namespace
 
 int main() {
@@ -711,6 +898,13 @@ int main() {
         {"unusual-path", test_an_unusual_extra_path_is_handled},
         {"shared-repo", test_a_file_another_model_still_reads_is_kept},
         {"blob-link", test_a_linked_blob_is_freed},
+        {"cleanup-directory", test_a_directory_checkpoint_loses_its_dropped_files},
+        {"hidden-model", test_a_hidden_model_keeps_its_file_through_an_update},
+        {"cleanup-unresolved-local", test_an_unresolved_local_model_is_protected},
+        {"cleanup-active", test_the_active_snapshot_is_never_cleaned},
+        {"cleanup-alias", test_a_file_reached_through_a_local_link_is_kept},
+        {"cleanup-alias-chain", test_a_link_chain_through_a_snapshot_keeps_entry_and_blob},
+        {"cleanup-shared-blob", test_snapshot_links_to_one_blob_stay_separately_removable},
     };
     for (const auto& [name, run] : cases) {
         std::printf("\n=== %s ===\n", name);

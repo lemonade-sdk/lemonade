@@ -534,8 +534,11 @@ void ModelIngest::download_from_registry(const ModelInfo& info,
     }
     if (!replaced.empty()) {
         const auto published = deps_.store->read();
-        const SupersededReport removed =
-            artifacts().remove_superseded_files(replaced, published->models);
+        KnownModels known = published->models;
+        if (published->reasons) {
+            known.insert(published->reasons->hidden.begin(), published->reasons->hidden.end());
+        }
+        const SupersededReport removed = artifacts().remove_superseded_files(replaced, known);
         if (removed.removed > 0 || removed.failed > 0) {
             LOG(INFO, "ModelManager")
                 << "Removed " << removed.removed << " file(s) ("
