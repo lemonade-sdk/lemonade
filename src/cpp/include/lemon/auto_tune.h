@@ -99,10 +99,12 @@ inline double get_available_memory_gb(DeviceType device_type,
                                       const std::string& gpu_device = "",
                                       bool* unified_gpu_out = nullptr,
                                       bool* memory_known_out = nullptr,
-                                      double* physical_free_gb_out = nullptr) {
+                                      double* physical_free_gb_out = nullptr,
+                                      double* carveout_free_gb_out = nullptr) {
     if (unified_gpu_out) *unified_gpu_out = false;
     if (memory_known_out) *memory_known_out = false;
     if (physical_free_gb_out) *physical_free_gb_out = -1.0;
+    if (carveout_free_gb_out) *carveout_free_gb_out = 0.0;
     auto si = create_system_info();
 
     // GPU recipes: use VRAM
@@ -139,14 +141,14 @@ inline double get_available_memory_gb(DeviceType device_type,
                 physical_total_gb = metrics ? metrics->get_memory_total_gb() : 0.0;
             }
             std::optional<double> available_gpu_gb;
-            bool split_budget = false;
             if (pool.unified && pool.vendor == GpuMemoryVendor::Amd) {
-                available_gpu_gb = auto_context_available_split_gpu_gib(
+                const auto split = auto_context_available_split_gpu_gib(
                     pool.dedicated_gb, pool.dedicated_used_gb,
                     pool.total_gb - pool.dedicated_gb, pool.shared_used_gb,
                     physical_total_gb, ram_used_gb);
-                split_budget = available_gpu_gb.has_value();
-                if (split_budget) {
+                if (split) {
+                    available_gpu_gb = split->available_gib;
+                    if (carveout_free_gb_out) *carveout_free_gb_out = split->carveout_gib;
                     LOG(DEBUG, "AutoTune") << "get_available_memory_gb: AMD iGPU dedicated="
                                            << std::fixed << std::setprecision(2)
                                            << pool.dedicated_gb << " GB (used="
@@ -168,9 +170,7 @@ inline double get_available_memory_gb(DeviceType device_type,
                 return 0.0;
             }
             if (memory_known_out) *memory_known_out = true;
-            // The split budget already caps the shared part by free RAM; a second
-            // RAM budget would wrongly charge weights placed in the carve-out.
-            if (physical_free_gb_out && !split_budget &&
+            if (physical_free_gb_out &&
                 (!pool.unified || pool.vendor == GpuMemoryVendor::Amd)) {
                 // The CPU can hold non-offloaded layers on either UMA or a dGPU.
                 double total_ram_gb = physical_total_gb;
@@ -265,7 +265,8 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
                                           bool unified_gpu,
                                           double physical_free_gb,
                                           bool bounded_swa,
-                                          double kv_bytes_ratio) {
+                                          double kv_bytes_ratio,
+                                          double carveout_free_gb = 0.0) {
     const int64_t fallback = is_embedding ? EMBEDDING_CTX_SIZE :
         (model_info.max_context_window > 0
              ? (std::min)(model_info.max_context_window, AUTO_CTX_FALLBACK)
@@ -407,7 +408,7 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
     const auto budget = estimate_auto_context_budget(
         available_memory_gb, model_weight_gb,
         kv_bytes_per_token, (model_info.device & DEVICE_GPU) != 0,
-        speculative, unified_gpu, physical_free_gb);
+        speculative, unified_gpu, physical_free_gb, carveout_free_gb);
     const double full_slope = swa_profile
         ? (std::max)(0.0, kv_bytes_per_token - swa_bytes_per_cell) : kv_bytes_per_token;
     double extra_workspace_gib = 0.0;
@@ -489,6 +490,19 @@ inline bool is_rule_head_router_model(const ModelInfo& model_info) {
     return !model_info.checkpoint("rulehead").empty();
 }
 
+/// The registry device is per recipe, so it stays GPU when llama.cpp runs on
+/// the CPU. Context must then be sized from system RAM.
+inline DeviceType auto_context_device(const ModelInfo& model_info,
+                                      const std::string& recipe,
+                                      const std::string& backend,
+                                      const std::string& device) {
+    if (recipe == "llamacpp" && (gpu_memory_ascii_lower(backend) == "cpu" ||
+                                 gpu_memory_ascii_lower(device) == "none")) {
+        return DEVICE_CPU;
+    }
+    return model_info.device;
+}
+
 /// Auto-resolve ctx_size if it is -1 in the effective options.
 /// Returns the resolved context size, or -2 if no auto-resolution is needed
 /// (i.e. ctx_size was already set to an explicit non-negative value).
@@ -531,9 +545,17 @@ inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
     bool ctx_unified_gpu = false;
     bool memory_known = false;
     double physical_free_gb = -1.0;
+    double carveout_free_gb = 0.0;
+    ModelInfo sized_info = model_info;
+    sized_info.device = auto_context_device(model_info, recipe, backend, device);
     double available_gb = get_available_memory_gb(
-        model_info.device, gpu_memory_vendor_for_target(backend, device), device,
-        &ctx_unified_gpu, &memory_known, &physical_free_gb);
+        sized_info.device, gpu_memory_vendor_for_target(backend, device), device,
+        &ctx_unified_gpu, &memory_known, &physical_free_gb, &carveout_free_gb);
+    // Host-resident weights cannot use the carve-out, so charge them to RAM.
+    if (!auto_context_llamacpp_full_offload(recipe, llama_args_str,
+                                            model_info.gguf.block_count)) {
+        carveout_free_gb = 0.0;
+    }
 
     if (available_gb <= 0) {
         const int64_t fallback = is_embedding ? EMBEDDING_CTX_SIZE :
@@ -553,9 +575,10 @@ inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
         hrx_args.is_string() ? hrx_args.get<std::string>() : "", backend);
     const double kv_bytes_ratio = auto_context_llamacpp_kv_bytes_ratio(
         recipe, llama_args_str);
-    int64_t result = compute_auto_context_size(model_info, available_gb,
+    int64_t result = compute_auto_context_size(sized_info, available_gb,
                                                is_embedding, ctx_unified_gpu,
-                                               physical_free_gb, bounded_swa, kv_bytes_ratio);
+                                               physical_free_gb, bounded_swa, kv_bytes_ratio,
+                                               carveout_free_gb);
     LOG(DEBUG, "AutoTune") << "resolve_auto_ctx_size: " << model_info.model_name
                            << " → ctx_size=" << result;
     return result;

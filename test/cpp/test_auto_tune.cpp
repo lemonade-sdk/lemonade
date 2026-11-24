@@ -579,28 +579,82 @@ static void test_auto_context_budget() {
     // OS-visible RAM 63.8 with 10.7 used.
     auto vgm64 = auto_context_available_split_gpu_gib(63.8, 18.4, 47.8, 0.2, 63.8, 10.7);
     check("auto ctx split: carve-out free adds to shared, minus one heap block",
-          vgm64 && approx_eq(*vgm64, 45.4 + 47.6 - 1.0));
+          vgm64 && approx_eq(vgm64->available_gib, 45.4 + 47.6 - 1.0));
     auto vgm64_busy_ram = auto_context_available_split_gpu_gib(63.8, 18.4, 47.8, 0.2, 63.8, 30.0);
     check("auto ctx split: free RAM caps only the shared part",
-          vgm64_busy_ram && approx_eq(*vgm64_busy_ram, 45.4 + 33.8 - 1.0));
+          vgm64_busy_ram && approx_eq(vgm64_busy_ram->available_gib, 45.4 + 33.8 - 1.0));
     auto vgm96 = auto_context_available_split_gpu_gib(95.8, 0.5, 23.9, 0.1, 31.8, 9.0);
     check("auto ctx split: 96 GB carve-out is not limited by 32 GB OS RAM",
-          vgm96 && approx_eq(*vgm96, 95.3 + 22.8 - 1.0));
+          vgm96 && approx_eq(vgm96->available_gib, 95.3 + 22.8 - 1.0));
     auto carveout_full = auto_context_available_split_gpu_gib(63.8, 63.8, 47.8, 0.2, 63.8, 10.7);
     check("auto ctx split: full carve-out leaves shared only, no split loss",
-          carveout_full && approx_eq(*carveout_full, 47.6));
+          carveout_full && approx_eq(carveout_full->available_gib, 47.6));
     auto small_carveout = auto_context_available_split_gpu_gib(0.5, 0.3, 62.0, 2.0, 124.0, 20.0);
     check("auto ctx split: small carve-out loses at most its own free space",
-          small_carveout && approx_eq(*small_carveout, 0.2 + 60.0 - 0.2));
+          small_carveout && approx_eq(small_carveout->available_gib, 0.2 + 60.0 - 0.2));
     auto shared_usage_unknown = auto_context_available_split_gpu_gib(63.8, 18.4, 47.8, -1.0, 63.8, 10.7);
     check("auto ctx split: unknown shared usage is still capped by free RAM",
-          shared_usage_unknown && approx_eq(*shared_usage_unknown, 45.4 + 47.8 - 1.0));
+          shared_usage_unknown && approx_eq(shared_usage_unknown->available_gib, 45.4 + 47.8 - 1.0));
     check("auto ctx split: unknown carve-out usage falls back",
           !auto_context_available_split_gpu_gib(63.8, -1.0, 47.8, 0.2, 63.8, 10.7));
     check("auto ctx split: unknown RAM usage falls back",
           !auto_context_available_split_gpu_gib(63.8, 18.4, 47.8, 0.2, 63.8, 0.0));
     check("auto ctx split: no carve-out falls back",
           !auto_context_available_split_gpu_gib(0.0, 0.0, 47.8, 0.2, 63.8, 10.7));
+    check("auto ctx split: carve-out credit excludes the heap-split loss",
+          approx_eq(vgm64->carveout_gib, 45.4 - 1.0) &&
+          approx_eq(carveout_full->carveout_gib, 0.0) &&
+          approx_eq(small_carveout->carveout_gib, 0.0));
+
+    constexpr double halo_kv = 24576.0;
+    auto halo64 = estimate_auto_context_budget(vgm64->available_gib, 44.73, halo_kv, true, false,
+                                               true, 63.8 - 10.7, vgm64->carveout_gib);
+    check("auto ctx split: weights in the carve-out are not charged to RAM",
+          halo64.max_tokens >= 262144);
+    auto halo64_host = estimate_auto_context_budget(vgm64->available_gib, 44.73, halo_kv, true,
+                                                    false, true, 63.8 - 10.7, 0.0);
+    check("auto ctx split: host-resident weights are charged to RAM",
+          halo64_host.kv_gib < 3.0 && halo64_host.max_tokens < halo64.max_tokens);
+    auto halo_tight = auto_context_available_split_gpu_gib(63.8, 29.3, 47.8, 1.0, 63.8, 43.5);
+    auto halo_tight_budget = estimate_auto_context_budget(
+        halo_tight->available_gib, 44.73, halo_kv, true, false, true, 20.3,
+        halo_tight->carveout_gib);
+    check("auto ctx split: memory-limited load scales headroom with the carve-out",
+          approx_eq(halo_tight_budget.kv_gib,
+                    (33.5 + 20.3) * (1.0 - 0.08) - 44.73 - 44.73 * 0.04));
+    // With no usable carve-out the budget must equal the plain UMA budget.
+    for (double weights : {20.0, 44.73, 80.0}) {
+        auto uma = estimate_auto_context_budget(small_carveout->available_gib, weights, halo_kv,
+                                                true, false, true, 124.0 - 20.0);
+        auto split_uma = estimate_auto_context_budget(
+            small_carveout->available_gib, weights, halo_kv, true, false, true, 124.0 - 20.0,
+            small_carveout->carveout_gib);
+        check("auto ctx split: small carve-out keeps the plain UMA budget",
+              approx_eq(uma.kv_gib, split_uma.kv_gib));
+    }
+
+    using lemon::auto_context_llamacpp_full_offload;
+    auto full = [](const std::string& args, const char* env = nullptr) {
+        return auto_context_llamacpp_full_offload("llamacpp", args, 48, env);
+    };
+    check("offload: default, auto, all, negative and all layers are full",
+          full("") && full("-ngl auto") && full("--gpu-layers all") && full("-ngl -1") &&
+          full("-ngl 99") && full("--n-gpu-layers=49") && full("-ngl 48"));
+    check("offload: fewer layers than blocks is partial",
+          !full("-ngl 0") && !full("-ngl 47") && !full("--n-gpu-layers=20") &&
+          !full("-ngl 4x") && !full("-ngl"));
+    check("offload: CPU placement flags are partial",
+          !full("--cpu-moe") && !full("-cmoe") && !full("-ncmoe 10") &&
+          !full("--n-cpu-moe=10") && !full("-ncffn 4") && !full("-ot exps=CPU") &&
+          !full("--override-tensor=exps=CPU") && !full("-nkvo") && !full("--no-kv-offload"));
+    check("offload: the last layer flag wins and overrides the environment",
+          full("-ngl 0 -ngl 99") && !full("-ngl 99 -ngl 0") && !full("", "0") &&
+          full("-ngl 99", "0"));
+    check("offload: unknown block count cannot prove a full offload",
+          !auto_context_llamacpp_full_offload("llamacpp", "-ngl 99", 0, nullptr) &&
+          auto_context_llamacpp_full_offload("llamacpp", "", 0, nullptr));
+    check("offload: other recipes ignore llama.cpp flags",
+          auto_context_llamacpp_full_offload("ds4", "-ngl 0", 48, nullptr));
 
     auto huge = estimate_auto_context_budget(110.0, 18.0, 1e-12,
                                               true, false);

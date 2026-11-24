@@ -108,6 +108,15 @@ int main() {
     CHECK(resolve(qwen, 31.8, false) < 262144);
     CHECK(resolve(qwen, 31.8, false, q8) == 262144);
 
+    // The registry device is GPU for every llama.cpp model, including CPU runs.
+    const auto gpu_model = fixture("llamacpp", 3.0, DEVICE_GPU);
+    CHECK(auto_context_device(gpu_model, "llamacpp", "cpu", "") == DEVICE_CPU);
+    CHECK(auto_context_device(gpu_model, "llamacpp", "vulkan", "none") == DEVICE_CPU);
+    CHECK(auto_context_device(gpu_model, "llamacpp", "vulkan", "") == DEVICE_GPU);
+    CHECK(auto_context_device(gpu_model, "llamacpp", "rocm", "ROCm0") == DEVICE_GPU);
+    const auto npu_model = fixture("flm", 3.0, DEVICE_NPU);
+    CHECK(auto_context_device(npu_model, "flm", "", "") == DEVICE_NPU);
+
     // Recipes with uses_ctx_size=false (such as loom and cloud) manage their
     // own context window; auto-tune must not run or inject a synthetic ctx_size.
     for (const char* recipe : {"loom", "cloud"}) {

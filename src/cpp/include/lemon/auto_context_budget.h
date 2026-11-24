@@ -108,10 +108,15 @@ inline std::optional<double> auto_context_available_gpu_gib(
 // cannot straddle the dedicated and shared heaps.
 inline constexpr double AUTO_CTX_HEAP_SPLIT_LOSS_GIB = 1.0;
 
+struct AutoContextSplitGpuMemory {
+    double available_gib = 0.0;  // allocatable across both heaps
+    double carveout_gib = 0.0;   // the part of it that costs no OS-visible RAM
+};
+
 // UMA GPU with a firmware carve-out (AMD VGM): the carve-out is outside the
 // OS-visible RAM, so only the shared part competes with the CPU for free RAM.
 // Returns nullopt when the carve-out usage or RAM usage is unknown.
-inline std::optional<double> auto_context_available_split_gpu_gib(
+inline std::optional<AutoContextSplitGpuMemory> auto_context_available_split_gpu_gib(
     double dedicated_total_gib, double dedicated_used_gib,
     double shared_total_gib, double shared_used_gib,
     double physical_total_gib, double physical_used_gib) {
@@ -128,11 +133,11 @@ inline std::optional<double> auto_context_available_split_gpu_gib(
     const double shared_free = auto_context_cap_shared_memory_gib(
         (std::max)(0.0, shared_total_gib - shared_used),
         physical_total_gib, physical_used_gib);
-    double available = dedicated_free + shared_free;
-    if (dedicated_free > 0.0 && shared_free > 0.0) {
-        available -= (std::min)({AUTO_CTX_HEAP_SPLIT_LOSS_GIB, dedicated_free, shared_free});
-    }
-    return available;
+    // A block that does not fit in the carve-out's tail lands in shared memory.
+    const double split_loss =
+        (std::min)({AUTO_CTX_HEAP_SPLIT_LOSS_GIB, dedicated_free, shared_free});
+    const double carveout = dedicated_free - split_loss;
+    return AutoContextSplitGpuMemory{carveout + shared_free, carveout};
 }
 
 inline AutoContextBudget estimate_auto_context_budget(double free_gib,
@@ -141,7 +146,8 @@ inline AutoContextBudget estimate_auto_context_budget(double free_gib,
                                                        bool gpu,
                                                        bool speculative,
                                                        bool unified_gpu = false,
-                                                       double physical_free_gib = -1.0) {
+                                                       double physical_free_gib = -1.0,
+                                                       double carveout_free_gib = 0.0) {
     AutoContextBudget result;
     if (!std::isfinite(free_gib) || !std::isfinite(weights_gib) ||
         !std::isfinite(kv_bytes_per_token) ||
@@ -154,8 +160,12 @@ inline AutoContextBudget estimate_auto_context_budget(double free_gib,
         : unified_gpu ? AUTO_CTX_UNIFIED_GPU_RESERVE : AUTO_CTX_DISCRETE_GPU_RESERVE;
     const bool separate_ram_budget = gpu && unified_gpu &&
         std::isfinite(physical_free_gib) && physical_free_gib >= 0.0;
+    const double carveout_gib = std::isfinite(carveout_free_gib)
+        ? (std::max)(0.0, carveout_free_gib) : 0.0;
+    // The headroom is kept in OS-visible RAM, but scales with everything free:
+    // a carve-out hides memory from the OS without making the load any smaller.
     const double memory_headroom_gib = reserve_policy.memory_headroom.estimate(
-        separate_ram_budget ? physical_free_gib : free_gib);
+        separate_ram_budget ? carveout_gib + physical_free_gib : free_gib);
     const double compute_workspace_gib =
         reserve_policy.compute_workspace.estimate(result.model_gib);
     const double speculative_workspace_gib =
@@ -165,8 +175,8 @@ inline AutoContextBudget estimate_auto_context_budget(double free_gib,
     if (separate_ram_budget) {
         const double gpu_kv = free_gib - result.model_gib -
                               compute_workspace_gib - speculative_workspace_gib;
-        const double ram_kv = physical_free_gib - result.model_gib -
-                              result.reserve_gib;
+        const double ram_kv = carveout_gib + physical_free_gib -
+                              result.model_gib - result.reserve_gib;
         result.kv_gib = (std::max)(0.0, (std::min)(gpu_kv, ram_kv));
     } else {
         result.kv_gib = (std::max)(0.0, free_gib - result.model_gib - result.reserve_gib);
@@ -224,6 +234,45 @@ inline double auto_context_llamacpp_kv_bytes_ratio(
     // Equal formats, including Q8_0/Q8_0, keep their exact size ratio.
     return (std::max)(auto_context_llamacpp_kv_element_bytes(key_type),
                       auto_context_llamacpp_kv_element_bytes(value_type)) / 2.0;
+}
+
+// Whether llama-server keeps weights and KV on the GPU. Placement flags whose
+// host share cannot be sized here count as partial.
+inline bool auto_context_llamacpp_full_offload(
+    const std::string& recipe, const std::string& custom_args, int64_t block_count,
+    const char* gpu_layers_env = std::getenv("LLAMA_ARG_N_GPU_LAYERS")) {
+    if (recipe != "llamacpp") return true;
+    for (const char* name : {"LLAMA_ARG_CPU_MOE", "LLAMA_ARG_KV_OFFLOAD",
+                             "LLAMA_ARG_N_CPU_FFN", "LLAMA_ARG_N_CPU_MOE",
+                             "LLAMA_ARG_NO_KV_OFFLOAD", "LLAMA_ARG_OVERRIDE_TENSOR"}) {
+        if (std::getenv(name)) return false;
+    }
+
+    std::string gpu_layers = gpu_layers_env ? gpu_layers_env : "auto";
+    const auto args = utils::parse_custom_args(custom_args);
+    for (size_t i = 0; i < args.size(); ++i) {
+        const auto eq = args[i].find('=');
+        const std::string flag = args[i].substr(0, eq);
+        if (flag == "-cmoe" || flag == "--cpu-moe" ||
+            flag == "-ncmoe" || flag == "--n-cpu-moe" ||
+            flag == "-ncffn" || flag == "--n-cpu-ffn" ||
+            flag == "-ot" || flag == "--override-tensor" ||
+            flag == "-nkvo" || flag == "--no-kv-offload") return false;
+        if (flag == "-ngl" || flag == "--gpu-layers" || flag == "--n-gpu-layers") {
+            gpu_layers = eq != std::string::npos
+                ? args[i].substr(eq + 1) : (i + 1 < args.size() ? args[++i] : "");
+        }
+    }
+
+    if (gpu_layers == "auto" || gpu_layers == "all") return true;
+    try {
+        size_t consumed = 0;
+        const int64_t layers = std::stoll(gpu_layers, &consumed);
+        if (consumed != gpu_layers.size()) return false;
+        return layers < 0 || (block_count > 0 && layers >= block_count);
+    } catch (...) {
+        return false;
+    }
 }
 
 // Overflow-safe conversion for backend-specific resident-working-set budgets.
