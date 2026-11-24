@@ -514,6 +514,38 @@ void ModelIngest::download_from_registry(const ModelInfo& info,
         }, checkpoint_type);
     }
 
+    std::vector<fs::path> replaced;
+    for (const auto& [repo_id, snapshot_id] : repo_snapshot_ids) {
+        const std::string& previous_ref = repo_previous_refs.at(repo_id);
+        if (repos_reusing_previous_snapshot.count(repo_id) || previous_ref.empty() ||
+            previous_ref == snapshot_id) {
+            continue;
+        }
+        const fs::path previous_snapshot = repo_cache_paths.at(repo_id) / "snapshots" / previous_ref;
+        for (const auto& planned : selected) {
+            if (planned.repo_id == repo_id) {
+                replaced.push_back(previous_snapshot / path_from_utf8(planned.file.name));
+            }
+        }
+    }
+    for (const auto& [type, path] : info.resolved_paths) {
+        (void)type;
+        if (!path.empty()) replaced.push_back(path_from_utf8(path));
+    }
+    if (!replaced.empty()) {
+        const auto published = deps_.store->read();
+        const SupersededReport removed =
+            artifacts().remove_superseded_files(replaced, published->models);
+        if (removed.removed > 0 || removed.failed > 0) {
+            LOG(INFO, "ModelManager")
+                << "Removed " << removed.removed << " file(s) ("
+                << (removed.bytes / (1024 * 1024)) << " MB) of the previous version of "
+                << info.model_name << "; kept " << removed.kept_in_use
+                << " still used by other models; " << removed.failed << " could not be removed"
+                << std::endl;
+        }
+    }
+
     if (progress_callback) {
         DownloadProgress progress;
         progress.complete = true;

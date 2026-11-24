@@ -40,6 +40,13 @@ struct DeleteReport {
     bool cleaned_partial_download = false;
 };
 
+struct SupersededReport {
+    std::size_t removed = 0;
+    std::uint64_t bytes = 0;
+    std::size_t kept_in_use = 0;
+    std::size_t failed = 0;
+};
+
 struct OrphanedFile {
     std::string model;
     std::string type;
@@ -150,6 +157,11 @@ class ModelArtifactStore {
     void remove_unused_snapshot(const std::filesystem::path& repo_cache_dir,
                                 const std::string& snapshot_dir,
                                 const std::string& active_ref) const;
+
+    // After an update moved refs/main: deletes the previous version's copies of what
+    // the update replaced
+    SupersededReport remove_superseded_files(const std::vector<std::filesystem::path>& replaced,
+                                             const KnownModels& all_models) const;
 
     std::string processed_snapshot_id(const std::filesystem::path& repo_cache_dir,
                                       const ModelInfo& info) const;

@@ -238,6 +238,23 @@ void check_synced(ModelManager& mm, const std::string& name, const std::string& 
     }
 }
 
+std::vector<std::string> stray_extra_models(ModelManager& mm) {
+    mm.invalidate_models_cache();
+    std::vector<std::string> stray;
+    for (const auto& [name, info] : mm.get_downloaded_models()) {
+        if (info.source == "extra_models_dir") stray.push_back(name);
+    }
+    for (const auto& name : stray) std::printf("       stray model: %s\n", name.c_str());
+    return stray;
+}
+
+// Registers more user models beside the fixture's, before a manager reads them.
+void add_user_models(const Fixture& fx, const json& more) {
+    json user_models = json::parse(read_file(fx.root / "user_models.json"));
+    user_models.update(more);
+    write_file(fx.root / "user_models.json", user_models.dump(2));
+}
+
 bool sync_failed(const json& result, const std::string& name, std::string* why = nullptr) {
     const json failed = result.value("failed_models", json::object());
     for (const auto& key : {name, std::string("user.") + name}) {
@@ -354,8 +371,10 @@ void test_an_update_lands_beside_the_extra_copy() {
           "refs/main in extra_models_dir moves to the new snapshot");
     check(!fs::exists(fx.managed / repo_dir_name("vendor/repo")),
           "nothing is written to the managed cache");
-    check(fs::exists(extra_repo / "snapshots" / "snap-1" / "model.gguf"),
-          "the previous snapshot is kept, as the managed cache keeps it");
+    check(!fs::exists(extra_repo / "snapshots" / "snap-1"),
+          "the previous snapshot is removed once the new one is in place");
+    check(stray_extra_models(*mm).empty(),
+          "no file of the previous version is rediscovered as an extra model");
     check(!has_probe_leftovers(extra_repo), "the write probe leaves nothing behind");
 
     const auto info = mm->get_model_info("user.Extra-Upd");
@@ -429,7 +448,11 @@ void test_an_open_old_file_does_not_block_the_update() {
     if (!why.empty()) std::printf("       reason: %s\n", why.c_str());
     check(read_file(extra_repo / "snapshots" / "snap-2" / "model.gguf") == gguf("new-main"),
           "the new snapshot lands beside the open one");
-    check(fs::exists(old_file), "the open old file is left alone");
+#ifdef _WIN32
+    check(fs::exists(old_file), "Windows keeps a replaced file a running model holds open");
+#else
+    check(!fs::exists(old_file), "a replaced file is unlinked even while open");
+#endif
 }
 
 void test_a_managed_copy_still_wins() {
@@ -446,7 +469,11 @@ void test_a_managed_copy_still_wins() {
     check_synced(*mm, "Extra-Upd", "updating the managed copy succeeds");
     check(read_file(managed_repo / "snapshots" / "snap-2" / "model.gguf") == gguf("new-main"),
           "the update lands in the managed cache");
-    check(!fs::exists(extra_repo / "snapshots" / "snap-2"), "the extra copy is not touched");
+    check(!fs::exists(managed_repo / "snapshots" / "snap-1"),
+          "the previous managed snapshot is removed too");
+    check(!fs::exists(extra_repo / "snapshots" / "snap-2") &&
+              read_file(extra_repo / "snapshots" / "snap-1" / "model.gguf") == gguf("old-extra"),
+          "the extra copy is not touched");
 }
 
 void test_an_extra_root_containing_the_managed_cache_is_not_misread() {
@@ -467,7 +494,8 @@ void test_a_model_on_no_disk_is_pulled_into_the_managed_cache() {
     Fixture fx = make_fixture("extra_fresh");
     auto mm = make_manager(fx, path_to_utf8(fx.extra));
 
-    mm->download_model("user.Extra-Upd", json::object());
+    mm->download_model("user.Extra-Upd", json::object(), false, nullptr,
+                       lemon::utils::CancelToken(), false);
     check(read_file(fx.managed / repo_dir_name("vendor/repo") / "snapshots" / "snap-2" /
                     "model.gguf") == gguf("new-main"),
           "a first pull still goes to the managed cache");
@@ -503,6 +531,9 @@ void test_an_auxiliary_revision_change_lands_beside_its_extra_copy() {
               same_file(info.resolved_path("main"), main_repo / "snapshots" / "snap-2" / "model.gguf") &&
               same_file(info.resolved_path("mmproj"), proj_repo / "snapshots" / "proj-2" / "proj.gguf"),
           "both checkpoints resolve to their updated extra copies");
+    check(!fs::exists(main_repo / "snapshots" / "snap-1") &&
+              !fs::exists(proj_repo / "snapshots" / "proj-1"),
+          "both repositories drop their previous snapshot");
 }
 
 // Older downloads kept an auxiliary file inside the main repository, so its own
@@ -539,6 +570,10 @@ void test_a_legacy_auxiliary_file_updates_into_its_own_extra_repository() {
     check(after.downloaded &&
               same_file(after.resolved_path("mmproj"), proj_repo / "snapshots" / "proj-2" / "proj.gguf"),
           "the auxiliary checkpoint resolves to its new repository");
+    check(!fs::exists(main_repo / "snapshots" / "snap-1"),
+          "the legacy auxiliary file goes with the main repository's previous snapshot");
+    check(stray_extra_models(*mm).empty(),
+          "the legacy auxiliary file is not rediscovered as an extra model");
 }
 
 void test_a_legacy_auxiliary_directory_that_cannot_be_created_fails() {
@@ -598,6 +633,62 @@ void test_an_unusual_extra_path_is_handled() {
           "nothing is written to the managed cache");
 }
 
+void test_a_file_another_model_still_reads_is_kept() {
+    Fixture fx = make_fixture("extra_shared");
+    const fs::path extra_repo =
+        make_hf_repo(fx.extra, "vendor/repo", "snap-1", "model.gguf", gguf("old"));
+    const fs::path old_snapshot = extra_repo / "snapshots" / "snap-1";
+    write_file(old_snapshot / "other.gguf", gguf("other"));
+    // Extra-Other reads a file only the old snapshot has. Extra-Twin reads the same
+    // file as the model being updated, so it moves to the new copy with it.
+    add_user_models(fx, {
+        {"Extra-Other", {{"checkpoint", "vendor/repo:other.gguf"}, {"recipe", "llamacpp"}}},
+        {"Extra-Twin", {{"checkpoint", "vendor/repo:model.gguf"}, {"recipe", "llamacpp"}}},
+    });
+    auto mm = make_manager(fx, path_to_utf8(fx.extra));
+    check(mm->get_model_info("user.Extra-Other").downloaded &&
+              mm->get_model_info("user.Extra-Twin").downloaded,
+          "both neighbours are adopted from the shared extra repository");
+
+    check_synced(*mm, "Extra-Upd", "updating one model of a shared repository succeeds");
+    const fs::path updated = extra_repo / "snapshots" / "snap-2" / "model.gguf";
+    check(!fs::exists(old_snapshot / "model.gguf"),
+          "the replaced file goes, since every model reading it now has the new copy");
+    check(read_file(old_snapshot / "other.gguf") == gguf("other"),
+          "a file another model still reads is kept");
+    const auto other = mm->get_model_info("user.Extra-Other");
+    check(other.downloaded && same_file(other.resolved_path(), old_snapshot / "other.gguf"),
+          "that model still resolves to it");
+    const auto twin = mm->get_model_info("user.Extra-Twin");
+    check(twin.downloaded && same_file(twin.resolved_path(), updated),
+          "the model sharing the replaced file resolves to the new copy");
+    check(stray_extra_models(*mm).empty(), "nothing is listed as a stray extra model");
+}
+
+void test_a_linked_blob_is_freed() {
+    // The layout huggingface-cli writes: snapshot entries link into blobs/.
+    Fixture fx = make_fixture("extra_blobs");
+    const fs::path extra_repo = fx.extra / repo_dir_name("vendor/repo");
+    const fs::path blob = extra_repo / "blobs" / "0123abcd";
+    write_file(blob, gguf("old"));
+    write_file(extra_repo / "refs" / "main", "snap-1");
+    fs::create_directories(extra_repo / "snapshots" / "snap-1");
+    std::error_code ec;
+    fs::create_symlink(fs::path("..") / ".." / "blobs" / "0123abcd",
+                       extra_repo / "snapshots" / "snap-1" / "model.gguf", ec);
+    if (ec) {
+        std::printf("[SKIP] cannot create symlinks here (%s)\n", ec.message().c_str());
+        return;
+    }
+    auto mm = make_manager(fx, path_to_utf8(fx.extra));
+    check(mm->get_model_info("user.Extra-Upd").downloaded,
+          "a model whose snapshot links into blobs/ is adopted");
+
+    check_synced(*mm, "Extra-Upd", "updating a blob-linked copy succeeds");
+    check(!fs::exists(extra_repo / "snapshots" / "snap-1"), "the old snapshot link is removed");
+    check(!fs::exists(blob), "and the blob behind it is freed");
+}
+
 }  // namespace
 
 int main() {
@@ -618,6 +709,8 @@ int main() {
         {"legacy-aux", test_a_legacy_auxiliary_file_updates_into_its_own_extra_repository},
         {"legacy-aux-readonly", test_a_legacy_auxiliary_directory_that_cannot_be_created_fails},
         {"unusual-path", test_an_unusual_extra_path_is_handled},
+        {"shared-repo", test_a_file_another_model_still_reads_is_kept},
+        {"blob-link", test_a_linked_blob_is_freed},
     };
     for (const auto& [name, run] : cases) {
         std::printf("\n=== %s ===\n", name);
