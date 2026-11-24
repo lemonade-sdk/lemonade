@@ -715,7 +715,8 @@ BackendManager::InstallParams BackendManager::get_install_params(const std::stri
 
 void BackendManager::install_backend(const std::string& recipe, const std::string& backend,
                                      bool force,
-                                     DownloadProgressCallback progress_cb) {
+                                     DownloadProgressCallback progress_cb,
+                                     std::atomic<bool>* cancel) {
     std::string resolved_backend = normalize_backend_name(recipe, backend);
     LOG(DEBUG, "BackendManager") << "Installing " << recipe << ":" << resolved_backend << std::endl;
 
@@ -726,7 +727,8 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
                 [this, recipe, resolved_backend, force](DownloadProgressCallback report,
                                                         utils::CancelToken) {
                     install_backend(recipe, resolved_backend, force, report);
-                }));
+                }),
+            cancel);
         return;
     }
 

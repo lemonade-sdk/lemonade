@@ -261,7 +261,8 @@ json DownloadManager::start(const std::string& download_id, const std::string& d
 }
 
 void DownloadManager::run_tracked(const std::string& id, const std::string& type,
-                                  const std::string& display_name, Operation operation) {
+                                  const std::string& display_name, Operation operation,
+                                  std::atomic<bool>* cancel) {
     // Reuse (or join) exactly the job that /install and /downloads already own.
     // Keep the model-load request blocked until the backend is ready.
     start(id, type, display_name, std::move(operation), /*show_before_progress=*/false);
@@ -269,7 +270,14 @@ void DownloadManager::run_tracked(const std::string& id, const std::string& type
     auto it = jobs_.find(id);
     if (it == jobs_.end()) throw std::runtime_error("Download job disappeared: " + id);
     const auto job = it->second;
-    completed_cv_.wait(lock, [&] { return !job->running; });
+    if (!cancel) {
+        completed_cv_.wait(lock, [&] { return !job->running; });
+    } else {
+        while (job->running) {
+            if (cancel->load()) throw std::runtime_error("load cancelled");
+            completed_cv_.wait_for(lock, std::chrono::milliseconds(25));
+        }
+    }
     if (job->status == "completed") return;
     if (!job->error.empty()) throw std::runtime_error(job->error);
     throw std::runtime_error("Backend installation " + job->status + ": " + id);
