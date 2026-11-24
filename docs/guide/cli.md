@@ -366,6 +366,7 @@ The following options apply to all model loads:
 | `--pinned` | Pin the model in memory to prevent auto-eviction under capacity limits. | `false` |
 | `--save-options` | Persist the supplied recipe options in `recipe_options.json` for future loads. | `false` |
 | `--merge-args` / `--no-merge-args` | Merge global and model arguments when loading the model (if `false`, per-model replaces global entirely). | `true` |
+| `--backend-source SOURCE` | If this load installs a backend, download it from `github` or `modelscope`. Not saved. | the server's `backend_source` |
 
 ### Recipe-Specific Options
 
@@ -387,6 +388,12 @@ The following options are available depending on the recipe being used:
 |--------|-------------|---------|
 | `--ctx-size SIZE` | Context size for the model | auto |
 | `--hrx-args ARGS` | Custom arguments to pass to the HRX llama-server | `""` |
+
+#### Loom (`loom` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--loom-args ARGS` | Custom arguments to pass to loom-serve | `""` |
 
 #### Strata (`strata` recipe)
 
@@ -415,6 +422,7 @@ The following options are available depending on the recipe being used:
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--sdcpp BACKEND` | SD.cpp backend to use | Auto-detected |
+| `--sdcpp-device DEVICES` | GPU to use: ROCm0, CUDA1, Vulkan0, ... or a GPU's uuid or pci_bus_id from system-info; empty selects automatically | `""` |
 | `--sdcpp-args ARGS` | Custom arguments to pass to sd-server (must not conflict with managed args) | `""` |
 
 #### FastFlowLM NPU (`flm` recipe)
@@ -443,26 +451,7 @@ The following options are available depending on the recipe being used:
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--thenoise BACKEND` | TheNoise backend to use | Auto-detected |
-
-#### DwarfStar4 (`ds4` recipe)
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--ctx-size SIZE` | Context size for the model | auto |
-| `--ds4-args ARGS` | Custom arguments to pass to ds4-server | `""` |
-
-#### ROCm FPX (`rocmfpx` recipe)
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--ctx-size SIZE` | Context size for the model | auto |
-| `--rocmfpx-args ARGS` | Custom arguments to pass to the ROCm FPX llama-server | `""` |
-
-#### Halogen (`halogen` recipe)
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--ctx-size SIZE` | Context size for the model | auto |
+| `--thenoise-device DEVICES` | GPU to use: ROCm0, CUDA1, ... or a GPU's uuid or pci_bus_id from system-info; empty selects automatically | `""` |
 
 #### Gufo (`gufo` recipe)
 
@@ -475,12 +464,14 @@ The following options are available depending on the recipe being used:
 
 | Option | Description | Default |
 |--------|-------------|---------|
+| `--thinksound-device DEVICES` | GPU to use: ROCm0, CUDA1, ... or a GPU's uuid or pci_bus_id from system-info; auto selects automatically | `""` |
 | `--thinksound BACKEND` | ThinkSound backend to use | Auto-detected |
 
 #### ACE-Step (`acestep` recipe)
 
 | Option | Description | Default |
 |--------|-------------|---------|
+| `--acestep-device DEVICES` | GPU to use: ROCm0, CUDA1, ... or a GPU's uuid or pci_bus_id from system-info; auto selects automatically | `""` |
 | `--acestep BACKEND` | ACE-Step backend to use | Auto-detected |
 
 #### ONNX Runtime (`onnxruntime` recipe)
@@ -493,6 +484,7 @@ The following options are available depending on the recipe being used:
 
 | Option | Description | Default |
 |--------|-------------|---------|
+| `--trellis-device DEVICES` | GPU to use: ROCm0, CUDA1, ... or a GPU's uuid or pci_bus_id from system-info; auto selects automatically | `""` |
 | `--trellis BACKEND` | Trellis backend to use | Auto-detected |
 | `--trellis-args ARGS` | Custom arguments to pass to trellis-server | `""` |
 
@@ -500,6 +492,7 @@ The following options are available depending on the recipe being used:
 
 | Option | Description | Default |
 |--------|-------------|---------|
+| `--openmoss-device DEVICES` | GPU to use: CUDA0, CUDA1, ... or a GPU's uuid from system-info; auto selects automatically | `""` |
 | `--openmoss BACKEND` | OpenMOSS TTS backend to use | Auto-detected |
 <!-- END GENERATED: cli-recipe-options -->
 **Notes:**
@@ -641,7 +634,7 @@ The `backends` command lists supported recipes and their backends. Use `--all` t
 lemonade backends
 lemonade backends --all
 lemonade backends info SPEC
-lemonade backends install SPEC [--force]
+lemonade backends install SPEC [--force] [--source SOURCE]
 lemonade backends uninstall SPEC
 ```
 
@@ -653,6 +646,7 @@ lemonade backends uninstall SPEC
 | `lemonade backends install SPEC` | Install a backend. Format: `recipe:backend` (e.g., `llamacpp:vulkan`) |
 | `lemonade backends uninstall SPEC` | Uninstall a backend. Format: `recipe:backend` (e.g., `llamacpp:cpu`) |
 | `lemonade backends install SPEC --force` | Bypass hardware filtering and attempt the install anyway |
+| `lemonade backends install SPEC --source SOURCE` | Download this install from `github` or `modelscope`, overriding the server's `backend_source` for this install only |
 
 **Notes:**
 - Supported backends depend on your system and the recipe
@@ -683,6 +677,9 @@ lemonade backends install flm:npu
 
 # Install an otherwise filtered backend
 lemonade backends install llamacpp:rocm --force
+
+# Install a backend from the ModelScope mirror without changing the config
+lemonade backends install llamacpp:vulkan --source modelscope
 ```
 
 ## Options for launch

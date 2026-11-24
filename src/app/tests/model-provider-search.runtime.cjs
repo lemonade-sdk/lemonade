@@ -111,7 +111,7 @@ assert.match(manager, /existingCandidate && !matchesCheckpoint\(existingCandidat
   'collision suffixes must remain idempotent for the same checkpoint');
 assert.match(manager, /findRegisteredRemoteModel\(allModels, provider, modelId, variantName, recipe, vdata\)/,
   'online downloads must check server-owned registrations before generating user.* names');
-assert.match(manager, /if \(registeredModel\) \{\s*await handlePull\(registeredModel\);\s*return;/,
+assert.match(manager, /if \(registeredModel\) \{[^}]*await handlePull\(registeredModel\);\s*return;/,
   'known models must use the existing name-only download flow without re-registration');
 
 const { findRegisteredRemoteModel } = loadTypeScriptModule(
@@ -156,6 +156,16 @@ assert.equal(find([], 'huggingface'), undefined,
   'genuinely new online models must keep the normal registration flow');
 assert.equal(find([builtin], 'huggingface', 'Q8_0', variants, 'flm'), undefined,
   'non-llamacpp recipes must not be matched with GGUF rules');
+
+const loomRepo = 'loom-fun/bartowski-Qwen2.5-0.5B-Instruct-loom';
+const loomBuiltin = { id: 'Qwen2.5-0.5B-Instruct-Loom', recipe: 'loom', checkpoint: loomRepo, source: 'huggingface' };
+const findLoom = (models, repository = loomRepo, provider = 'huggingface') =>
+  findRegisteredRemoteModel(models, provider, repository, 'default', 'loom', undefined);
+assert.equal(findLoom([loomBuiltin])?.id, loomBuiltin.id, 'a catalog Loom bundle must preserve its server ID');
+assert.equal(findLoom([loomBuiltin], 'loom-fun-staging/bartowski-Qwen2.5-0.5B-Instruct-loom'), undefined,
+  'a Loom bundle from another repository must keep the normal registration flow');
+assert.equal(findLoom([{ ...loomBuiltin, recipe: 'llamacpp' }]), undefined,
+  'only Loom registrations can stand in for a Loom bundle');
 
 assert.match(manager, /active\.downloadId \|\| `model:\$\{active\.modelName\}`/,
   'remote cancellation must address the exact resolved download id');

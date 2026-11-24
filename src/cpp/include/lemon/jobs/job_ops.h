@@ -44,6 +44,14 @@ struct OpProviders {
     std::function<json(const json& params, CancelFlag& cancel)> load_op;
     std::function<json(const json& params, CancelFlag& cancel)> unload_op;
     std::function<json(const json& params, CancelFlag& cancel)> chat_op;
+    std::function<json(const json& params, const std::string& job_id, CancelFlag& cancel)> video_op;
+
+    std::function<json(const json& params, CancelFlag& cancel)> image_generations_op;
+    std::function<json(const json& params, CancelFlag& cancel)> image_edits_op;
+    std::function<json(const json& params, CancelFlag& cancel)> image_variations_op;
+    std::function<json(const json& params, CancelFlag& cancel)> audio_speech_op;
+    std::function<json(const json& params, CancelFlag& cancel)> audio_generations_op;
+    std::function<json(const json& params, CancelFlag& cancel)> model_3d_generations_op;
 
     std::function<bool(const std::string& job_id, CancelFlag*)> begin_exclusive;
     std::function<void()> end_exclusive;

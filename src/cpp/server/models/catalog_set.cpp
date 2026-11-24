@@ -15,6 +15,7 @@ std::vector<std::shared_ptr<ModelCatalog>> product_catalogs(const CatalogSetDeps
 
     RegistryRowRules builtin_rows = deps.registry_rows;
     builtin_rows.source_label = "built-in model";
+    builtin_rows.resolve_source = deps.resolve_builtin_source;
     catalogs.push_back(std::make_shared<JsonCatalog>(
         make_catalog_descriptor(
             "server_models.json", catalog_rank::builtin_registry, Conflict::Overwrite,

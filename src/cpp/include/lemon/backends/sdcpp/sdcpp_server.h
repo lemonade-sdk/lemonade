@@ -14,9 +14,13 @@
 namespace lemon {
 namespace backends {
 
-class SDServer : public WrappedServer, public IImageServer, public IUpscaleServer {
+class SDServer : public WrappedServer, public IImageServer, public IVideoServer, public IUpscaleServer {
 public:
     static InstallParams get_install_params(const std::string& backend, const std::string& version);
+
+    // Devices the installed `backend` build enumerates, as {name, description}
+    // in its runtime order.
+    static std::vector<std::pair<std::string, std::string>> list_devices(const std::string& backend);
 
     explicit SDServer(const std::string& log_level,
                       ModelManager* model_manager,
@@ -36,6 +40,8 @@ public:
     json image_generations(const json& request) override;
     json image_edits(const json& request) override;
     json image_variations(const json& request) override;
+    json video_generations(const json& request,
+                           std::atomic<bool>* cancel = nullptr) override;
 
     std::string upscale_via_cli(
         const std::string& b64_image,

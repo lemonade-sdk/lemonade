@@ -35,6 +35,9 @@ namespace lemon::backends {
         std::string repo;      // GitHub "org/repo"
         std::string filename;  // Release asset filename
         std::string version_override;  // If set, use this as the release tag instead of backend_versions.json value
+        // If set, only this directory of the extracted archive is installed, as
+        // the install root (e.g. a wheel's <name>.data/scripts).
+        std::string archive_subdir;
     };
 
     struct BackendSpec {
@@ -135,7 +138,13 @@ namespace lemon::backends {
                                         const std::string& repo,
                                         const std::string& filename,
                                         const std::string& backend,
-                                        DownloadProgressCallback progress_cb = nullptr);
+                                        DownloadProgressCallback progress_cb = nullptr,
+                                        const std::string& archive_subdir = "");
+
+        /** Replace `staging_dir` with its `subdir`, so only that part of an
+         *  extracted archive is installed. Throws when `subdir` escapes the
+         *  tree or is not a directory in it. */
+        static void keep_archive_subdir(const std::string& staging_dir, const std::string& subdir);
 
         /** Get the latest version number for the given recipe/backend */
         static std::string get_backend_version(const std::string& recipe, const std::string& backend);
@@ -237,6 +246,13 @@ namespace lemon::backends {
                                             std::string& filename,
                                             size_t& bytes_total);
 
+        /** rocm_install_method for a new install. Under modelscope, "auto" means
+         *  "tarball": the mirror has no wheel index. */
+        static std::string effective_rocm_install_method();
+
+        /** The request's source, else LEMONADE_BACKEND_SOURCE, else the config key. */
+        static std::string effective_backend_source();
+
         /** Download and install TheRock ROCm tarball for the specified architecture (Linux only) */
         static void install_therock(const std::string& arch, const std::string& version,
                                    DownloadProgressCallback progress_cb = nullptr);
@@ -278,6 +294,14 @@ namespace lemon::backends {
 
         /** The image get_backend_image() gave at install time, or "" when none is installed. */
         static std::string get_installed_backend_image(const std::string& recipe, const std::string& backend);
+
+        /** Every image the installed pin can name: its digest under the descriptor's image, then under each of its former_images. Empty when none is installed. */
+        static std::vector<std::string> get_installed_backend_images(const std::string& recipe, const std::string& backend);
+
+        /** The get_installed_backend_images() the manager's container tool holds. */
+        static std::vector<std::string> get_present_installed_images(const utils::ContainerManager& manager,
+                                                                     const std::string& recipe,
+                                                                     const std::string& backend);
 
         /** Get the path where the version indicator is installed. Does not check existence. */
         static std::string get_installed_version_file(const BackendSpec& spec, const std::string& backend);
@@ -325,6 +349,68 @@ namespace lemon::backends {
             std::vector<std::pair<std::string, std::string>>& env_vars,
             const std::string& log_tag,
             bool skip_visible_devices = false);
+
+        // Parse a single physical GPU selection like CUDA1 or ROCm0. Reject lists and
+        // invalid indices: these backends run on a single selected device.
+        static int parse_gpu_device_index(const std::string& selection,
+                                          const std::string& prefix);
+
+        // Pure mapping for deterministic tests. CUDA_VISIBLE_DEVICES accepts UUIDs;
+        // using the detected NVIDIA index directly can select a different CUDA GPU.
+        // Always returns an explicit mask: numeric 0 for the sole GPU (avoids
+        // driver-specific UUID filtering failures), UUID on multi-GPU hosts.
+        static std::string cuda_visible_device_for_selection(
+            const std::string& selection,
+            const std::vector<std::pair<int, std::string>>& detected_gpus);
+
+        // Reject a CUDA device incompatible with an architecture-specific asset.
+        // An empty required_arch skips validation (e.g. TheNoise portable CUDA).
+        static void validate_cuda_device_arch_for_selection(
+            const std::string& selection,
+            const std::string& required_arch,
+            const std::vector<std::pair<int, std::string>>& detected_archs);
+
+        // Environment that pins a ROCm subprocess to the GPU HIP numbers N for a
+        // selection like rocmN. `hip_gpus` holds {hip_index, uuid} per detected AMD
+        // GPU.
+        static std::vector<std::pair<std::string, std::string>> rocm_device_env_for_selection(
+            const std::string& selection,
+            const std::vector<std::pair<int, std::string>>& hip_gpus,
+            int available_gpu_count);
+
+        // Parses ggml `--list-devices` output: one "name<TAB>description" line per
+        // device, in the order the backend's own runtime enumerates them.
+        static std::vector<std::pair<std::string, std::string>> parse_ggml_device_list(
+            const std::string& output);
+
+        static std::string ggml_device_for_selection(
+            const std::string& selection,
+            const std::string& prefix,
+            const std::vector<std::pair<std::string, std::string>>& devices);
+
+        // A GPU may be named by its index (cuda1, rocm0) or by a stable id that
+        // system-info reports for it: an NVIDIA or ROCr `uuid`, or an AMD
+        // `pci_bus_id`. An id still names the same card after cards are added or
+        // removed, and names no card on another server. `gpus` holds each GPU's
+        // index and ids. Returns the index form (prefix + index); a selection
+        // that is already an index, or not an id, is returned unchanged.
+        static std::string canonical_gpu_selection(
+            const std::string& selection,
+            const std::string& prefix,
+            const std::vector<std::pair<int, std::vector<std::string>>>& gpus);
+
+        static std::string resolve_gpu_selection(const std::string& selection,
+                                                 const std::string& backend);
+
+        // A single-device selection for CUDA/ROCm subprocesses. For CUDA, an
+        // explicit device takes precedence over the inherited CUDA_VISIBLE_DEVICES;
+        // with no selection, retain the standard architecture-based auto filter.
+        static void apply_accelerator_device_env_vars(
+            std::vector<std::pair<std::string, std::string>>& env_vars,
+            const std::string& log_tag,
+            const std::string& backend,
+            const std::string& selection,
+            const std::string& required_cuda_arch = "");
 
         /**
          * Validates that the device selection string prefix matches the selected backend.

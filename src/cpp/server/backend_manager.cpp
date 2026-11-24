@@ -3,6 +3,7 @@
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_registry.h"
+#include "lemon/backends/backend_source.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/error_types.h"
 #include "lemon/runtime_config.h"
@@ -15,6 +16,7 @@
 #include "lemon/utils/path_utils.h"
 #include <atomic>
 #include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -203,8 +205,8 @@ void install_container_backend(const std::string& recipe, const std::string& bac
     // Replace whatever the install directory held, such as an earlier pin or a
     // binary release of the same backend. The previous image goes last so a
     // failed write leaves the working install in place.
-    const std::string previous_image =
-        backends::BackendUtils::get_installed_backend_image(recipe, backend);
+    const std::vector<std::string> previous_images =
+        backends::BackendUtils::get_installed_backend_images(recipe, backend);
     const fs::path install_dir = version_file.parent_path();
     const fs::path staging_dir =
         install_dir.parent_path() / ("." + install_dir.filename().string() + ".staging");
@@ -224,8 +226,10 @@ void install_container_backend(const std::string& recipe, const std::string& bac
     if (ec) {
         throw std::runtime_error("Failed to replace " + install_dir.string() + ": " + ec.message());
     }
-    if (!previous_image.empty() && previous_image != image) {
-        manager.remove_image(previous_image);
+    for (const auto& previous_image : previous_images) {
+        if (previous_image != image) {
+            manager.remove_image(previous_image);
+        }
     }
     LOG(INFO, "BackendManager") << "Installed " << recipe << ":" << backend << " as " << image
                                 << std::endl;
@@ -250,9 +254,9 @@ std::string container_registry_url(const std::string& image) {
 }
 
 void uninstall_container_backend(const std::string& recipe, const std::string& backend) {
-    const std::string image = backends::BackendUtils::get_installed_backend_image(recipe, backend);
-    if (!image.empty()) {
-        utils::ContainerManager::global().remove_image(image);
+    const auto& manager = utils::ContainerManager::global();
+    for (const auto& image : backends::BackendUtils::get_installed_backend_images(recipe, backend)) {
+        manager.remove_image(image);
     }
     const fs::path install_dir = container_version_file(recipe, backend).parent_path();
     std::error_code ec;
@@ -262,8 +266,19 @@ void uninstall_container_backend(const std::string& recipe, const std::string& b
     }
 }
 
-bool github_download_service_reachable() {
-    return utils::HttpClient::is_reachable("https://github.com/", 2);
+std::string latest_unavailable_on_modelscope(const std::string& repo) {
+    return "Cannot resolve 'latest' release for " + repo +
+           ": backend_source=modelscope mirrors only pinned versions. "
+           "Set the backend's *_bin to 'builtin' or a pinned version tag.";
+}
+
+bool backend_download_service_reachable() {
+    const std::string source = backends::BackendUtils::effective_backend_source();
+    const char* endpoint = std::getenv("MODELSCOPE_ENDPOINT");
+    // The ModelScope site root answers with a redirect.
+    return utils::HttpClient::is_reachable(
+        backend_source::reachability_probe_url(source, endpoint ? endpoint : ""), 2,
+        utils::HttpSecurityPolicy::ExternalHttpsOnly, /*accept_redirect=*/true);
 }
 
 bool has_matching_system_rocm_runtime(const fs::path& rocm_root, bool resolved_explicitly,
@@ -505,6 +520,13 @@ std::string BackendManager::get_version_from_config(const std::string& recipe, c
 
 std::string BackendManager::fetch_latest_github_tag(const std::string& repo,
                                                      bool throw_on_failure) {
+    if (backend_source::is_modelscope(backends::BackendUtils::effective_backend_source())) {
+        // "latest" needs the GitHub API, and a tag cached from it may not be mirrored.
+        if (throw_on_failure) {
+            throw std::runtime_error(latest_unavailable_on_modelscope(repo));
+        }
+        return "";
+    }
     {
         std::lock_guard<std::mutex> lock(latest_version_cache_mutex_);
         auto it = latest_version_cache_.find(repo);
@@ -529,7 +551,6 @@ std::string BackendManager::fetch_latest_github_tag(const std::string& repo,
         }
         return "";
     }
-
     // Include pre-releases to handle the new release scheme of llama.cpp
     const std::string url = "https://api.github.com/repos/" + repo + "/releases?per_page=1";
 
@@ -603,6 +624,18 @@ std::string BackendManager::resolve_user_version(const std::string& recipe,
     // to the binary already installed rather than refusing to load a model that
     // is otherwise ready. Only when nothing is installed do we surface an error.
     if (raw == "latest") {
+        if (backend_source::is_modelscope(backends::BackendUtils::effective_backend_source())) {
+            const std::string installed = read_version_file(
+                fs::path(backends::BackendUtils::get_install_directory(recipe, resolved_backend)) /
+                "version.txt");
+            if (installed.empty()) {
+                throw std::runtime_error(latest_unavailable_on_modelscope(repo));
+            }
+            LOG(WARNING, "BackendManager") << "backend_source=modelscope cannot resolve 'latest'; "
+                                           << "reusing installed " << recipe << ":" << resolved_backend
+                                           << " version " << installed << std::endl;
+            return installed;
+        }
         const bool offline = cfg->offline();
         // A non-throwing lookup so a transient GitHub failure becomes a fallback
         // rather than an exception. Skipped entirely when offline.
@@ -679,22 +712,25 @@ BackendManager::InstallParams BackendManager::get_install_params(const std::stri
     std::string release_version = final_params.version_override.empty()
                                       ? resolved_version
                                       : final_params.version_override;
-    return {final_params.repo, final_params.filename, release_version};
+    return {final_params.repo, final_params.filename, release_version, final_params.archive_subdir};
 }
 
 void BackendManager::install_backend(const std::string& recipe, const std::string& backend,
                                      bool force,
-                                     DownloadProgressCallback progress_cb) {
+                                     DownloadProgressCallback progress_cb,
+                                     std::atomic<bool>* cancel) {
     std::string resolved_backend = normalize_backend_name(recipe, backend);
     LOG(DEBUG, "BackendManager") << "Installing " << recipe << ":" << resolved_backend << std::endl;
 
     if (!progress_cb && download_manager_ && resolved_backend != "system") {
         const std::string name = recipe + ":" + resolved_backend;
         download_manager_->run_tracked("backend:" + name, "backend", name,
-            [this, recipe, resolved_backend, force](DownloadProgressCallback report,
-                                                    utils::CancelToken) {
-                install_backend(recipe, resolved_backend, force, report);
-            });
+            backend_source::carry_to_worker(
+                [this, recipe, resolved_backend, force](DownloadProgressCallback report,
+                                                        utils::CancelToken) {
+                    install_backend(recipe, resolved_backend, force, report);
+                }),
+            cancel);
         return;
     }
 
@@ -748,13 +784,13 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
         }
     }
 
-    if (!force && has_existing_backend && !github_download_service_reachable()) {
+    if (!force && has_existing_backend && !backend_download_service_reachable()) {
         // enter install_from_github() when GitHub is reachable, so available
         // backend updates are applied before the model starts. Only skip the
         // update path when the machine is effectively offline and a usable
         // backend binary is already present.
         LOG(WARNING, "BackendManager")
-            << "GitHub is not reachable; using installed " << recipe << ":"
+            << "The backend download service is not reachable; using installed " << recipe << ":"
             << resolved_backend << " backend at " << existing_backend_binary
             << " and deferring update" << std::endl;
         report_backend_ready(recipe, resolved_backend, progress_cb);
@@ -914,7 +950,8 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
 
     try {
         backends::BackendUtils::install_from_github(
-            *spec, params.version, params.repo, params.filename, resolved_backend, backend_progress_cb);
+            *spec, params.version, params.repo, params.filename, resolved_backend, backend_progress_cb,
+            params.archive_subdir);
         // install_from_github only returns after atomically swapping the new
         // backend into place; from here on the working install is the new one.
         backend_committed = true;

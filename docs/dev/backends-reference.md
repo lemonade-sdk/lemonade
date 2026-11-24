@@ -17,6 +17,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `kokoro` | Kokoro | no | no | cpu, metal |
 | `llamacpp` | Llama.cpp GPU | yes | yes | cpu, cuda, halobox, metal, nathanw, rocm, system, vulkan |
 | `llamacpp-hrx` | HRX GPU | no | yes | hrx |
+| `loom` | Loom | no | no | hrx |
 | `moonshine` | Moonshine | no | no | cpu |
 | `onnxruntime` | ONNX Runtime | no | no | cpu |
 | `openmoss` | OpenMOSS TTS | yes | no | cuda, vulkan |
@@ -44,6 +45,7 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `ds4` | rocm | guest | container | linux | amd_gpu (gfx1151) |
 | `flm` | npu | core | native | linux, windows | amd_npu (XDNA2) |
 | `gufo` | rocm | guest | container | linux | amd_gpu (gfx1151) |
+| `gufo` | rocm | guest | native | windows | amd_gpu (gfx1151) |
 | `halogen` | rocm | guest | container | linux | amd_gpu (gfx1151) |
 | `kokoro` | metal | core | native | macos | metal |
 | `kokoro` | cpu | core | native | linux, windows | cpu (x86_64) |
@@ -56,6 +58,7 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `llamacpp` | nathanw | guest | container | linux | amd_gpu (gfx1151) |
 | `llamacpp` | halobox | guest | container | linux | amd_gpu (gfx1151) |
 | `llamacpp-hrx` | hrx | experimental | native | linux | amd_gpu (gfx1100, gfx1151) |
+| `loom` | hrx | experimental | native | linux, windows | amd_gpu (gfx1151, gfx120X) |
 | `moonshine` | cpu | core | python | windows | cpu (x86_64) |
 | `moonshine` | cpu | core | python | linux | cpu (arm64, x86_64) |
 | `moonshine` | cpu | core | python | macos | cpu (arm64) |
@@ -107,6 +110,7 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|
+| `acestep_device` | `--acestep-device` | DEVICES | "" | GPU to use: ROCm0, CUDA1, ... or a GPU's uuid or pci_bus_id from system-info; auto selects automatically |
 | `acestep_backend` | `--acestep` | BACKEND | "" | ACE-Step backend to use |
 
 #### `ds4` — DwarfStar4
@@ -146,6 +150,12 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `ctx_size` | `--ctx-size` | SIZE | -1 | Context size for the model |
 | `hrx_args` | `--hrx-args` | ARGS | "" | Custom arguments to pass to the HRX llama-server |
 
+#### `loom` — Loom
+
+| Option | CLI flag | Type | Default | Description |
+|--------|----------|------|---------|-------------|
+| `loom_args` | `--loom-args` | ARGS | "" | Custom arguments to pass to loom-serve |
+
 #### `moonshine` — Moonshine
 
 | Option | CLI flag | Type | Default | Description |
@@ -162,6 +172,7 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|
+| `openmoss_device` | `--openmoss-device` | DEVICES | "" | GPU to use: CUDA0, CUDA1, ... or a GPU's uuid from system-info; auto selects automatically |
 | `openmoss_backend` | `--openmoss` | BACKEND | "" | OpenMOSS TTS backend to use |
 | `pcm_sample_rate` | — | SIZE | 0 | Sample rate of the PCM this model emits, reported as X-MOSS-Sample-Rate (0 omits the header) |
 | `pcm_channels` | — | SIZE | 0 | Channel count of the PCM this model emits, reported as X-MOSS-Channels (0 omits the header) |
@@ -178,6 +189,7 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|
 | `sd-cpp_backend` | `--sdcpp` | BACKEND | "" | SD.cpp backend to use |
+| `sd-cpp_device` | `--sdcpp-device` | DEVICES | "" | GPU to use: ROCm0, CUDA1, Vulkan0, ... or a GPU's uuid or pci_bus_id from system-info; empty selects automatically |
 | `sdcpp_args` | `--sdcpp-args` | ARGS | "" | Custom arguments to pass to sd-server (must not conflict with managed args) |
 | `steps` | — | SIZE | 20 | Number of diffusion steps |
 | `cfg_scale` | — | SIZE | 7.0 | Classifier-free guidance scale |
@@ -185,6 +197,8 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `height` | — | SIZE | 512 | Output image height |
 | `sampling_method` | — | ARGS | "" | Sampling method |
 | `flow_shift` | — | SIZE | 0.0 | Flow shift |
+| `video_frames` | — | SIZE | 33 | Number of video frames |
+| `fps` | — | SIZE | 16 | Video frames per second |
 | `soft_pixel_cap` | — | SIZE | 0 | Largest output area, in pixels, that images/edits infers from the first reference image when size is omitted (0 = server default) |
 
 #### `strata` — Strata
@@ -201,11 +215,15 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|
 | `thenoise_backend` | `--thenoise` | BACKEND | "" | TheNoise backend to use |
+| `thenoise_device` | `--thenoise-device` | DEVICES | "" | GPU to use: ROCm0, CUDA1, ... or a GPU's uuid or pci_bus_id from system-info; empty selects automatically |
 | `steps` | — | SIZE | 20 | Number of denoising steps |
 | `cfg_scale` | — | SIZE | 7.0 | CFG scale (<= 1.0 disables CFG) |
 | `width` | — | SIZE | 512 | Output image width |
 | `height` | — | SIZE | 512 | Output image height |
-| `sampler` | — | ARGS | "" | Denoising solver (euler \| er_sde) |
+| `sampler` | — | ARGS | "" | Denoising solver (e.g. euler, er_sde, unipc) |
+| `video_frames` | — | SIZE | 33 | Number of video frames |
+| `fps` | — | SIZE | 16 | Video frames per second |
+| `flow_shift` | — | SIZE | 0.0 | Video flow shift (0 = model default) |
 | `negative_prompt` | — | ARGS | "" | Negative prompt |
 | `qwen_vae_enhance` | — | BOOL | false | Nyquist notch post-filter (removes 2px grid artifacts) |
 | `film_grain` | — | SIZE | 0.0 | Film grain strength (0.0-10.0) |
@@ -217,12 +235,14 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|
+| `thinksound_device` | `--thinksound-device` | DEVICES | "" | GPU to use: ROCm0, CUDA1, ... or a GPU's uuid or pci_bus_id from system-info; auto selects automatically |
 | `thinksound_backend` | `--thinksound` | BACKEND | "" | ThinkSound backend to use |
 
 #### `trellis` — TRELLIS.2
 
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|
+| `trellis_device` | `--trellis-device` | DEVICES | "" | GPU to use: ROCm0, CUDA1, ... or a GPU's uuid or pci_bus_id from system-info; auto selects automatically |
 | `trellis_backend` | `--trellis` | BACKEND | "" | Trellis backend to use |
 | `trellis_args` | `--trellis-args` | ARGS | "" | Custom arguments to pass to trellis-server |
 

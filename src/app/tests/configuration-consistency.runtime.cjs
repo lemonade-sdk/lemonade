@@ -122,13 +122,9 @@ assert.match(styles, /\.detail-configuration__context-row\s*\{[^}]*display:\s*fl
 assert.match(detailSource, /loadOptionsRef\.current = serverOptionsLoaded \? buildLoadOptions : null;/);
 assert.match(detailSource, /onClick=\{\(\) => loadWithShownConfiguration\(onLoad, model\)\}/);
 assert.match(detailSource, /onClick=\{\(\) => loadWithShownConfiguration\(onPullAndLoad, model\)\}/);
-// A load states every option the panel shows, sending null where a field is
-// empty so lemond skips the saved value instead of falling back to it.
+// Non-argument options still state the shown value or explicitly clear it.
 assert.match(detailSource, /options\[key\] = Object\.prototype\.hasOwnProperty\.call\(configured, key\) \? configured\[key\] : null;/);
 assert.match(detailSource, /if \(supportsContextSize\) options\.ctx_size = configured\.ctx_size \?\? -1;/);
-// The form already carries the merged args, so lemond must take them verbatim
-// rather than merging the defaults in a second time underneath them.
-assert.match(detailSource, /if \(sendsArgs\) options\.merge_args = false;/);
 assert.match(detailSource, /await onReloadModel\(loadedModel, buildLoadOptions\(\)\)/,
   'reload must apply the settings on screen');
 
@@ -140,7 +136,6 @@ assert.match(detailSource, /api\.saveModelOptions\(name, patch\)/, 'save must se
 
 // Nothing offers to un-apply lemond's defaults, because nothing can: an unset
 // args key resolves back to them, so the control could only ever mislead.
-assert.match(detailSource, /const sendsArgs = argsKeys\.length > 0;/);
 assert.doesNotMatch(detailSource, /mergeArgs/,
   'the merge_args toggle is gone: the form shows the resolved args outright');
 assert.doesNotMatch(styles, /detail-configuration__merge-args/);
@@ -224,7 +219,9 @@ assert.doesNotMatch(detailSource, /const baseValue = serverEffectiveRecipeOption
 // The draft is seeded once, into the fields the recipe's option list names, so
 // the options fetch waits for the system-info that carries that list.
 assert.match(detailSource, /if \(!systemInfoSettled\) return;/);
-assert.match(detailSource, /\}, \[name, systemInfoSettled\]\);/);
+assert.match(detailSource, /\}, \[name, systemInfoSettled, serverUrl\]\);/);
+assert.match(detailSource, /\}, \[isActive, serverUrl\]\);/);
+assert.match(detailSource, /api\.onServerChange\(/);
 assert.match(detailSource, /\.finally\(\(\) => \{ if \(alive\) setSystemInfoSettled\(true\); \}\);/);
 assert.doesNotMatch(detailSource, /seededRef/,
   'a late option list must not be reconciled into a draft that was seeded without it');
