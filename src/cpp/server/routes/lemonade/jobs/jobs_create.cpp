@@ -12,6 +12,7 @@ using ordered_json = nlohmann::ordered_json;
 const RouteError kInvalidSteps{
     400, "", "The step graph is invalid, for example no steps, a duplicate step id or an unknown `op`"};
 const RouteError kJobLimit{429, "", "All 50 jobs in the store are still active or resumable"};
+const RouteError kShuttingDown{503, "", "The server is shutting down"};
 
 // StepRecord::from_json also reads the fields a stored job carries, such as `status`.
 json step_list_schema() {
@@ -53,7 +54,8 @@ public:
             "Creates a job: a sequence of server operations that runs in the background, passing "
             "data between steps and branching on results. A job survives client disconnects and "
             "server restarts (a restart leaves an active job interrupted), and can be paused, "
-            "interrupted, resumed, read and deleted.";
+            "interrupted, resumed, read and deleted. A `load` step supplying `*_args` or `merge_args` "
+            "requires [admin authorization](../guide/configuration/README.md#admin-api-key), including empty, `null` or referenced values.";
         s.notes = {
             "The job store holds 50 jobs: a new job evicts the oldest finished one.",
             "A job with any `load`, `unload` or `chat` step holds the Router's exclusive slot "
@@ -80,7 +82,8 @@ public:
             "steps": [{"id": "wait", "op": "sleep", "params": {"ms": 30000}}]
         })");
         s.examples = {example};
-        s.errors = {kBodyNotJson, kArgInvalid, kInvalidSteps, kJobLimit};
+        s.errors = {kBodyNotJson, kArgInvalid, kInvalidSteps, kJobLimit, kShuttingDown,
+                    kBackendArgsAdminRequired};
         s.request_format = RequestFormat::Json;
         return s;
     }
@@ -101,14 +104,21 @@ public:
             if (steps_json.is_array())
                 for (const auto& s : steps_json)
                     steps.push_back(lemon::jobs::StepRecord::from_json(s));
+            for (const auto& step : steps) {
+                if (step.op == "load" && !authorize_backend_args(req, res, step.params)) {
+                    return;
+                }
+            }
             lemon::jobs::json inputs =
                 body.contains(kInputs.name) ? body[kInputs.name] : lemon::jobs::json::object();
             const std::string id = ctx_.job_manager->create(name, std::move(steps), inputs);
             res.status = 202;
             res.set_content(lemon::jobs::json{{"id", id}}.dump(), "application/json");
         } catch (const lemon::jobs::JobError& e) {
-            write_plain_error(res, e.status == kJobLimit.status ? kJobLimit : kInvalidSteps,
-                              e.what());
+            const RouteError& error = e.status == kJobLimit.status       ? kJobLimit
+                                      : e.status == kShuttingDown.status ? kShuttingDown
+                                                                         : kInvalidSteps;
+            write_plain_error(res, error, e.what());
         }
     }
 };

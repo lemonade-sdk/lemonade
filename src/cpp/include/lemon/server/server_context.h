@@ -10,6 +10,7 @@ class HttpListener;
 class ModelJson;
 class ModelLoader;
 class ModelManager;
+class RequestMiddleware;
 class RouteRegistry;
 class Router;
 class RuntimeConfig;
@@ -35,6 +36,7 @@ struct ServerContext {
 
     HttpListener* listener = nullptr;
     RouteRegistry* registry = nullptr;
+    RequestMiddleware* middleware = nullptr;
     ConfigEffects* config_effects = nullptr;
     ModelLoader* model_loader = nullptr;
     ModelJson* model_json = nullptr;

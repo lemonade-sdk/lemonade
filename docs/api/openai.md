@@ -1212,10 +1212,36 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 ```json
 {
-  "created": 1791943145,
+  "created": 1795370112,
   "data": [
     {
-      "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAIAAAB7GkOtAAAEgnRFWHRwYXJhbWV0ZXJzAEEgc2VyZW5l... (886,104 characters)"
+      "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAIAAAB7GkOtAAACwnRFWHRwYXJhbWV0ZXJzAEEgc2VyZW5l... (838,928 characters)",
+      "generation_info": {
+        "clip_skip": 2,
+        "height": 512,
+        "kind": "image",
+        "models": {"model": "sd_turbo.safetensors"},
+        "negative_prompt": "",
+        "prompt": "A serene mountain landscape at sunset ",
+        "sample_params": {
+          "eta": 1.0,
+          "guidance": {"distilled_guidance": 3.5, "txt_cfg": 1.0},
+          "sample_method": "euler_a",
+          "sample_steps": 4,
+          "scheduler": "discrete"
+        },
+        "schema": "sdcpp.generation/v1",
+        "seed": "7262",
+        "vae_tiling_params": {
+          "enabled": true,
+          "rel_size_h": 0.0,
+          "rel_size_w": 0.0,
+          "target_overlap": 0.5,
+          "tile_size_h": 0,
+          "tile_size_w": 0
+        },
+        "width": 512
+      }
     }
   ],
   "output_format": "png"
@@ -1325,10 +1351,41 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 ```json
 {
-  "created": 1791943169,
+  "created": 1795370150,
   "data": [
     {
-      "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAIAAAB7GkOtAAAFR3RFWHRwYXJhbWV0ZXJzAEFkZCBhIHJl... (689,496 characters)"
+      "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAIAAAB7GkOtAAADYHRFWHRwYXJhbWV0ZXJzAEFkZCBhIHJl... (776,060 characters)",
+      "generation_info": {
+        "clip_skip": 0,
+        "height": 512,
+        "kind": "image",
+        "models": {
+          "diffusion_model": "flux-2-klein-4b.safetensors",
+          "llm": "qwen_3_4b.safetensors",
+          "vae": "flux2-vae.safetensors"
+        },
+        "negative_prompt": "",
+        "prompt": "Add a red barn and mountains in the background, photorealistic ",
+        "sample_params": {
+          "eta": 0.0,
+          "flow_shift": 1.0,
+          "guidance": {"distilled_guidance": 3.5, "txt_cfg": 1.0},
+          "sample_method": "euler",
+          "sample_steps": 4,
+          "scheduler": "flux2"
+        },
+        "schema": "sdcpp.generation/v1",
+        "seed": "7282",
+        "vae_tiling_params": {
+          "enabled": true,
+          "rel_size_h": 0.0,
+          "rel_size_w": 0.0,
+          "target_overlap": 0.5,
+          "tile_size_h": 0,
+          "tile_size_w": 0
+        },
+        "width": 512
+      }
     }
   ],
   "output_format": "png"
@@ -1429,10 +1486,41 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 ```json
 {
-  "created": 1791943188,
+  "created": 1795370167,
   "data": [
     {
-      "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAIAAAB7GkOtAAAE3XRFWHRwYXJhbWV0ZXJzAHZhcmlhdGlv... (204,076 characters)"
+      "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAIAAAB7GkOtAAAC9nRFWHRwYXJhbWV0ZXJzAHZhcmlhdGlv... (272,020 characters)",
+      "generation_info": {
+        "clip_skip": 0,
+        "height": 512,
+        "kind": "image",
+        "models": {
+          "diffusion_model": "flux-2-klein-4b.safetensors",
+          "llm": "qwen_3_4b.safetensors",
+          "vae": "flux2-vae.safetensors"
+        },
+        "negative_prompt": "",
+        "prompt": "variation ",
+        "sample_params": {
+          "eta": 0.0,
+          "flow_shift": 1.0,
+          "guidance": {"distilled_guidance": 3.5, "txt_cfg": 1.0},
+          "sample_method": "euler",
+          "sample_steps": 4,
+          "scheduler": "flux2"
+        },
+        "schema": "sdcpp.generation/v1",
+        "seed": "7403",
+        "vae_tiling_params": {
+          "enabled": true,
+          "rel_size_h": 0.0,
+          "rel_size_w": 0.0,
+          "target_overlap": 0.5,
+          "tile_size_h": 0,
+          "tile_size_w": 0
+        },
+        "width": 512
+      }
     }
   ],
   "output_format": "png"
@@ -1788,6 +1876,7 @@ labels that name different modes:
 | `audio-generation` | `/audio/generations` | Text-to-audio generation model (e.g. music, sound effects). |
 | `classification` | `/classify` | Text classification model. Also accepted as `classifier`. |
 | `3d` | `/3d/generations` | Text- or image-to-3D mesh generation model. |
+| `video` | `/videos` | Text-to-video generation model, run as an asynchronous job. |
 
 When a model declares no deployment label at all, it inherits its recipe's
 default: `chat` for `llamacpp`, `flm`, `ryzenai-llm`, `vllm` and `cloud`,
@@ -2110,7 +2199,7 @@ Per-architecture defaults are chosen by the architecture in the model's GGUF met
 ## `POST /v1/models/{id}/options`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Saves recipe options for a model without loading it. The body is a flat object of the recipe options [`/v1/load`](./lemonade.md#post-v1load) accepts.
+Saves recipe options for a model without loading it. The body is a flat object of the recipe options [`/v1/load`](./lemonade.md#post-v1load) accepts. Sending `*_args` or `merge_args` requires [admin authorization](../guide/configuration/README.md#admin-api-key), including empty or `null` values.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -2209,6 +2298,7 @@ A running model keeps its current options until it is next loaded.
 | `400` |  | The body sets `pinned`, which belongs to `/v1/load` and `/internal/pin` |
 | `400` |  | A field not listed above has the wrong JSON type |
 | `400` |  | `ctx_size` is not a positive whole number or `-1`, or a whole-number option has a fractional value |
+| `403` | `admin_required` | The request changes backend arguments or a collection manifest source without admin authorization |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `500` | `internal_error` | Reading or saving the model's options fails, for example on an unwritable options file |
@@ -2218,7 +2308,7 @@ A running model keeps its current options until it is next loaded.
 ## `DELETE /v1/models/{id}/options`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Resets a model to its defaults by erasing its `recipe_options.json` entry. Defaults from its registry entry and the server's configuration still apply.
+Resets a model to its defaults by erasing its `recipe_options.json` entry. Defaults from its registry entry and the server's configuration still apply. Clearing saved backend arguments requires [admin authorization](../guide/configuration/README.md#admin-api-key).
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -2294,6 +2384,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Status | Code | When |
 |--------|------|------|
+| `403` | `admin_required` | The request changes backend arguments or a collection manifest source without admin authorization |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `500` | `internal_error` | Reading or saving the model's options fails, for example on an unwritable options file |

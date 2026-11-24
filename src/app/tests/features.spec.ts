@@ -1814,7 +1814,9 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(panel.getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
     loadRequestBody = null;
     await page.getByRole('button', { name: `Load ${modelB}` }).click();
-    await expect.poll(() => loadRequestBody?.llamacpp_args).toBeNull();
+    await expect.poll(() => loadRequestBody?.model_name).toBe(modelB);
+    expect(loadRequestBody).not.toHaveProperty('llamacpp_args');
+    expect(loadRequestBody).not.toHaveProperty('merge_args');
   });
 
   test('25b — the form holds the resolved options and Load sends them verbatim', async ({ page }) => {
@@ -1991,7 +1993,10 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await freeformArgs.pressSequentially('2048');
     await expect(freeformArgs).toHaveValue('--spec-draft-n-max 3 -b 2048 -ub 1024');
 
-    await freeformArgs.press('End');
+    await freeformArgs.evaluate(element => {
+      const args = element as HTMLTextAreaElement;
+      args.setSelectionRange(args.value.length, args.value.length);
+    });
     await freeformArgs.press('Space');
     await expect(freeformArgs).toHaveValue('--spec-draft-n-max 3 -b 2048 -ub 1024 ');
 
@@ -2041,8 +2046,11 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(field('Top-k')).toHaveValue('20');
     await expect(panel.locator('.detail-configuration__args-fallback')).toHaveCount(0);
 
+    loadRequestBody = null;
     await page.getByRole('button', { name: `Load ${modelName}` }).click();
-    await expect.poll(() => loadRequestBody?.llamacpp_args).toBe(defaultArgs);
+    await expect.poll(() => loadRequestBody?.model_name).toBe(modelName);
+    expect(loadRequestBody).not.toHaveProperty('llamacpp_args');
+    expect(loadRequestBody).not.toHaveProperty('merge_args');
 
     // The axis says where the advised range ends, so a value outside it reads as
     // a choice rather than a surprise.
@@ -2415,6 +2423,9 @@ test.describe('Lemonade UI — Feature Parity', () => {
   });
 
   test('25j — a reload stays with its model when another model is selected mid-reload', async ({ page }) => {
+    await page.route('**/internal/config', route => route.request().method() === 'HEAD'
+      ? route.fulfill({ status: 200 })
+      : route.fallback());
     const reloadName = 'reloading-model';
     const otherName = 'bystander-model';
     let releaseLoads: (() => void) | null = null;

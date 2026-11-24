@@ -2111,6 +2111,172 @@
             "soft_pixel_cap": 2097152
         }
     },
+    "Wan2.1-T2V-1.3B": {
+        "checkpoints": {
+            "main": "Comfy-Org/Wan_2.1_ComfyUI_repackaged:split_files/diffusion_models/wan2.1_t2v_1.3B_fp16.safetensors",
+            "t5xxl": "city96/umt5-xxl-encoder-gguf:umt5-xxl-encoder-Q8_0.gguf",
+            "vae": "Comfy-Org/Wan_2.1_ComfyUI_repackaged:split_files/vae/wan_2.1_vae.safetensors"
+        },
+        "recipe": "sd-cpp",
+        "suggested": true,
+        "labels": [
+            "video"
+        ],
+        "size": 8.8,
+        "recipe_options": {
+            "steps": 20,
+            "cfg_scale": 6.0,
+            "width": 832,
+            "height": 480,
+            "sampling_method": "euler",
+            "flow_shift": 3.0,
+            "video_frames": 33,
+            "fps": 16
+        }
+    },
+    "Wan2.2-TI2V-5B-TheNoise": {
+        "checkpoints": {
+            "main": "Comfy-Org/Wan-2.2:split_files/diffusion_models/wan2.2_ti2v_5B_fp16.safetensors",
+            "text_encoder": "Comfy-Org/Wan-2.2:split_files/text_encoders/umt5_xxl_fp16.safetensors",
+            "vae": "Comfy-Org/Wan-2.2:split_files/vae/wan2.2_vae.safetensors"
+        },
+        "recipe": "thenoise",
+        "suggested": true,
+        "labels": [
+            "video"
+        ],
+        "size": 23.0,
+        "recipe_options": {
+            "steps": 12,
+            "cfg_scale": 5.0,
+            "width": 1280,
+            "height": 704,
+            "sampler": "unipc",
+            "flow_shift": 5.0,
+            "video_frames": 33,
+            "fps": 24
+        }
+    },
+    "Wan2.2-T2V-A14B-TheNoise": {
+        "checkpoints": {
+            "main": "Comfy-Org/Wan-2.2:split_files/diffusion_models/wan2.2_t2v_high_noise_14B_fp16.safetensors",
+            "dit_low": "Comfy-Org/Wan-2.2:split_files/diffusion_models/wan2.2_t2v_low_noise_14B_fp16.safetensors",
+            "text_encoder": "Comfy-Org/Wan-2.2:split_files/text_encoders/umt5_xxl_fp16.safetensors",
+            "vae": "Comfy-Org/Wan-2.2:split_files/vae/wan_2.1_vae.safetensors"
+        },
+        "recipe": "thenoise",
+        "suggested": true,
+        "labels": [
+            "video"
+        ],
+        "size": 68.0,
+        "recipe_options": {
+            "steps": 40,
+            "cfg_scale": 4.0,
+            "width": 832,
+            "height": 480,
+            "sampler": "euler",
+            "flow_shift": 12.0,
+            "video_frames": 33,
+            "fps": 16
+        }
+    },
+    "Wan2.2-TI2V-5B-Turbo-INT8-TheNoise": {
+        "checkpoints": {
+            "main": "thenoise-ai/diffusion-models:fastwan2.2_ti2v-5b_int8_convrot.safetensors",
+            "text_encoder": "thenoise-ai/diffusion-models:umt5_xxl_int8_convrot.safetensors",
+            "vae": "Comfy-Org/Wan-2.2:split_files/vae/wan2.2_vae.safetensors"
+        },
+        "recipe": "thenoise",
+        "suggested": true,
+        "labels": [
+            "video"
+        ],
+        "recipe_options": {
+            "steps": 4,
+            "cfg_scale": 1.0,
+            "width": 1280,
+            "height": 704,
+            "sampler": "unipc",
+            "flow_shift": 5.0,
+            "video_frames": 33,
+            "fps": 24
+        }
+    },
+    "Wan2.2-T2V-A14B-Turbo-INT8-TheNoise": {
+        "checkpoints": {
+            "main": "thenoise-ai/diffusion-models:wan2.2_t2v_high_noise_14B_4step_int8_convrot.safetensors",
+            "dit_low": "thenoise-ai/diffusion-models:wan2.2_t2v_low_noise_14B_4step_int8_convrot.safetensors",
+            "text_encoder": "thenoise-ai/diffusion-models:umt5_xxl_int8_convrot.safetensors",
+            "vae": "Comfy-Org/Wan-2.2:split_files/vae/wan_2.1_vae.safetensors"
+        },
+        "recipe": "thenoise",
+        "suggested": true,
+        "labels": [
+            "video"
+        ],
+        "recipe_options": {
+            "steps": 4,
+            "cfg_scale": 1.0,
+            "width": 832,
+            "height": 480,
+            "sampler": "euler",
+            "flow_shift": 5.0,
+            "video_frames": 33,
+            "fps": 16
+        }
+    },
+    "LTX-2.3-22B-Distilled-INT8-TheNoise": {
+        "checkpoints": {
+            "main": "milo01/ComfyUI-Native-INT8_ConvRot:checkpoints/ltx-2.3-22b-distilled-1.1-int8-ConvRot.safetensors",
+            "text_encoder": "Stick9190/gemma-3-12b-it-int8-convrot:gemma_3_12B_it_int8_convrot.safetensors",
+            "vae": "Kijai/LTX2.3_comfy:vae/LTX23_video_vae_bf16.safetensors",
+            "audio_vae": "Kijai/LTX2.3_comfy:vae/LTX23_audio_vae_bf16.safetensors",
+            "spatial_upscaler": "Lightricks/LTX-2.3:ltx-2.3-spatial-upscaler-x2-1.1.safetensors",
+            "text_projection": "Kijai/LTX2.3_comfy:text_encoders/ltx-2.3_text_projection_bf16.safetensors"
+        },
+        "recipe": "thenoise",
+        "suggested": true,
+        "labels": [
+            "video"
+        ],
+        "size": 42.7,
+        "recipe_options": {
+            "steps": 8,
+            "cfg_scale": 1.0,
+            "width": 768,
+            "height": 512,
+            "sampler": "euler",
+            "flow_shift": 1.0,
+            "video_frames": 33,
+            "fps": 24
+        }
+    },
+    "LTX-2.5-22B-Distilled-INT8-TheNoise": {
+        "checkpoints": {
+            "main": "comfyicu/LTX-2.5:diffusion_models/ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors",
+            "text_encoder": "comfyicu/LTX-2.5:text_encoders/gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors",
+            "vae": "comfyicu/LTX-2.5:vae/ltx-2.5-video-vae-conv-bf16.safetensors",
+            "audio_vae": "comfyicu/LTX-2.5:vae/ltx-2.5-audio-vae-bf16.safetensors",
+            "spatial_upscaler": "comfyicu/LTX-2.5:latent_upscale_models/ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors"
+        },
+        "recipe": "thenoise",
+        "suggested": true,
+        "labels": [
+            "video"
+        ],
+        "size": 39.7,
+        "recipe_options": {
+            "steps": 8,
+            "cfg_scale": 1.0,
+            "width": 768,
+            "height": 512,
+            "sampler": "euler",
+            "flow_shift": 1.0,
+            "video_frames": 33,
+            "fps": 24
+        }
+    },
     "LMX-Omni-52B-Halo": {
         "checkpoint": "lemonade-sdk/LMX-Omni-52B-Halo",
         "recipe": "collection.omni",
@@ -2396,7 +2562,8 @@
         "recipe": "thenoise",
         "suggested": true,
         "labels": [
-            "image"
+            "image",
+            "edit"
         ],
         "size": 35,
         "recipe_options": {
@@ -2415,7 +2582,8 @@
         },
         "labels": [
             "custom",
-            "image"
+            "image",
+            "edit"
         ],
         "recipe": "thenoise",
         "suggested": true,
@@ -2437,7 +2605,8 @@
         },
         "labels": [
             "custom",
-            "image"
+            "image",
+            "edit"
         ],
         "recipe": "thenoise",
         "suggested": true,
@@ -3095,6 +3264,17 @@
             "chat"
         ],
         "size": 1.1
+    },
+    "Inkling-2-Mini-Loom": {
+        "checkpoint": "loom-fun/unsloth-Inkling-2-Mini-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "tool-calling",
+            "reasoning"
+        ],
+        "size": 18.1
     },
     "Laguna-XS-2.1-Loom": {
         "checkpoint": "loom-fun/ggml-org-Laguna-XS-2.1-loom",

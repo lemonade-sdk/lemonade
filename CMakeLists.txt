@@ -2536,6 +2536,15 @@ if(BUILD_TESTING AND EXISTS "${_CUSTOM_ARGS_TEST_SRC}")
     add_cpp_ci_test(CustomArgsTest CI ON COMMAND test_custom_args)
 endif()
 
+if(BUILD_TESTING)
+    add_cpp_ci_test(BackendArgsAuthorizationTest CI ON
+        COMMAND ${Python3_EXECUTABLE}
+            "${CMAKE_CURRENT_SOURCE_DIR}/test/server_backend_args_auth.py"
+            --server-binary "$<TARGET_FILE:lemond>"
+        DEPENDS lemond
+    )
+endif()
+
 # Recipe custom-argument scope resolution.
 set(_RECIPE_ARG_RESOLVER_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_recipe_arg_resolution.cpp"
@@ -2835,6 +2844,22 @@ if(BUILD_TESTING AND EXISTS "${_JOB_EXPR_TEST_SRC}")
     target_link_libraries(test_job_expr PRIVATE nlohmann_json::nlohmann_json)
     include(CTest)
     add_cpp_ci_test(JobExprTest CI ON COMMAND test_job_expr)
+endif()
+
+# Where video clips are kept, and the file names allowed to reach the disk.
+set(_VIDEO_STORE_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_video_store.cpp")
+if(BUILD_TESTING AND EXISTS "${_VIDEO_STORE_TEST_SRC}")
+    add_executable(test_video_store test/cpp/test_video_store.cpp)
+    target_link_libraries(test_video_store PRIVATE lemonade-server-core)
+    add_cpp_ci_test(VideoStoreTest CI ON COMMAND test_video_store)
+endif()
+
+# A load that stops waiting for a shared backend install leaves the install running.
+set(_DOWNLOAD_WAIT_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_download_wait.cpp")
+if(BUILD_TESTING AND EXISTS "${_DOWNLOAD_WAIT_TEST_SRC}")
+    add_executable(test_download_wait test/cpp/test_download_wait.cpp)
+    target_link_libraries(test_download_wait PRIVATE lemonade-server-core)
+    add_cpp_ci_test(DownloadWaitTest CI ON COMMAND test_download_wait)
 endif()
 
 set(_JOB_GRAPH_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_job_graph.cpp")
@@ -4051,6 +4076,20 @@ if(BUILD_TESTING AND EXISTS "${_REQUEST_CANCELLATION_TEST_SRC}")
     add_executable(test_request_cancellation test/cpp/test_request_cancellation.cpp)
     target_link_libraries(test_request_cancellation PRIVATE lemonade-server-core)
     add_cpp_ci_test(RequestCancellationTest CI ON COMMAND test_request_cancellation)
+endif()
+
+set(_SDCPP_VIDEO_POLL_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_sdcpp_video_poll.cpp")
+if(BUILD_TESTING AND EXISTS "${_SDCPP_VIDEO_POLL_TEST_SRC}")
+    add_executable(test_sdcpp_video_poll test/cpp/test_sdcpp_video_poll.cpp)
+    target_link_libraries(test_sdcpp_video_poll PRIVATE lemonade-server-core)
+    add_cpp_ci_test(SdcppVideoPollTest CI ON COMMAND test_sdcpp_video_poll)
+endif()
+
+set(_THENOISE_VIDEO_POLL_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_thenoise_video_poll.cpp")
+if(BUILD_TESTING AND EXISTS "${_THENOISE_VIDEO_POLL_TEST_SRC}")
+    add_executable(test_thenoise_video_poll test/cpp/test_thenoise_video_poll.cpp)
+    target_link_libraries(test_thenoise_video_poll PRIVATE lemonade-server-core)
+    add_cpp_ci_test(TheNoiseVideoPollTest CI ON COMMAND test_thenoise_video_poll)
 endif()
 
 set(_STREAMING_HEARTBEAT_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_streaming_heartbeat.cpp")

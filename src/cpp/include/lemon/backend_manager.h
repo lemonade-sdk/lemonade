@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <mutex>
 #include <string>
 #include <functional>
@@ -21,9 +22,11 @@ public:
     void set_download_manager(DownloadManager* downloads) { download_manager_ = downloads; }
 
     // Core operations
+    // A set `cancel` stops waiting for a shared install without stopping the install.
     void install_backend(const std::string& recipe, const std::string& backend,
                          bool force = false,
-                         DownloadProgressCallback progress_cb = nullptr);
+                         DownloadProgressCallback progress_cb = nullptr,
+                         std::atomic<bool>* cancel = nullptr);
     void uninstall_backend(const std::string& recipe, const std::string& backend);
     static std::string canonical_backend_name(const std::string& recipe, const std::string& backend);
 

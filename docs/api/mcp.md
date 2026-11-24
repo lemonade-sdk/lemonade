@@ -263,6 +263,26 @@ Returns a result from lemonade_get_loaded_models, including structured content o
 
 This tool takes no arguments.
 
+### `lemonade_get_server_health`
+
+Return Lemonade server health and runtime limits using the same implementation as GET /api/v1/health.
+
+**Returns**
+
+Returns a result from lemonade_get_server_health, including structured content on success.
+
+**MCP annotations**
+
+```json
+{
+  "destructiveHint": false,
+  "openWorldHint": false,
+  "readOnlyHint": true
+}
+```
+
+This tool takes no arguments.
+
 ### `lemonade_pull_model`
 
 Download or register a model using the same implementation as POST /v1/pull. For a built-in/registered model, pass its exact model_name. For a custom remote model, pass a user.* model_name plus checkpoint and recipe. This call is synchronous and may take a long time for large model downloads.
@@ -311,6 +331,106 @@ Returns a result from lemonade_delete_model, including structured content on suc
 |---|:---:|---|---|
 | `confirm` | yes | `{"enum":[true],"type":"boolean"}` | Must be true to execute deletion. |
 | `model_name` | yes | `{"type":"string"}` | Exact existing model ID to delete. |
+
+### `lemonade_get_system_info`
+
+Return Lemonade hardware and recipe/backend capability information using the same implementation as GET /api/v1/system-info.
+
+**Returns**
+
+Returns a result from lemonade_get_system_info, including structured content on success.
+
+**MCP annotations**
+
+```json
+{
+  "destructiveHint": false,
+  "openWorldHint": false,
+  "readOnlyHint": true
+}
+```
+
+This tool takes no arguments.
+
+### `lemonade_list_backends`
+
+List Lemonade recipes/backends and their installation/support state. This is the backend-focused view of the canonical /api/v1/system-info data.
+
+**Returns**
+
+Returns a result from lemonade_list_backends, including structured content on success.
+
+**MCP annotations**
+
+```json
+{
+  "destructiveHint": false,
+  "openWorldHint": false,
+  "readOnlyHint": true
+}
+```
+
+This tool takes no arguments.
+
+### `lemonade_install_backend`
+
+Install or update one Lemonade recipe/backend through the same implementation as POST /api/v1/install. The MCP call is synchronous; use lemonade_list_backends first to inspect support and current state.
+
+**Returns**
+
+Returns a result from lemonade_install_backend, including structured content on success.
+
+**MCP annotations**
+
+```json
+{
+  "destructiveHint": true,
+  "openWorldHint": true,
+  "readOnlyHint": false
+}
+```
+
+| Argument | Required | Schema | Description |
+|---|:---:|---|---|
+| `backend` | yes | `{"pattern":"\\S","type":"string"}` | Argument backend for the lemonade_install_backend tool. |
+| `force` | no | `{"type":"boolean"}` | Override an unsupported-state guard when the underlying API permits it. |
+| `recipe` | yes | `{"pattern":"\\S","type":"string"}` | Argument recipe for the lemonade_install_backend tool. |
+
+### `lemonade_generate_audio`
+
+Generate music or a sound effect with a Lemonade audio-generation model using the same server generation path as POST /api/v1/audio/generations. When model is omitted, reuse a loaded/downloaded audio-generation model.
+
+**Returns**
+
+Returns a result from lemonade_generate_audio, including structured content on success.
+
+| Argument | Required | Schema | Description |
+|---|:---:|---|---|
+| `cfg` | no | `{"type":"number"}` | Argument cfg for the lemonade_generate_audio tool. |
+| `duration` | no | `{"type":"number"}` | Argument duration for the lemonade_generate_audio tool. |
+| `lyrics` | no | `{"type":"string"}` | Argument lyrics for the lemonade_generate_audio tool. |
+| `model` | no | `{"type":"string"}` | Argument model for the lemonade_generate_audio tool. |
+| `prompt` | yes | `{"type":"string"}` | Argument prompt for the lemonade_generate_audio tool. |
+| `response_format` | no | `{"type":"string"}` | Argument response_format for the lemonade_generate_audio tool. |
+| `seed` | no | `{"type":"integer"}` | Argument seed for the lemonade_generate_audio tool. |
+| `steps` | no | `{"minimum":1,"type":"integer"}` | Argument steps for the lemonade_generate_audio tool. |
+| `vocal_language` | no | `{"type":"string"}` | Argument vocal_language for the lemonade_generate_audio tool. |
+
+### `lemonade_text_to_speech`
+
+Convert text to speech using the same server generation path as POST /api/v1/audio/speech. When model is omitted, reuse a loaded/downloaded TTS model.
+
+**Returns**
+
+Returns a result from lemonade_text_to_speech, including structured content on success.
+
+| Argument | Required | Schema | Description |
+|---|:---:|---|---|
+| `input` | yes | `{"type":"string"}` | Argument input for the lemonade_text_to_speech tool. |
+| `model` | no | `{"type":"string"}` | Argument model for the lemonade_text_to_speech tool. |
+| `response_format` | no | `{"type":"string"}` | Argument response_format for the lemonade_text_to_speech tool. |
+| `speed` | no | `{"type":"number"}` | Argument speed for the lemonade_text_to_speech tool. |
+| `voice` | no | `{"type":"string"}` | Argument voice for the lemonade_text_to_speech tool. |
 
 ### `lemonade_list_models`
 
@@ -473,6 +593,14 @@ tools reuse Lemonade's existing server implementations:
 | Load / unload | `lemonade_load_model`, `lemonade_unload_model` |
 | Pull / delete | `lemonade_pull_model`, `lemonade_delete_model` |
 | Model residency | `lemonade_get_loaded_models` |
+| Health | `lemonade_get_server_health` |
+| Hardware / backends | `lemonade_get_system_info`, `lemonade_list_backends` |
+| Backend installation | `lemonade_install_backend` |
+| Audio generation / TTS | `lemonade_generate_audio`, `lemonade_text_to_speech` |
+
+Binary audio tool results return the resolved `model`, `mime_type`, and `data_base64`
+in `structuredContent`. For `audio/pcm`, OpenMOSS's `sample_rate` and `channels`
+are included when the backend supplies them.
 
 Lifecycle actions can change local model state and consume resources.
 MCP annotations and `confirm: true` for model deletion help clients

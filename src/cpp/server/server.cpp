@@ -171,6 +171,7 @@ void register_lemonade_inference_routes(RouteRegistry& registry, ServerContext& 
 void register_lemonade_backends_routes(RouteRegistry& registry, ServerContext& ctx);
 void register_lemonade_system_routes(RouteRegistry& registry, ServerContext& ctx);
 void register_lemonade_jobs_routes(RouteRegistry& registry, ServerContext& ctx);
+void register_lemonade_videos_routes(RouteRegistry& registry, ServerContext& ctx);
 void register_llamacpp_routes(RouteRegistry& registry, ServerContext& ctx);
 void register_router_routes(RouteRegistry& registry, ServerContext& ctx);
 void register_internal_routes(RouteRegistry& registry, ServerContext& ctx);
@@ -281,6 +282,7 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
     register_lemonade_backends_routes(*registry_, ctx_);
     register_lemonade_system_routes(*registry_, ctx_);
     register_lemonade_jobs_routes(*registry_, ctx_);
+    register_lemonade_videos_routes(*registry_, ctx_);
     register_llamacpp_routes(*registry_, ctx_);
     register_router_routes(*registry_, ctx_);
     register_internal_routes(*registry_, ctx_);
@@ -289,6 +291,7 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
     register_mcp_routes(*registry_, ctx_);
 
     middleware_ = std::make_unique<RequestMiddleware>(config_.get(), registry_.get());
+    ctx_.middleware = middleware_.get();
     web_ui_ = std::make_unique<WebUi>(ctx_);
     listener_ = std::make_unique<HttpListener>(
         config_.get(), router_.get(),
@@ -386,6 +389,7 @@ void Server::stop() {
     std::lock_guard<std::mutex> lock(stop_mutex_);
     model_source_monitor_->stop();
     if (listener_->stop()) {
+        job_manager_->shutdown();
         LOG(INFO, "Server") << "Unloading models and stopping backend servers..." << std::endl;
         try {
             router_->unload_model();

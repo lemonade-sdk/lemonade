@@ -1774,7 +1774,7 @@ jobs:
     name: Container smoke test - ${{ matrix.tool }} (${{ matrix.mode }})
     runs-on: ubuntu-24.04
     needs: build-lemonade-deb
-    timeout-minutes: 45
+    timeout-minutes: 75
     strategy:
       fail-fast: false
       matrix:
@@ -1853,7 +1853,7 @@ jobs:
       inputs.enable_signing != true &&
       inputs.disable_macos_signing != true &&
       (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:backends'))
-    timeout-minutes: 15
+    timeout-minutes: 30
     container:
       image: ghcr.io/lemonade-sdk/lemonade/build-environment:ubuntu24.04
       credentials:
@@ -2220,7 +2220,7 @@ jobs:
     # run where merges are gated.
     # Label a PR `ci:macos` to opt it back in.
     if: ${{ !startsWith(github.ref, 'refs/tags/') && inputs.enable_signing != true && (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:macos')) }}
-    timeout-minutes: 45
+    timeout-minutes: 75
     env:
       LEMONADE_CI_MODE: "True"
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
@@ -2422,6 +2422,13 @@ jobs:
           .venv/bin/python -m test.utils.reset_server_state --best-effort --label "ubuntu router"
           .venv/bin/python test/server_router.py --cli-binary lemonade
 
+      - name: Test routing telemetry
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        shell: bash
+        run: |
+          .venv/bin/python -m test.utils.reset_server_state --best-effort --label "ubuntu routing-telemetry"
+          .venv/bin/python -m unittest -v test.server_telemetry.RoutingTelemetryTests
+
       # The full smoke test can be added to a different GPU equipped pipeline
       # as well if needed, but it would significantly add to the pipeline runtime.
       - name: Test mcp
@@ -2468,6 +2475,8 @@ jobs:
         run: |
           .venv/bin/python -m test.utils.reset_server_state --best-effort --label "ubuntu jobs"
           .venv/bin/python test/server_jobs.py --lemond-binary lemond
+          # Videos are jobs too; only the tests that need no video model or GPU run here.
+          LEMONADE_VIDEO_GPU_FREE_ONLY=1 .venv/bin/python test/server_video.py --cli-binary lemonade
 
       - name: Test eviction
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
@@ -2590,7 +2599,7 @@ jobs:
     name: Test CLI/Endpoints (windows-latest)
     runs-on: windows-latest
     needs: build-lemonade-server-installer
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
       LEMONADE_CI_MODE: "True"
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
@@ -2721,7 +2730,7 @@ jobs:
     if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:macos')
     runs-on: macos-latest
     needs: build-lemonade-macos-dmg
-    timeout-minutes: 60
+    timeout-minutes: 75
     env:
       LEMONADE_CI_MODE: "True"
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
