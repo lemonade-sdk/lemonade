@@ -144,9 +144,14 @@ lemon::json request() {
 void test_a_few_failed_polls_are_tolerated() {
     FakeBackend backend(2);
     FakeSdServer sd(backend.port);
-    const lemon::json result = sd.video_generations(request());
+    auto req = request();
+    req["image"] = "aW1hZ2U=";
+    const lemon::json result = sd.video_generations(req);
     check("failed polls: two in a row do not fail the video", !result.contains("error"));
     check("failed polls: the clip still comes back", result.value("b64_json", "") == "AAAA");
+    std::lock_guard<std::mutex> lock(backend.body_mutex);
+    check("image conditioning: start image maps to init_image",
+          lemon::json::parse(backend.last_body).value("init_image", "") == "aW1hZ2U=");
 }
 
 void test_persistent_failed_polls_give_up() {

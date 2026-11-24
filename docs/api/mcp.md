@@ -520,6 +520,87 @@ Without `output_path` or `output_dir`, success returns one native MCP `image` co
 | `size` | no | `{"type":"string"}` | Requested image size as WIDTHxHEIGHT, for example 512x512. |
 | `steps` | no | `{"type":"integer"}` | Number of diffusion sampling steps. |
 
+### `lemonade_generate_video`
+
+Start a video generation job from text, an image, or both. Choose an exact video model from lemonade_list_models; image conditioning requires a video model with the image-to-video label. An explicitly selected model may be downloaded on first use. Returns immediately; poll lemonade_get_video with the returned id instead of resubmitting.
+
+**Returns**
+
+Success returns structuredContent with id, status, model and creation metadata; the video is generated asynchronously.
+
+**MCP annotations**
+
+```json
+{
+  "destructiveHint": false,
+  "openWorldHint": true,
+  "readOnlyHint": false
+}
+```
+
+| Argument | Required | Schema | Description |
+|---|:---:|---|---|
+| `cfg_scale` | no | `{"type":"number"}` | Classifier-free guidance scale. |
+| `duration` | no | `{"minimum":0,"type":"number"}` | Approximate clip duration in seconds. video_frames takes precedence. |
+| `flow_shift` | no | `{"type":"number"}` | Flow shift for compatible models. |
+| `fps` | no | `{"minimum":1,"type":"integer"}` | Frames per second. |
+| `height` | no | `{"minimum":1,"type":"integer"}` | Output height in pixels. |
+| `image` | no | `{"type":"string"}` | Optional start image as raw base64 (no data URL; maximum 8 MiB encoded). |
+| `image_path` | no | `{"type":"string"}` | Optional start image file inside the MCP image sandbox (relative or absolute). Mutually exclusive with image. |
+| `model` | yes | `{"type":"string"}` | Exact video model ID. |
+| `negative_prompt` | no | `{"type":"string"}` | Text describing what to avoid. |
+| `output_format` | no | `{"enum":["webm","webp","avi","mp4"],"type":"string"}` | Container: webm (default), webp or avi (SD.cpp), or mp4 (TheNoise). |
+| `prompt` | no | `{"type":"string"}` | Text describing the video or motion. Required without an image; image-only requests default to Animate the image. |
+| `sampling_method` | no | `{"type":"string"}` | Sampler name, such as euler. |
+| `seed` | no | `{"type":"integer"}` | Random seed for reproducibility. |
+| `steps` | no | `{"minimum":1,"type":"integer"}` | Number of sampling steps. |
+| `video_frames` | no | `{"minimum":1,"type":"integer"}` | Number of frames to generate. |
+| `width` | no | `{"minimum":1,"type":"integer"}` | Output width in pixels. |
+
+### `lemonade_get_video`
+
+Get a video job's current status. Poll the id from lemonade_generate_video until completed, failed or canceled. On completion, use content_path to download the clip from the same Lemonade server, or file_path when sharing the server filesystem.
+
+**Returns**
+
+Returns structuredContent with video status and metadata. Completed jobs include content_path and, if the stored clip exists, the server-local file_path. No video bytes are returned inline.
+
+**MCP annotations**
+
+```json
+{
+  "destructiveHint": false,
+  "openWorldHint": false,
+  "readOnlyHint": true
+}
+```
+
+| Argument | Required | Schema | Description |
+|---|:---:|---|---|
+| `id` | yes | `{"type":"string"}` | Video job ID returned by lemonade_generate_video. |
+
+### `lemonade_cancel_video`
+
+Cancel a queued or running video job using the existing video job cancellation mechanism.
+
+**Returns**
+
+Returns structuredContent with status canceling on success. Poll lemonade_get_video for the final status.
+
+**MCP annotations**
+
+```json
+{
+  "destructiveHint": true,
+  "openWorldHint": false,
+  "readOnlyHint": false
+}
+```
+
+| Argument | Required | Schema | Description |
+|---|:---:|---|---|
+| `id` | yes | `{"type":"string"}` | Video job ID returned by lemonade_generate_video. |
+
 ### `lemonade_omni`
 
 Multimodal turn against a Lemonade Omni collection (one tool call -&gt; text + images + speech in the same response). The server runs an internal tool-calling loop against the collection's planner LLM and executes its image / image-edit / TTS tools by routing to the bundled component models; the result comes back as a text block plus native MCP `image` / `audio` content blocks (one per artifact). `model` is OPTIONAL: when omitted, the server reuses an already-downloaded Omni collection; if none is downloaded it asks you to pass a `model` or `allow_download: true` (which downloads the default, `LMX-Omni-5.5B-Lite`). Pass `model='LMX-Omni-52B-Halo'` (or any other recipe='collection.omni' model from `lemonade_list_models`) to opt into a larger collection; that model may be multi-GB. Same-machine deployment: PREFER `output_dir` to write artifacts to disk and avoid expensive inline base64 blobs. For plain text chat against a regular LLM, use `lemonade_chat` instead.

@@ -143,9 +143,10 @@ void test_success() {
         result.value("fps", 0.0) == 24 && result.value("mime_type", "") == "video/mp4");
     check("binary content is preserved", lemon::utils::JsonUtils::base64_decode(result.value("b64_json", "")) == clip_bytes);
 
-    const auto next = model.video_generations({{"prompt", "another cat"}, {"duration", 2.0}});
-    check("duration forwarded, no image defaults", backend.body() == json({{"prompt", "another cat"},
-        {"duration", 2.0}, {"output_format", "webm"}}));
+    const auto next = model.video_generations({{"prompt", "another cat"}, {"duration", 2.0},
+        {"image", "aW1hZ2U="}});
+    check("duration and start image forwarded, no image defaults", backend.body() == json({{"prompt", "another cat"},
+        {"duration", 2.0}, {"image", "aW1hZ2U="}, {"output_format", "webm"}}));
     check("WebM content", next.value("mime_type", "") == "video/webm");
 
     model.options({{"video_frames", 65}, {"fps", 16}, {"width", 832}, {"height", 480},

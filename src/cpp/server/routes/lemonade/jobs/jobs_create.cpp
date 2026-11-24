@@ -1,7 +1,9 @@
 #include <vector>
 
+#include "../videos/video_shared.h"
 #include "lemon/jobs/job_manager.h"
 #include "lemon/server/api_route.h"
+#include "lemon/server/video_store.h"
 
 namespace lemon {
 namespace {
@@ -107,6 +109,31 @@ public:
             for (const auto& step : steps) {
                 if (step.op == "load" && !authorize_backend_args(req, res, step.params)) {
                     return;
+                }
+            }
+            video_store::StagedImages staged;
+            bool pruned = false;
+            for (auto& step : steps) {
+                if (step.op != "generate_video") continue;
+                if (step.params.contains("image_file"))
+                    throw lemon::jobs::JobError(400, "'image_file' is reserved for the server");
+                if (!pruned) {
+                    prune_video_files(ctx_);
+                    pruned = true;
+                }
+                const auto image = step.params.find("image");
+                if (image == step.params.end() || image->is_null()) continue;
+                if (!image->is_string())
+                    throw lemon::jobs::JobError(400, "'image' must be a base64 string");
+                // Expressions are resolved by the job engine at execution time.
+                const auto& encoded = image->get_ref<const std::string&>();
+                if (encoded.find("${") != std::string::npos) continue;
+                try {
+                    const auto file = staged.stage(encoded);
+                    step.params.erase("image");
+                    step.params["image_file"] = file;
+                } catch (const std::invalid_argument& e) {
+                    throw lemon::jobs::JobError(400, e.what());
                 }
             }
             lemon::jobs::json inputs =

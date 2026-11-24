@@ -23,7 +23,7 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `POST` | [`/v1/unload`](#post-v1unload) | Unload a model |
 | `POST` | [`/v1/audio/generations`](#post-v1audiogenerations) | Generate audio (music or sound effects) from a text prompt |
 | `POST` | [`/v1/3d/generations`](#post-v13dgenerations) | Generate a textured 3D mesh from an image |
-| `POST` | [`/v1/videos`](#post-v1videos) | Generate a video from a text prompt |
+| `POST` | [`/v1/videos`](#post-v1videos) | Generate a video from text or an image |
 | `GET` | [`/v1/videos/{id}`](#get-v1videosid) | Read a video's status |
 | `GET` | [`/v1/videos/{id}/content`](#get-v1videosidcontent) | Download a generated video |
 | `POST` | [`/v1/videos/{id}/cancel`](#post-v1videosidcancel) | Cancel a video |
@@ -1518,7 +1518,7 @@ Errors carry a JSON `error` object.
 ## `POST /v1/videos`
 <sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
 
-Starts generating a video from a text prompt and returns a handle at once. Generation runs for minutes, so it is a job rather than a held connection: poll [`GET /v1/videos/{id}`](#get-v1videosid), then fetch the clip from [`GET /v1/videos/{id}/content`](#get-v1videosidcontent). It serves [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) and [TheNoise](https://github.com/lemonade-sdk/thenoise) video models and is a Lemonade extension.
+Starts generating a video from a text prompt or optional start image and returns a handle at once. Generation runs for minutes, so it is a job rather than a held connection: poll [`GET /v1/videos/{id}`](#get-v1videosid), then fetch the clip from [`GET /v1/videos/{id}/content`](#get-v1videosidcontent). It serves [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) and [TheNoise](https://github.com/lemonade-sdk/thenoise) video models and is a Lemonade extension.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -1526,9 +1526,10 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `prompt` | Yes | The text description of the video to generate. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `prompt` | No | Text describing the video. Required without an image; image-only requests use the default prompt: Animate the image. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `model` | Yes | The model to run; loaded on first use. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `negative_prompt` | No | Text describing what to avoid. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `image` | No | Optional start image as raw base64 (no data URL, maximum 8 MiB encoded); requires a video model with the `image-to-video` label. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `duration` | No | Length of the clip in seconds. Approximate: it is converted to frames at `fps` and rounded to the nearest count the model takes, which is 4n+1 for Wan. `video_frames` wins when both are given. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `video_frames` | No | Number of frames to generate. Defaults to the model's `video_frames` recipe option, else the backend default. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `fps` | No | Frames per second of the returned clip. Defaults to the model's `fps` recipe option, else the backend default. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -1543,7 +1544,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 The model loads when the job starts, not during this request.
 
-The clip is kept on disk under the cache directory. Generating another video deletes the clips of deleted or evicted jobs.
+Input images and clips are kept on disk under the cache directory. Generating another video removes files of deleted or evicted jobs.
 
 stable-diffusion.cpp generates a single frame when no frame count is given, and video models need a few dozen frames before they animate rather than drift, so Lemonade sends 33 by default.
 

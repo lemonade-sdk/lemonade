@@ -151,6 +151,51 @@ static void test_reservation_of_deleted_job_is_released() {
     check("orphan: the clip of a deleted job is removed", !fs::exists(store::dir() / clip));
 }
 
+static void test_staged_images() {
+    using nlohmann::json;
+    // Large images survive staging, publication and resume without making
+    // persisted job parameters large.
+    const std::string encoded(7 * 1024 * 1024, 'A');
+    std::string file;
+    json params;
+    {
+        store::StagedImages staged;
+        file = staged.stage(encoded);
+        sweep({});
+        check("input: staging survives a sweep before the job exists", fs::exists(store::dir() / file));
+        params = {{"image_file", file}};
+        check("input: job parameters stay small", params.dump().size() < 128);
+        std::string clip;
+        check("input: image names cannot be read as clips", !store::read(file, clip));
+    }
+    sweep({file}, {"job-image"});
+    check("input: published image survives cleanup", fs::exists(store::dir() / file));
+    auto request = params;
+    check("input: restores the exact image for execution or resume",
+          store::restore_image(request).empty() && !request.contains("image_file") &&
+              request.value("image", std::string()) == encoded);
+    check("input: persisted params are still compact", params.dump().size() < 128);
+
+    for (const json& bad : {json{{"image_file", "../secret"}}, json{{"image_file", 1}},
+                            json{{"image_file", store::new_file_name()}},
+                            json{{"image_file", file}, {"image", "AAAA"}}}) {
+        auto copy = bad;
+        check("input: rejects invalid or conflicting references", !store::restore_image(copy).empty());
+    }
+    sweep({});
+    check("input: unreferenced image is removed", !fs::exists(store::dir() / file));
+    check("input: missing image fails rather than becoming text-to-video",
+          !store::restore_image(params).empty());
+
+    std::string abandoned;
+    {
+        store::StagedImages staged;
+        abandoned = staged.stage("AAAA");
+    }
+    sweep({});
+    check("input: abandoned staging is cleaned up", !fs::exists(store::dir() / abandoned));
+}
+
 static void test_normalize_request() {
     using nlohmann::json;
     json request = {{"video_frames", 9.0}, {"fps", 8.0}, {"steps", 20}, {"seed", -1.0}, {"duration", 1.5}};
@@ -187,6 +232,23 @@ static void test_normalize_request() {
 
     json absent = {{"prompt", "a cat"}, {"video_frames", nullptr}};
     check("numbers: absent and null fields are left alone", store::normalize_request(absent).empty());
+
+    json image = {{"image", "aW1hZ2U="}};
+    check("image: valid base64 accepted", store::normalize_request(image).empty());
+    check("image: image-only gets a non-empty prompt", image["prompt"] == "Animate the image.");
+    json image_prompt = {{"image", "AAAA"}, {"prompt", "a cat walking"}};
+    check("image: explicit prompt is preserved",
+          store::normalize_request(image_prompt).empty() && image_prompt["prompt"] == "a cat walking");
+    json data_url = {{"image", "data:image/png;base64,AAAA"}};
+    check("image: data URL error is explicit",
+          store::normalize_request(data_url).find("data URLs are not accepted") != std::string::npos);
+    for (const json& bad : {json(""), json("invalid!"), json("a==="), json("AAAA=AAA"),
+                            json("../secret"), json(12),
+                            json(std::string(store::kMaxImageBase64Bytes + 4, 'A'))}) {
+        json request_with_image = {{"image", bad}};
+        check("image: invalid or oversized input rejected",
+              !store::normalize_request(request_with_image).empty());
+    }
 }
 
 static void test_is_video_job() {
@@ -230,6 +292,7 @@ int main() {
     test_reservations();
     test_stale_snapshot_cannot_delete();
     test_reservation_of_deleted_job_is_released();
+    test_staged_images();
     test_normalize_request();
     test_is_video_job();
     test_video_status();

@@ -230,9 +230,14 @@ lemon::jobs::OpProviders JobOps::build(ServerContext& ctx) {
                                                                lemon::jobs::CancelFlag& cancel)
         -> lemon::jobs::json {
         nlohmann::json request = nlohmann::json::parse(params.dump());
+        if (const std::string error = video_store::restore_image(request); !error.empty())
+            throw lemon::jobs::JobError(400, error);
         if (const std::string error = video_store::normalize_request(request); !error.empty())
             throw lemon::jobs::JobError(400, error);
         const std::string model = request.value("model", std::string());
+        const bool has_image = request.contains("image") && !request["image"].is_null();
+        if (has_image && model.empty())
+            throw lemon::jobs::JobError(400, "image-to-video requires an explicit model");
         // clip_file comes from the job's params, which a generic job can leave out or fill
         // with another video's name, so the op always writes to a name it reserved itself.
         const std::string file =
@@ -261,6 +266,11 @@ lemon::jobs::OpProviders JobOps::build(ServerContext& ctx) {
             }
             if (info && get_model_type_from_labels(info->labels) != ModelType::VIDEO)
                 throw lemon::jobs::JobError(400, "model '" + model + "' is not a video model");
+            // Check again at execution time: generic jobs and model registry changes
+            // between submission and execution must not silently drop the image.
+            if (has_image && (!info || !has_label(info->labels, "image-to-video")))
+                throw lemon::jobs::JobError(400,
+                    "model '" + model + "' must be an available video model with the image-to-video label");
             const bool was_loaded = router->is_model_loaded(model);
             model_loader->ensure_loaded(
                 model, ModelLoader::load_options(request.value("ctx_size", nlohmann::json())),

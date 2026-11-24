@@ -277,6 +277,50 @@ class VideoGenerationTests(ServerTestBase):
         finally:
             requests.delete(f"{self.base_url}/jobs/{hold_id}", timeout=TIMEOUT_DEFAULT)
 
+    def test_009_image_rejection_without_inference(self):
+        image = base64.b64encode(TINY_PNG).decode("ascii")
+        for extra, error in (
+            ({"image": image}, "image-to-video"),
+            ({"image": "data:image/png;base64," + image}, "data URLs are not accepted"),
+            ({"image_file": "injected"}, "reserved for the server"),
+        ):
+            response = requests.post(
+                f"{self.base_url}/videos",
+                json={"model": "Wan2.1-T2V-1.3B", "prompt": "a cat", **extra},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 400, response.text[:300])
+            self.assertIn(error, response.text)
+
+    def test_009b_generic_video_job_stores_image_reference(self):
+        image = base64.b64encode(TINY_PNG).decode("ascii")
+        params = {"model": "user.does-not-exist", "image": image}
+        body = {"steps": [{"id": "video", "op": "generate_video", "params": params}]}
+        response = requests.post(
+            f"{self.base_url}/jobs", json=body, timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(response.status_code, 202, response.text[:300])
+        job_id = response.json()["id"]
+        try:
+            record = requests.get(
+                f"{self.base_url}/jobs/{job_id}", timeout=TIMEOUT_DEFAULT
+            ).json()
+            stored = record["steps"][0]["params"]
+            self.assertNotIn("image", stored)
+            self.assertRegex(stored["image_file"], r"^video-[0-9a-f]{32}\.image\.b64$")
+            result = self._wait(job_id, timeout=TIMEOUT_MODEL_OPERATION)
+            self.assertEqual(result["status"], "failed", result)
+            self.assertIn("image-to-video", result["error"])
+            self.assertNotIn(image, str(record))
+        finally:
+            requests.delete(f"{self.base_url}/jobs/{job_id}", timeout=TIMEOUT_DEFAULT)
+
+        params["image_file"] = "injected"
+        rejected = requests.post(
+            f"{self.base_url}/jobs", json=body, timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(rejected.status_code, 400, rejected.text[:300])
+
     # --- generation ---
 
     @needs_video_model

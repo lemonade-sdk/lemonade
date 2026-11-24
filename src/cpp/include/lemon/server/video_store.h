@@ -1,18 +1,19 @@
 #pragma once
 
+#include <cstddef>
 #include <filesystem>
 #include <functional>
 #include <set>
 #include <string>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
 namespace lemon {
 namespace video_store {
 
-// Encoded clips live here rather than in the job record: the job store is rewritten on
-// every state change of every job, so a few clips in it made each transition copy
-// hundreds of megabytes.
+// Clips and input images live here rather than in the job record: the job store
+// is rewritten on every state change of every job.
 std::filesystem::path dir();
 
 std::string new_file_name();
@@ -37,14 +38,32 @@ std::string reserve_file_name(const std::string& preferred, const std::string& j
 // Drops a reservation whose clip was never written, such as after a failed generation.
 void release(const std::string& name);
 
+// Keeps input files reserved until the job that names them has been created.
+// On scope exit, unreferenced files become eligible for the next sweep.
+class StagedImages {
+public:
+    StagedImages() = default;
+    ~StagedImages();
+    StagedImages(const StagedImages&) = delete;
+    StagedImages& operator=(const StagedImages&) = delete;
+    std::string stage(const std::string& base64);
+
+private:
+    std::vector<std::string> names_;
+};
+
+// Rehydrates a server-owned image_file into the backend's raw base64 image field.
+// Missing, invalid, oversized or conflicting references return an error.
+std::string restore_image(nlohmann::json& request);
+
 struct CleanupSnapshot {
-    std::set<std::string> referenced;  // clip names that a job record names
+    std::set<std::string> referenced;  // clip and input image names in job records
     std::set<std::string> live_jobs;   // ids of the jobs that still exist
 };
 
 // Takes the snapshot and sweeps under one lock, so no other clean-up or reservation
-// can change in between: removes every clip that is neither referenced nor reserved,
-// and drops the reservations whose clip is referenced or whose job is gone.
+// can change in between: removes every stored file that is neither referenced nor
+// reserved, and drops reservations for published files or deleted jobs.
 void clean_up(const std::function<CleanupSnapshot()>& snapshot);
 
 // Upper bounds for a video request's numbers, shared by the route's documented schema
@@ -54,8 +73,10 @@ inline constexpr int kMaxFps = 120;
 inline constexpr int kMaxDimension = 4096;
 inline constexpr int kMaxSteps = 1000;
 inline constexpr double kMaxDuration = 600.0;
+// Bound the encoded image input size, both inline and when restored from disk.
+inline constexpr std::size_t kMaxImageBase64Bytes = 8 * 1024 * 1024;
 
-// Checks the request's numbers once, for both the /videos route and a generic
+// Checks the request's numbers and optional start image for both the /videos route and a generic
 // generate_video job. An integer-valued float such as 9.0 is stored as the integer 9,
 // so the backend never mistakes it for a missing value. Returns an error message, or an
 // empty string when the request is usable.

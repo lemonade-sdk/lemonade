@@ -26,4 +26,6 @@ std::optional<nlohmann::json> find_video(ServerContext& ctx, const std::string& 
 
 void write_unknown_video(httplib::Response& res);
 
+void prune_video_files(ServerContext& ctx);
+
 } // namespace lemon

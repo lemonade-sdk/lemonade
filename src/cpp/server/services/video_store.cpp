@@ -32,10 +32,37 @@ std::mutex& reservation_mutex() {
     return m;
 }
 
-// Clip name -> the job it was reserved for.
+// File name -> the job it was reserved for. An empty id means the input is
+// being staged before a job id exists; its staging guard owns the reservation.
 std::map<std::string, std::string>& reserved() {
     static std::map<std::string, std::string> names;
     return names;
+}
+const std::string kImageSuffix = ".image.b64";
+
+bool is_image_file_name(const std::string& name) {
+    return name.size() == kPrefix.size() + kHexLength + kImageSuffix.size() &&
+           name.compare(name.size() - kImageSuffix.size(), kImageSuffix.size(), kImageSuffix) == 0 &&
+           is_valid_file_name(name.substr(0, name.size() - kImageSuffix.size()));
+}
+
+std::string validate_image(const std::string& image) {
+    if (image.compare(0, 5, "data:") == 0)
+        return "'image' must be raw base64; data URLs are not accepted";
+    if (image.size() > kMaxImageBase64Bytes)
+        return "'image' exceeds the 8 MiB encoded limit";
+    if (image.empty() || image.size() % 4 != 0)
+        return "'image' must be non-empty raw base64 (not a URL or path)";
+    const auto pad = image.find('=');
+    const auto data_size = pad == std::string::npos ? image.size() : pad;
+    if (data_size < 2 || image.size() - data_size > 2 ||
+        !std::all_of(image.begin(), image.begin() + data_size, [](unsigned char c) {
+            return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+                   (c >= '0' && c <= '9') || c == '+' || c == '/';
+        }) ||
+        !std::all_of(image.begin() + data_size, image.end(), [](char c) { return c == '='; }))
+        return "'image' must be raw base64 (not a URL or path)";
+    return {};
 }
 } // namespace
 
@@ -64,14 +91,20 @@ bool is_valid_file_name(const std::string& name) {
                        [](unsigned char c) { return std::isxdigit(c) && !std::isupper(c); });
 }
 
-void write(const std::string& name, const std::string& bytes) {
-    if (!is_valid_file_name(name)) throw std::runtime_error("invalid video file name");
+namespace {
+void write_bytes(const std::string& name, const std::string& bytes) {
     std::error_code ec;
     fs::create_directories(dir(), ec);
     std::ofstream out(dir() / name, std::ios::binary | std::ios::trunc);
     out.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
     out.close();
-    if (!out) throw std::runtime_error("could not write the video to " + utils::path_to_utf8(dir()));
+    if (!out) throw std::runtime_error("could not write video file to " + utils::path_to_utf8(dir()));
+}
+} // namespace
+
+void write(const std::string& name, const std::string& bytes) {
+    if (!is_valid_file_name(name)) throw std::runtime_error("invalid video file name");
+    write_bytes(name, bytes);
 }
 
 bool read(const std::string& name, std::string& bytes) {
@@ -100,18 +133,63 @@ void release(const std::string& name) {
     reserved().erase(name);
 }
 
+StagedImages::~StagedImages() {
+    for (const auto& name : names_) release(name);
+}
+
+std::string StagedImages::stage(const std::string& base64) {
+    if (const auto error = validate_image(base64); !error.empty())
+        throw std::invalid_argument(error);
+    std::string name;
+    {
+        std::lock_guard<std::mutex> lock(reservation_mutex());
+        do {
+            name = new_file_name() + kImageSuffix;
+        } while (reserved().count(name) || fs::exists(dir() / name));
+        names_.push_back(name);
+        reserved()[name] = "";
+    }
+    // The backend needs base64, so keep the encoded bytes on disk and do not
+    // decode/re-encode them. The job record contains only the short file name.
+    write_bytes(name, base64);
+    return name;
+}
+
+std::string restore_image(nlohmann::json& request) {
+    const auto ref = request.find("image_file");
+    if (ref == request.end()) return {};
+    if (!ref->is_string() || !is_image_file_name(ref->get_ref<const std::string&>()))
+        return "invalid stored video image reference";
+    if (request.contains("image") && !request["image"].is_null())
+        return "conflicting inline and stored video image";
+
+    std::ifstream input(dir() / ref->get<std::string>(), std::ios::binary | std::ios::ate);
+    if (!input) return "stored video image is missing";
+    const auto size = input.tellg();
+    if (size <= 0 || size > static_cast<std::streamoff>(kMaxImageBase64Bytes))
+        return "stored video image is empty or exceeds the 8 MiB encoded limit";
+    std::string image(static_cast<std::size_t>(size), '\0');
+    input.seekg(0);
+    if (!input.read(image.data(), static_cast<std::streamsize>(image.size())))
+        return "could not read stored video image";
+    request.erase("image_file");
+    request["image"] = std::move(image);
+    return {};
+}
+
 void clean_up(const std::function<CleanupSnapshot()>& snapshot) {
     std::lock_guard<std::mutex> lock(reservation_mutex());
     const CleanupSnapshot now = snapshot();
     for (auto it = reserved().begin(); it != reserved().end();) {
-        const bool published = now.referenced.count(it->first) > 0;
-        const bool job_gone = !now.live_jobs.count(it->second);
+        const bool published = !it->second.empty() && now.referenced.count(it->first) > 0;
+        const bool job_gone = !it->second.empty() && !now.live_jobs.count(it->second);
         it = (published || job_gone) ? reserved().erase(it) : std::next(it);
     }
     std::error_code ec;
     for (fs::directory_iterator it(dir(), ec), end; !ec && it != end; it.increment(ec)) {
         const std::string name = utils::path_to_utf8(it->path().filename());
-        if (!is_valid_file_name(name) || now.referenced.count(name) || reserved().count(name)) continue;
+        if ((!is_valid_file_name(name) && !is_image_file_name(name)) ||
+            now.referenced.count(name) || reserved().count(name)) continue;
         std::error_code rm;
         fs::remove(it->path(), rm);
         if (rm) LOG(WARNING, "Videos") << "Could not remove " << name << ": " << rm.message() << std::endl;
@@ -119,6 +197,18 @@ void clean_up(const std::function<CleanupSnapshot()>& snapshot) {
 }
 
 std::string normalize_request(nlohmann::json& request) {
+    if (request.contains("image") && !request["image"].is_null()) {
+        if (!request["image"].is_string()) return "'image' must be a base64 string";
+        if (const auto error = validate_image(request["image"].get_ref<const std::string&>()); !error.empty())
+            return error;
+        // TheNoise requires a non-blank prompt even for image-conditioned video.
+        const auto prompt = request.find("prompt");
+        if (prompt != request.end() && !prompt->is_null() && !prompt->is_string())
+            return "'prompt' must be a string";
+        if (prompt == request.end() || prompt->is_null() ||
+            prompt->get_ref<const std::string&>().find_first_not_of(" \t\r\n") == std::string::npos)
+            request["prompt"] = "Animate the image.";
+    }
     struct IntegerField {
         const char* name;
         int64_t min;
