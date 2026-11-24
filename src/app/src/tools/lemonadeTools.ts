@@ -184,6 +184,22 @@ export const LEMONADE_TOOLS: ToolFunction[] = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'web_search',
+      description: 'Search the live web for news, current products, releases, and technology research. Use search_type=news for concrete headlines/events and web otherwise. Sends only the query to an external provider; returns real HTTPS links and short snippets, not full articles.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Search terms (1-256 UTF-8 bytes). Do not restrict to old years unless the user explicitly asks.' },
+          search_type: { type: 'string', enum: ['web', 'news'], description: 'Use news for current headlines/events or a named newspaper; web for products, research, SDKs (default web).' },
+          max_results: { type: 'integer', minimum: 1, maximum: 5, description: 'Optional, 1-5 results (default 5).' },
+        },
+        required: ['query'],
+      },
+    },
+  },
 ];
 
 /* ── Tool executor ─────────────────────────────────────────────── */

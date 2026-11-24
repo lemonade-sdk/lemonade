@@ -25,6 +25,7 @@
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/version.h"
+#include "lemon/web_search.h"
 
 namespace lemon {
 
@@ -1489,6 +1490,45 @@ std::vector<McpTool> McpServer::build_tools() {
             },
             [this](const json& arguments) {
                 return tool_omni(arguments);
+            }),
+        McpTool(
+            json{
+                {"name", "lemonade_web_search"},
+                {"description", "Search live web or news for current information, products, "
+                                "releases and research. Use search_type=news for recent headlines. "
+                                "Only the query goes to an external provider; linked pages are not fetched."},
+                {"inputSchema", {
+                    {"type", "object"},
+                    {"required", json::array({"query"})},
+                    {"properties", {
+                        {"query", {{"type", "string"}, {"description", "Search terms (1-256 UTF-8 bytes)."}}},
+                        {"search_type", {{"type", "string"}, {"enum", json::array({"web", "news"})},
+                                         {"description", "Use news for current events/headlines; default web."}}},
+                        {"max_results", {{"type", "integer"}, {"minimum", 1},
+                                         {"description", "Optional number of results, maximum 5 (default 5)."}}},
+                    }},
+                }},
+                {"annotations", {{"readOnlyHint", true}, {"destructiveHint", false}, {"openWorldHint", true}}},
+                {"_meta", {{"lemonade/result", {{"description", "Success returns structuredContent "
+                    "with query, search_type, results (title, HTTPS url, snippet; optional "
+                    "source and published_at), and truncated, plus numbered text. "
+                    "Provider failures return isError: true."}}}}},
+            },
+            [](const json& arguments) {
+                const json payload = web_search::search(arguments);
+                std::ostringstream text;
+                const auto& results = payload.at("results");
+                if (results.empty()) text << "No web search results were returned.";
+                for (size_t i = 0; i < results.size(); ++i) {
+                    const auto& result = results[i];
+                    text << "[" << (i + 1) << "] " << result.at("title").get<std::string>() << "\n";
+                    if (result.contains("source")) text << "Source: " << result.at("source").get<std::string>() << "\n";
+                    if (result.contains("published_at")) text << "Published: " << result.at("published_at").get<std::string>() << "\n";
+                    text << result.at("url").get<std::string>() << "\n"
+                         << result.at("snippet").get<std::string>() << "\n";
+                }
+                return json{{"content", json::array({json{{"type", "text"}, {"text", text.str()}}})},
+                            {"structuredContent", payload}, {"isError", false}};
             }),
         McpTool(
             json{

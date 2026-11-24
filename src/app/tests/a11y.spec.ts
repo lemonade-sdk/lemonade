@@ -3206,18 +3206,30 @@ test.describe('Chat toolbar accessibility', () => {
   test('A187c — MCP enablement selection persists when backing out and reopening the picker', async ({ page }) => {
     await goToChatWithLoadedModel(page);
     await page.getByRole('button', { name: /Add files, photos, or tools/i }).click();
-    await page.getByRole('menuitem', { name: 'Tools', exact: true }).click();
 
+    // The global enablement switch lives in the Add menu, not the Tools dialog.
+    const menu = page.getByRole('menu', { name: 'Add to chat' });
+    const enabled = menu.getByRole('menuitemcheckbox', { name: 'Tools for this chat' });
+    await expect(enabled).toHaveAttribute('aria-checked', 'true');
+    await enabled.click();
+    await expect(enabled).toHaveAttribute('aria-checked', 'false');
+    expect(await page.evaluate(() => localStorage.getItem('lemonade:mcp_enabled'))).toBe('false');
+
+    await menu.getByRole('menuitem', { name: 'Tools', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Tools for this chat' });
-    const enabled = dialog.getByRole('checkbox', { name: /Tools for this chat/i });
-    await expect(enabled).toBeChecked();
-    await enabled.uncheck();
-    await expect(enabled).not.toBeChecked();
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole('checkbox', { name: /Tools for this chat/i })).toHaveCount(0);
 
     await page.getByRole('button', { name: 'Back to add to chat options' }).click();
-    await page.getByRole('menuitem', { name: 'Tools', exact: true }).click();
-    await expect(page.getByRole('dialog', { name: 'Tools for this chat' })).toBeVisible();
-    await expect(page.getByRole('dialog', { name: 'Tools for this chat' }).getByRole('checkbox', { name: /Tools for this chat/i })).not.toBeChecked();
+    await expect(enabled).toHaveAttribute('aria-checked', 'false');
+    await menu.getByRole('menuitem', { name: 'Tools', exact: true }).click();
+    await expect(dialog).toBeVisible();
+    await page.getByRole('button', { name: 'Back to add to chat options' }).click();
+    await expect(enabled).toHaveAttribute('aria-checked', 'false');
+
+    await enabled.click();
+    await expect(enabled).toHaveAttribute('aria-checked', 'true');
+    expect(await page.evaluate(() => localStorage.getItem('lemonade:mcp_enabled'))).toBe('true');
   });
 
   async function goToChatWithLoadedModels(page: Page, names: string[]): Promise<void> {
@@ -3316,17 +3328,37 @@ test.describe('Chat toolbar accessibility', () => {
     });
     await goToChatWithLoadedModel(page);
     await page.getByRole('button', { name: /Add files, photos, or tools/i }).click();
-    await page.getByRole('menuitem', { name: 'Tools', exact: true }).click();
-    const dialog = page.getByRole('dialog', { name: 'Tools for this chat' });
-    await expect(dialog.getByRole('checkbox', { name: /Tools for this chat/i })).not.toBeChecked();
-    await page.getByRole('button', { name: 'Back to add to chat options' }).click();
+    const enabled = page.getByRole('menu', { name: 'Add to chat' })
+      .getByRole('menuitemcheckbox', { name: 'Tools for this chat' });
+    await expect(enabled).toHaveAttribute('aria-checked', 'false');
 
     await page.evaluate(() => localStorage.setItem('lemonade:mcp_enabled', 'true'));
     await page.reload();
     await page.waitForSelector('.chat');
     await page.getByRole('button', { name: /Add files, photos, or tools/i }).click();
-    await page.getByRole('menuitem', { name: 'Tools', exact: true }).click();
-    await expect(page.getByRole('dialog', { name: 'Tools for this chat' }).getByRole('checkbox', { name: /Tools for this chat/i })).toBeChecked();
+    await expect(enabled).toHaveAttribute('aria-checked', 'true');
+  });
+
+  test('A187f — web search does not enable unrelated built-in tools', async ({ page }) => {
+    await goToChatWithLoadedModel(page);
+    await page.evaluate(() => {
+      localStorage.setItem('lemonade:mcp_enabled', 'true');
+      localStorage.setItem('lemonade:mcp_server_ids', JSON.stringify(['external-echo']));
+      localStorage.removeItem('lemonade:mcp_tool_names');
+    });
+    await page.reload();
+    await page.waitForSelector('.chat');
+    await page.getByRole('button', { name: /Add files, photos, or tools/i }).click();
+    const searchToggle = page.getByRole('menu', { name: 'Add to chat' })
+      .getByRole('menuitemcheckbox', { name: /Web search tool/i });
+    await expect(searchToggle).toHaveAttribute('aria-checked', 'false');
+    await searchToggle.click();
+    await expect(searchToggle).toHaveAttribute('aria-checked', 'true');
+    const selection = await page.evaluate(() => ({
+      servers: JSON.parse(localStorage.getItem('lemonade:mcp_server_ids') || '[]'),
+      tools: JSON.parse(localStorage.getItem('lemonade:mcp_tool_names') || '[]'),
+    }));
+    expect(selection).toEqual({ servers: ['external-echo', 'lemonade'], tools: ['web_search'] });
   });
 });
 

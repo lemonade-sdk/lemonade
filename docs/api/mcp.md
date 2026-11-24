@@ -355,6 +355,30 @@ Success always starts with one `text` block containing the final text. Artifacts
 | `tools` | no | `{"items":{"type":"object"},"type":"array"}` | OpenAI-compatible application tool definitions passed to the planner. |
 | `top_p` | no | `{"type":"number"}` | Nucleus sampling probability for the planner LLM. |
 
+### `lemonade_web_search`
+
+Search live web or news for current information, products, releases and research. Use search_type=news for recent headlines. Only the query goes to an external provider; linked pages are not fetched.
+
+**Returns**
+
+Success returns structuredContent with query, search_type, results (title, HTTPS url, snippet; optional source and published_at), and truncated, plus numbered text. Provider failures return isError: true.
+
+**MCP annotations**
+
+```json
+{
+  "destructiveHint": false,
+  "openWorldHint": true,
+  "readOnlyHint": true
+}
+```
+
+| Argument | Required | Schema | Description |
+|---|:---:|---|---|
+| `max_results` | no | `{"minimum":1,"type":"integer"}` | Optional number of results, maximum 5 (default 5). |
+| `query` | yes | `{"type":"string"}` | Search terms (1-256 UTF-8 bytes). |
+| `search_type` | no | `{"enum":["web","news"],"type":"string"}` | Use news for current events/headlines; default web. |
+
 ### `lemonade_docs`
 
 Read this server's own API reference. Call with no arguments to list the pages it ships, then pass `page` (an `id` from that list) to read one as markdown. The docs are bundled with the server, so they describe the version actually running and work offline. Use this before hand-writing requests against Lemonade endpoints.
