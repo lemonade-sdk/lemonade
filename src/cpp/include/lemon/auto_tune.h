@@ -138,16 +138,39 @@ inline double get_available_memory_gb(DeviceType device_type,
                 auto metrics = create_metrics_platform();
                 physical_total_gb = metrics ? metrics->get_memory_total_gb() : 0.0;
             }
-            const auto available_gpu_gb = auto_context_available_gpu_gib(
-                pool.total_gb, gpu_used_gb, pool.unified,
-                physical_total_gb, ram_used_gb);
+            std::optional<double> available_gpu_gb;
+            bool split_budget = false;
+            if (pool.unified && pool.vendor == GpuMemoryVendor::Amd) {
+                available_gpu_gb = auto_context_available_split_gpu_gib(
+                    pool.dedicated_gb, pool.dedicated_used_gb,
+                    pool.total_gb - pool.dedicated_gb, pool.shared_used_gb,
+                    physical_total_gb, ram_used_gb);
+                split_budget = available_gpu_gb.has_value();
+                if (split_budget) {
+                    LOG(DEBUG, "AutoTune") << "get_available_memory_gb: AMD iGPU dedicated="
+                                           << std::fixed << std::setprecision(2)
+                                           << pool.dedicated_gb << " GB (used="
+                                           << pool.dedicated_used_gb << "), shared="
+                                           << (pool.total_gb - pool.dedicated_gb)
+                                           << " GB (used=" << pool.shared_used_gb
+                                           << "), RAM total=" << physical_total_gb
+                                           << " GB used=" << ram_used_gb << " GB ";
+                }
+            }
+            if (!available_gpu_gb) {
+                available_gpu_gb = auto_context_available_gpu_gib(
+                    pool.total_gb, gpu_used_gb, pool.unified,
+                    physical_total_gb, ram_used_gb);
+            }
             if (!available_gpu_gb) {
                 LOG(DEBUG, "AutoTune")
                     << "get_available_memory_gb: no reliable GPU/RAM usage; using context fallback";
                 return 0.0;
             }
             if (memory_known_out) *memory_known_out = true;
-            if (physical_free_gb_out &&
+            // The split budget already caps the shared part by free RAM; a second
+            // RAM budget would wrongly charge weights placed in the carve-out.
+            if (physical_free_gb_out && !split_budget &&
                 (!pool.unified || pool.vendor == GpuMemoryVendor::Amd)) {
                 // The CPU can hold non-offloaded layers on either UMA or a dGPU.
                 double total_ram_gb = physical_total_gb;

@@ -574,6 +574,34 @@ static void test_auto_context_budget() {
           !auto_context_available_gpu_gib(24.0, 2.0, true, 32.0,
                                           std::numeric_limits<double>::quiet_NaN()));
 
+    using lemon::auto_context_available_split_gpu_gib;
+    // Strix Halo, 64 GB VGM on Windows: carve-out 63.8 (18.4 used), shared 47.8 (0.2 used),
+    // OS-visible RAM 63.8 with 10.7 used.
+    auto vgm64 = auto_context_available_split_gpu_gib(63.8, 18.4, 47.8, 0.2, 63.8, 10.7);
+    check("auto ctx split: carve-out free adds to shared, minus one heap block",
+          vgm64 && approx_eq(*vgm64, 45.4 + 47.6 - 1.0));
+    auto vgm64_busy_ram = auto_context_available_split_gpu_gib(63.8, 18.4, 47.8, 0.2, 63.8, 30.0);
+    check("auto ctx split: free RAM caps only the shared part",
+          vgm64_busy_ram && approx_eq(*vgm64_busy_ram, 45.4 + 33.8 - 1.0));
+    auto vgm96 = auto_context_available_split_gpu_gib(95.8, 0.5, 23.9, 0.1, 31.8, 9.0);
+    check("auto ctx split: 96 GB carve-out is not limited by 32 GB OS RAM",
+          vgm96 && approx_eq(*vgm96, 95.3 + 22.8 - 1.0));
+    auto carveout_full = auto_context_available_split_gpu_gib(63.8, 63.8, 47.8, 0.2, 63.8, 10.7);
+    check("auto ctx split: full carve-out leaves shared only, no split loss",
+          carveout_full && approx_eq(*carveout_full, 47.6));
+    auto small_carveout = auto_context_available_split_gpu_gib(0.5, 0.3, 62.0, 2.0, 124.0, 20.0);
+    check("auto ctx split: small carve-out loses at most its own free space",
+          small_carveout && approx_eq(*small_carveout, 0.2 + 60.0 - 0.2));
+    auto shared_usage_unknown = auto_context_available_split_gpu_gib(63.8, 18.4, 47.8, -1.0, 63.8, 10.7);
+    check("auto ctx split: unknown shared usage is still capped by free RAM",
+          shared_usage_unknown && approx_eq(*shared_usage_unknown, 45.4 + 47.8 - 1.0));
+    check("auto ctx split: unknown carve-out usage falls back",
+          !auto_context_available_split_gpu_gib(63.8, -1.0, 47.8, 0.2, 63.8, 10.7));
+    check("auto ctx split: unknown RAM usage falls back",
+          !auto_context_available_split_gpu_gib(63.8, 18.4, 47.8, 0.2, 63.8, 0.0));
+    check("auto ctx split: no carve-out falls back",
+          !auto_context_available_split_gpu_gib(0.0, 0.0, 47.8, 0.2, 63.8, 10.7));
+
     auto huge = estimate_auto_context_budget(110.0, 18.0, 1e-12,
                                               true, false);
     check("auto ctx: token conversion saturates without int64 overflow",

@@ -20,6 +20,10 @@ struct GpuMemoryPool {
     GpuMemoryVendor vendor = GpuMemoryVendor::Any;
     bool unified = false;
     double physical_total_gb = 0.0;
+    // Unified AMD only: the carve-out part of total_gb, and per-part usage.
+    double dedicated_gb = 0.0;
+    double dedicated_used_gb = -1.0;
+    double shared_used_gb = -1.0;
 };
 
 struct GpuTargetIndices {
@@ -102,7 +106,13 @@ inline GpuMemoryPool select_gpu_memory_pool(GpuMemoryVendor vendor,
         }
         const double total_gb = gpu.vram_gb + (unified ? gpu.virtual_gb : 0.0);
         // AMD VRAM + GTT is a GPU allocation limit, not total physical RAM.
-        return GpuMemoryPool{total_gb, used_gb, label, vendor, unified, 0.0};
+        GpuMemoryPool pool{total_gb, used_gb, label, vendor, unified, 0.0};
+        if (unified) {
+            pool.dedicated_gb = gpu.vram_gb;
+            pool.dedicated_used_gb = gpu.vram_used_gb;
+            pool.shared_used_gb = gpu.virtual_used_gb;
+        }
+        return pool;
     };
     auto most_constrained = [](const std::vector<GpuMemoryPool>& pools) {
         GpuMemoryPool result;

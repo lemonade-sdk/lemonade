@@ -173,6 +173,16 @@ int main() {
     check(no_carveout_rocm0.unified && no_carveout_rocm0.total_gb == 16.0,
           "iGPU without a carve-out keeps ROCm0");
 
+    GPUInfo strix_halo = gpu(63.8, 18.4);
+    strix_halo.virtual_gb = 47.8;
+    strix_halo.virtual_used_gb = 0.2;
+    auto split_pool = select_gpu_memory_pool(GpuMemoryVendor::Any, strix_halo, {}, {}, unavailable);
+    check(split_pool.unified && split_pool.dedicated_gb == 63.8 &&
+          split_pool.dedicated_used_gb == 18.4 && split_pool.shared_used_gb == 0.2,
+          "iGPU pool carries its carve-out and shared usage separately");
+    check(rocm.dedicated_gb == 0.0 && rocm.dedicated_used_gb < 0.0,
+          "dGPU pool has no carve-out split");
+
     std::vector<GPUInfo> mixed_usage_nvidia{
         gpu(24.0, -1.0, 0), gpu(8.0, 1.0, 1)};
     auto unknown_constrained = select_gpu_memory_pool(
