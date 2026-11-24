@@ -289,7 +289,11 @@ route on *how a conversation is going*, not just the current request's text
 repeated tool errors.
 
 `min_turns`/`max_turns` are native: the engine counts `role:"user"` turns in
-`messages`/`input` itself, no caller work required.
+`messages`/`input` itself, no caller work required. They count user messages,
+not agent steps. Assistant tool calls and `tool` results are not counted, so
+an agent loop that runs many steps from one user message stays at one turn. To
+route on agent steps, have the harness count them and send the count in
+`metadata`, as below.
 
 Anything harness-specific — a tool-call error streak, "no edits in the last N
 turns", a result-pattern match — is intentionally **not** parsed by the
@@ -298,12 +302,13 @@ name their own tools differently (there's no universal "error" field on an
 OpenAI tool-result message), and baking harness assumptions into the router
 would make it not-generic. Instead, the calling harness — which already
 knows its own tool/error conventions — computes the signal itself and sends
-it as a plain number in `metadata`:
+it in `metadata` as a decimal string. Metadata values must be strings; a JSON
+number is ignored, so a `gte` rule on it never matches:
 
 ```json
 {
   "messages": [...],
-  "metadata": { "tool_error_streak": "3" }
+  "metadata": { "agent_steps": "6", "tool_error_streak": "3" }
 }
 ```
 
@@ -314,7 +319,7 @@ it as a plain number in `metadata`:
       "id": "escalate-after-stalls",
       "match": {
         "all": [
-          { "min_turns": 4 },
+          { "metadata": { "key": "agent_steps", "gte": 4 } },
           { "metadata": { "key": "tool_error_streak", "gte": 2 } }
         ]
       },
