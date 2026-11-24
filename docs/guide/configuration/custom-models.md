@@ -651,11 +651,15 @@ Four optional fields describe what a model costs to run:
 }
 ```
 
-They are reported, not acted on. `GET /v1/models` lists them on the model, and
-when a `collection.router` policy picks the model, the routing decision carries
-them as `outputs.estimated_cost` (see [Router API](../../api/router.md)). The
-figures are yours, not a bill: Lemonade does not meter tokens or measure
-latency, and routing does not choose a candidate by price.
+`GET /v1/models` lists them on the model, and when a `collection.router`
+policy picks the model, the routing decision carries them as
+`outputs.estimated_cost` (see [Router API](../../api/router.md)). A policy with
+`routing.router.type: "cost_select"` also routes by them: it sends each request
+to the cheapest candidate, and a `cost_tier` of `"free"` always counts as the
+cheapest (see
+[cost-based routing](../../dev/router-policy.md#cost-based-routing-routingroutertype-cost_select)).
+The figures are yours, not a bill: Lemonade does not meter tokens or measure
+latency, and `latency_ms_hint` is reported only.
 
 Cloud models get their prices from the provider and need none of this. When a
 cloud model's entry also sets a price, the provider's price wins.
