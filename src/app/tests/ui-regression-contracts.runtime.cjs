@@ -169,5 +169,6 @@ assert.match(
   'a video job the chat lost track of must stay on the message so it can be resumed',
 );
 assert.match(sources.chat, /api\.resumeVideoGeneration\(job, control\)/);
+assert.match(sources.chat, /api\.cancelVideoJob\(job\)/, 'deleting a conversation cancels its retained video jobs');
 
 console.log('UI regression contract checks passed.');

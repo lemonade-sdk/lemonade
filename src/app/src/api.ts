@@ -2147,6 +2147,11 @@ class LemonadeAPI {
     return this._videoResult(job.model, record, blob);
   }
 
+  async cancelVideoJob(job: VideoJobRef): Promise<void> {
+    await this._videoTransport(this._videoJobServer(job)).cancel(job.id, AbortSignal.timeout?.(15000));
+    this._videoJobKeys.delete(videoJobKey(job.baseUrl, job.id));
+  }
+
   async imageUpscale(model: string, imageUrl: string, upscaleFactor?: number): Promise<string> {
     const image = imageUrl.replace(/^data:image\/[^;]+;base64,/, '');
     const data = await this._json<Record<string, any>>('/api/v1/images/upscale', {
