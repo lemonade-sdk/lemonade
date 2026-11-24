@@ -191,6 +191,10 @@ SAMPLE_TOOL = {
 ENDPOINT_TEST_MODEL = "Tiny-Test-Model-GGUF"
 ENDPOINT_TEST_MODEL_CTX_SIZE = 2048
 
+# Smallest registered model (37 MB). Tests that delete a model use it instead of
+# ENDPOINT_TEST_MODEL, which later tests would otherwise download again.
+DELETE_TEST_MODEL = "jina-reranker-v1-tiny-en-GGUF"
+
 # Model for tool-calling tests (must have native tool-calling support in its chat template)
 TOOL_CALLING_MODEL = "Qwen3-4B-Instruct-2507-GGUF"
 
