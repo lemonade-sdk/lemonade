@@ -1519,6 +1519,19 @@
         ],
         "size": 23.8
     },
+    "Inkling-2-Mini-GGUF": {
+        "checkpoint": "unsloth/Inkling-2-Mini-GGUF:Inkling-2-Mini-UD-Q4_K_XL.gguf",
+        "mmproj": "mmproj-F16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "vision",
+            "tool-calling",
+            "reasoning"
+        ],
+        "size": 18.3
+    },
     "Qwen3.6-27B-GGUF": {
         "checkpoint": "unsloth/Qwen3.6-27B-GGUF:Qwen3.6-27B-UD-Q4_K_XL.gguf",
         "mmproj": "mmproj-F16.gguf",
