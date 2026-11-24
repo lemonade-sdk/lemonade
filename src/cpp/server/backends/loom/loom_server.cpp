@@ -435,12 +435,21 @@ void LoomServer::load(const std::string& model_name, const ModelInfo& model_info
     fs::path dir = bundle_dir(checkpoint);
     // A bundle downloaded before its card recorded a Quick start for this GPU:
     // fetch the card's current revision once; quick_start() below refuses it if
-    // that still records none.
-    if (!dir.empty() && !loom::records_quick_start(read_info_file(dir), target)) {
-        LOG(INFO, "Loom") << checkpoint << " records no Quick start for " << target
-                          << "; fetching its current card" << std::endl;
-        fetch();
-        dir = bundle_dir(checkpoint);
+    // that still records none, or if the fetch fails (offline).
+    if (!dir.empty()) {
+        const json cached = read_info_file(dir);
+        if (loom::bundle_supports_target(cached, target) &&
+            !loom::records_quick_start(cached, target)) {
+            LOG(INFO, "Loom") << checkpoint << " records no Quick start for " << target
+                              << "; fetching its current card" << std::endl;
+            try {
+                fetch();
+                dir = bundle_dir(checkpoint);
+            } catch (const std::exception& error) {
+                LOG(WARNING, "Loom") << "Cannot refresh " << checkpoint << ": " << error.what()
+                                     << std::endl;
+            }
+        }
     }
     if (dir.empty()) throw std::runtime_error("The Loom bundle for " + model_name + " is incomplete");
     const json card = read_json_file(dir / loom::kCardFile);
