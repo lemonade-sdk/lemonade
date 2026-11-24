@@ -259,6 +259,7 @@ lemonade config set default_model_source=modelscope
 `LEMONADE_BACKEND_SOURCE` sets it for the process. For one request, pass `--source` to `lemonade backends install` (`"source"` on `POST /v1/install`), or `--backend-source` to `lemonade load` and `lemonade run` (`"backend_source"` on `POST /v1/load`). With `modelscope`:
 
 - Each file must match the SHA-256 pinned for it in `checksums.modelscope`; a file without one is refused. GitHub downloads do not use these hashes.
+- TheRock ROCm tarballs are the exception: AMD publishes no checksums, so they are not hash-checked from either source.
 - Only pinned versions are mirrored. With a `*_bin` of `latest`, the installed version is reused; with none installed, the install fails.
 - `thinksound`, `acestep`, `trellis`, `openmoss` and datacenter GPU builds are not mirrored; install them with `--source github`. Container backends pull from their own registries.
 - `rocm_install_method=auto` installs the TheRock tarball, since the mirror has no pip wheel index. A runtime already installed from wheels keeps working.

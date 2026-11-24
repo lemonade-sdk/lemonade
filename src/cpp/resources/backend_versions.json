@@ -66,7 +66,7 @@
       }
     },
     "modelscope": {
-      "comment": "Generated; do not edit by hand. SHA-256 of every file backend_source=modelscope can download: checksums.modelscope.github.<owner/repo>.<tag>.<asset> from GitHub's published digests, checksums.modelscope.therock.<version>.<tarball> hashed from stable.repo.amd.com. A ModelScope download without an entry here (or in checksums.github) is refused; GitHub downloads ignore this section.",
+      "comment": "Generated; do not edit by hand. SHA-256 of every GitHub release asset backend_source=modelscope can download, keyed checksums.modelscope.github.<owner/repo>.<tag>.<asset>, from GitHub's published digests. A ModelScope download of a GitHub asset without an entry here (or in checksums.github) is refused; GitHub downloads ignore this section. TheRock tarballs are not listed: AMD publishes no checksums.",
       "github": {
         "ROCm/FastFlowLM": {
           "v1.0.13": {
@@ -407,26 +407,6 @@
             "trellis-vulkan-linux-x64.tar.gz": "sha256:8c2ed7f76ab9f09d3e24dae82b1a52a75d308e853bdfd289e26d57b1f422f33b",
             "trellis-vulkan-windows-x64.zip": "sha256:d6c70678635f5367f9aa93261e9310e7c0c327ca8395399cf2ef869ccc2e72ba"
           }
-        }
-      },
-      "therock": {
-        "10.1.0": {
-          "therock-dist-windows-gfx101X-dgpu-10.1.0.tar.gz": "sha256:355d9a0fdb343c6579f89fd789a16ef24ee6879b4a66629f7f1986a32eeaacde",
-          "therock-dist-windows-gfx103X-all-10.1.0.tar.gz": "sha256:d8945ac33873bf3e443e9e5fc4f078ca03aa03bd75c8aec56850bdc95f6b067f",
-          "therock-dist-windows-gfx110X-all-10.1.0.tar.gz": "sha256:1313633026b05f8f6af2a6a16a2f323211dd81a904a808f0ee34d2bbfb8f8441",
-          "therock-dist-windows-gfx1150-10.1.0.tar.gz": "sha256:b58d79a319b1267940c8b6397b3d6d714698ed8c74e1f61175ae247a3c2abbc8",
-          "therock-dist-windows-gfx1151-10.1.0.tar.gz": "sha256:42698635d66eee273fd0ef580b68494aa2363a4fa6cf733db7806438863a8136",
-          "therock-dist-windows-gfx1152-10.1.0.tar.gz": "sha256:8dc00ff5ede61958f8badd5e0b9b0f70747e1f84a3829de36b3e6272f9ef9cf2",
-          "therock-dist-windows-gfx1153-10.1.0.tar.gz": "sha256:cea010785590aa78c0b3583e87e472e69c1c65bc179199bcdca6701462ea03bd",
-          "therock-dist-windows-gfx120X-all-10.1.0.tar.gz": "sha256:e8d5acd522aa106d685485707e5085d491ead7d0d84a79ef74dc5995941403b2",
-          "therock-dist-linux-gfx101X-dgpu-10.1.0.tar.gz": "sha256:702bbaa55f3eafd177ddeeed26c93f915dd23de418188cc79cde6dc00819938c",
-          "therock-dist-linux-gfx103X-all-10.1.0.tar.gz": "sha256:9fcf1764468bc75d2497b0b09165fef6f3e0bc01aec1fc76af7c8afd8f954d1e",
-          "therock-dist-linux-gfx110X-all-10.1.0.tar.gz": "sha256:0f5da124601786ab1b9fdbccfca83b931aae3bf7da9c604079ddb2dcfa65d717",
-          "therock-dist-linux-gfx1150-10.1.0.tar.gz": "sha256:515df1170721668427a602807043719e59937109863e0baa7566875e9fccf070",
-          "therock-dist-linux-gfx1151-10.1.0.tar.gz": "sha256:50deb993035bc2f6a5aba5e3de8d476d8c512a2eec2cbfd5aa569d71e0b8b337",
-          "therock-dist-linux-gfx1152-10.1.0.tar.gz": "sha256:ceed8714adb3db7885f6d25784060687fb772d3d9ed2449779ce7636d88827c0",
-          "therock-dist-linux-gfx1153-10.1.0.tar.gz": "sha256:a3282f3b2e806bf9d7379920a02070a7ad9b019c271e083ffd9a53112d41c27a",
-          "therock-dist-linux-gfx120X-all-10.1.0.tar.gz": "sha256:985b0f082698629a62bfd1759f4874b58b6163edfdeee14cf529719c9761ddaf"
         }
       }
     }
