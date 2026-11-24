@@ -1,10 +1,12 @@
 #include <string>
 
 #include "lemon/backend_manager.h"
+#include "lemon/backends/backend_source.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/shared_args.h"
 #include "lemon/system_info.h"
+#include <cstdlib>
 
 namespace lemon {
 namespace {
@@ -47,7 +49,7 @@ public:
             "Lemonade does not check that the asset exists; fetch `url`, or its split-archive "
             "manifest, to verify it.",
         };
-        s.args = {kRecipe, backend_routes::kBackend, kArch};
+        s.args = {kRecipe, backend_routes::kBackend, kArch, backend_routes::kSource};
 
         RouteResponse response;
         response.format = ResponseFormat::Json;
@@ -62,7 +64,7 @@ public:
                 "repo": {"type": "string", "description": "GitHub repository of the release."},
                 "version": {"type": "string", "description": "Release version: the pin in `backend_versions.json` unless runtime version policy overrides it."},
                 "filename": {"type": "string", "description": "Release asset name."},
-                "url": {"type": "string", "description": "Download URL built from `repo`, `version` and `filename`."},
+                "url": {"type": "string", "description": "Download URL built from `repo`, `version` and `filename`, from the configured `backend_source` (GitHub, or the ModelScope mirror)."},
                 "supported": {"type": "boolean", "description": "Whether Lemonade's recipe/backend support matrix accepts the architecture. An unsupported `arch` still resolves, with `false`; without `arch`, a successful answer is always `true`."},
                 "supports_split_archive": {"type": "boolean", "description": "Whether the recipe supports assets published as multiple archive parts. When `true`, the real download path can consult a `.partcount` manifest."}
             }
@@ -88,6 +90,7 @@ public:
             const std::string recipe = req.arg(kRecipe).get<std::string>();
             const std::string backend = req.arg(backend_routes::kBackend).get<std::string>();
             requested_arch = req.value(kArch, "");
+            backend_source::ScopedOverride source_scope(req.value(backend_routes::kSource, ""));
 
             if (!requested_arch.empty()) {
                 SystemInfo::set_rocm_arch_override(requested_arch);
@@ -99,9 +102,10 @@ public:
             // any later work on this thread.
             SystemInfo::set_rocm_arch_override("");
 
-            const std::string url = "https://github.com/" + params.repo +
-                                    "/releases/download/" + params.version + "/" +
-                                    params.filename;
+            const std::string source = backends::BackendUtils::effective_backend_source();
+            const char* endpoint = std::getenv("MODELSCOPE_ENDPOINT");
+            const std::string url = backend_source::release_asset_url(
+                source, endpoint ? endpoint : "", params.repo, params.version, params.filename);
 
             bool supports_split_archive = false;
             if (auto* spec = backends::try_get_spec_for_recipe(recipe)) {

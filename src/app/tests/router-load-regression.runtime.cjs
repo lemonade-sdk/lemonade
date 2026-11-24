@@ -147,7 +147,7 @@ try {
   assert.match(handleLoadSource, /await loadModelRuntime\(model, new Set<string>\(\), overrideOptions\)/,
     'Use Router click must use server-fresh Router readiness via the shared runtime loader');
   assert.doesNotMatch(handleLoadSource, /registerModelDefinition/, 'Use Router click must never write a stale local Router definition');
-  assert.match(manager.slice(runtimeStart, handleLoadStart), /await api\.loadModel\(name, options, info\)/,
+  assert.match(manager.slice(runtimeStart, handleLoadStart), /await api\.loadModel\(name, options, info, argumentSource\)/,
     'ordinary model loads must still forward the resolved recipe options');
 
   const saveStart = manager.indexOf('const handleRegisterRouter = async');

@@ -96,7 +96,7 @@ static void test_helper_projection() {
 static void register_model(ModelManager& manager, const std::string& name) {
     manager.register_user_model(name, json{{"model_name", name},
                                            {"recipe", "llamacpp"},
-                                           {"checkpoint", "zzorg/zznotify:main.gguf"}});
+                                           {"checkpoint", "zzorg/zznotify:main.gguf"}}, "", /*allow_backend_args=*/true);
 }
 
 static void test_notification_carries_the_published_generation(ModelManager& manager) {

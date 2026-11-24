@@ -25,6 +25,8 @@ inline const BackendDescriptor descriptor = {
     /*options*/ {
         {"sd-cpp_backend", "--sdcpp", "", "BACKEND",
          "SD.cpp backend to use", "Stable Diffusion Options"},
+        {"sd-cpp_device", "--sdcpp-device", "", "DEVICES",
+         "GPU to use: ROCm0, CUDA1, Vulkan0, ... or a GPU's uuid or pci_bus_id from system-info; empty selects automatically", "Stable Diffusion Options"},
         {"sdcpp_args", "--sdcpp-args", "", "ARGS",
          "Custom arguments to pass to sd-server (must not conflict with managed args)", "Stable Diffusion Options"},
         {"steps", "", 20, "SIZE", "Number of diffusion steps", "Stable Diffusion Options"},
@@ -33,6 +35,11 @@ inline const BackendDescriptor descriptor = {
         {"height", "", 512, "SIZE", "Output image height", "Stable Diffusion Options"},
         {"sampling_method", "", "", "ARGS", "Sampling method", "Stable Diffusion Options"},
         {"flow_shift", "", 0.0, "SIZE", "Flow shift", "Stable Diffusion Options"},
+        // sd-server generates a single frame unless told otherwise, and video
+        // models need a few dozen before they animate rather than drift, so
+        // this default is applied even when the model itself sets nothing.
+        {"video_frames", "", 33, "SIZE", "Number of video frames", "Stable Diffusion Options"},
+        {"fps", "", 16, "SIZE", "Video frames per second", "Stable Diffusion Options"},
         {"soft_pixel_cap", "", 0, "SIZE", "Largest output area, in pixels, that images/edits infers from the first reference image when size is omitted (0 = server default)", "Stable Diffusion Options", false},
     },
     /*support*/ {
@@ -56,7 +63,7 @@ inline const BackendDescriptor descriptor = {
         {"cpu", {"stable-diffusion.cpp on the CPU alone.",
                  "leejet", "lemonade-sdk", "MIT", "https://github.com/leejet/stable-diffusion.cpp"}},
     },
-    /*supported_modes*/ {"image"},
+    /*supported_modes*/ {"image", "video"},
     /*required_checkpoints*/ {"main"},  // flux text_encoder+vae validated together in load()
     /*default_capabilities*/ {},
     /*web_display_name*/ "stable-diffusion.cpp",

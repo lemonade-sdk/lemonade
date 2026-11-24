@@ -1,5 +1,6 @@
 #include "lemon/runtime_config.h"
 #include "lemon/backends/backend_descriptor_registry.h"
+#include "lemon/backends/backend_source.h"
 #include "lemon/models/configured_catalog.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/aixlog.hpp"
@@ -560,6 +561,16 @@ std::string RuntimeConfig::default_model_source() const {
     return config_.value("default_model_source", std::string("huggingface"));
 }
 
+std::string RuntimeConfig::backend_source() const {
+    const std::string source = get_string_opt("LEMONADE_BACKEND_SOURCE", {"backend_source"}, "github");
+    if (backend_source::is_valid(source)) {
+        return source;
+    }
+    LOG(WARNING, "RuntimeConfig") << "Ignoring backend_source '" << source
+                                  << "': expected 'github' or 'modelscope'" << std::endl;
+    return backend_source::kGitHub;
+}
+
 std::string RuntimeConfig::rocm_channel() const {
     std::shared_lock lock(mutex_);
     return config_["rocm_channel"].get<std::string>();
@@ -897,9 +908,17 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
             throw std::invalid_argument("'default_model_source' must be a string");
         }
         const std::string source = value.get<std::string>();
-        if (source != "huggingface" && source != "modelscope") {
+        if (source != "huggingface" && source != "modelscope" && source != "auto") {
             throw std::invalid_argument(
-                "'default_model_source' must be either 'huggingface', or 'modelscope'");
+                "'default_model_source' must be 'huggingface', 'modelscope', or 'auto'");
+        }
+    } else if (key == "backend_source") {
+        if (!value.is_string()) {
+            throw std::invalid_argument("'backend_source' must be a string");
+        }
+        if (!backend_source::is_valid(value.get<std::string>())) {
+            throw std::invalid_argument(
+                "'backend_source' must be either 'github', or 'modelscope'");
         }
     } else if (key == "download_rate_limit") {
         if (!value.is_string()) {

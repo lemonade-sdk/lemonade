@@ -11,6 +11,8 @@
 #include <unordered_map>
 
 #include "lemon/backends/backend_descriptor_registry.h"
+#include "lemon/backends/loom/loom.h"
+#include "lemon/backends/loom/loom_bundle.h"
 #include "lemon/llamacpp_architectures_generated.h"
 #include "lemon/model_types.h"
 #include <lemon/models/fetchable_repository.h>
@@ -342,6 +344,16 @@ GgufVariantSet enumerate_gguf_variants(
     return result;
 }
 
+bool is_omni_collection_manifest(const nlohmann::json& manifest) {
+    // value() throws on a non-string recipe, so check the type first
+    return manifest.is_object() &&
+        manifest.contains("recipe") && manifest["recipe"].is_string() &&
+        is_omni_collection_recipe(manifest["recipe"].get<std::string>()) &&
+        manifest.contains("components") && manifest["components"].is_array() &&
+        !manifest["components"].empty() &&
+        manifest.contains("models") && manifest["models"].is_array();
+}
+
 nlohmann::json fetch_pull_variants(const models::ArtifactSourceResolver& resolver,
                                    const std::string& checkpoint,
                                    const std::string& registry_source,
@@ -400,6 +412,64 @@ nlohmann::json fetch_pull_variants(const models::ArtifactSourceResolver& resolve
         if (slash != std::string::npos) suggested_name = checkpoint.substr(slash + 1);
     }
 
+    // Loom bundle branch: the card and its lock name GGUFs in other repositories,
+    // which the loom recipe pulls itself, so the bundle is one unit.
+    const auto has_file = [&](const char* name) {
+        return std::find(repo_files.begin(), repo_files.end(), name) != repo_files.end();
+    };
+    if (has_file(backends::loom::kCardFile) && has_file(backends::loom::kLockFile)) {
+        if (source != models::huggingface_descriptor().id) {
+            throw std::runtime_error("Loom bundles download from Hugging Face only");
+        }
+        const auto read_bundle_json = [&](const char* name) {
+            for (const auto& kv : file_sizes) {
+                if (kv.first == name && kv.second > backends::loom::kMaxMetadataBytes) {
+                    throw std::runtime_error(std::string("'") + name + "' in repository " +
+                                             checkpoint + " is too large to be a Loom bundle file");
+                }
+            }
+            const std::string url = source_repository->file_url(
+                models::RepoRef{checkpoint, models::Revision{repository.download_revision, false}, name});
+            const auto response =
+                HttpClient::get(url, headers, 0, utils::HttpSecurityPolicy::ExternalHttpsOnly,
+                                static_cast<size_t>(backends::loom::kMaxMetadataBytes));
+            if (response.status_code != 200) {
+                throw std::runtime_error(std::string("Failed to read '") + name + "' from repository " +
+                                         checkpoint + " (HTTP " +
+                                         std::to_string(response.status_code) + ")");
+            }
+            return JsonUtils::parse(response.body);
+        };
+        const nlohmann::json card = read_bundle_json(backends::loom::kCardFile);
+        const nlohmann::json lock = read_bundle_json(backends::loom::kLockFile);
+        (void)backends::loom::plan_bundle(card, lock);
+        const nlohmann::json info = has_file(backends::loom::kInfoFile)
+                                        ? read_bundle_json(backends::loom::kInfoFile)
+                                        : nlohmann::json::object();
+        const std::string name = backends::loom::suggested_name(checkpoint, card);
+        const uint64_t size_bytes = total_repo_size + backends::loom::locked_bytes(lock);
+
+        nlohmann::json vj;
+        vj["name"] = "default";
+        vj["primary_file"] = backends::loom::kCardFile;
+        vj["files"] = repo_files;
+        vj["sharded"] = false;
+        vj["size_bytes"] = size_bytes;
+
+        nlohmann::json out;
+        out["checkpoint"] = checkpoint;
+        out["source"] = remote_registry_source_name(source);
+        out["recipe"] = backends::loom::descriptor.recipe;
+        out["repo_kind"] = "loom";
+        out["suggested_name"] = name;
+        out["suggested_labels"] = backends::loom::suggested_labels(info, name);
+        out["mmproj_files"] = nlohmann::json::array();
+        out["draft_files"] = nlohmann::json::array();
+        out["variants"] = nlohmann::json::array({vj});
+        out["size"] = static_cast<double>(size_bytes) / 1e9;
+        return out;
+    }
+
     // ONNX RyzenAI branch: synthesize a 1-element variant set.
     if (!has_gguf && has_onnx && has_genai_config) {
         nlohmann::json vj;
@@ -441,7 +511,7 @@ nlohmann::json fetch_pull_variants(const models::ArtifactSourceResolver& resolve
         static constexpr uint64_t kMaxManifestBytes = 5ull * 1024 * 1024;
         for (const auto& kv : file_sizes) {
             if (kv.first == manifest_filename && kv.second > kMaxManifestBytes) {
-                throw std::runtime_error(
+                throw std::invalid_argument(
                     "Repository " + checkpoint + " contains '" + manifest_filename +
                     "' but it is too large to be a Lemonade Omni collection manifest");
             }
@@ -463,13 +533,8 @@ nlohmann::json fetch_pull_variants(const models::ArtifactSourceResolver& resolve
         } catch (const std::exception&) {
             manifest = nlohmann::json();
         }
-        bool valid_manifest = manifest.is_object() &&
-            is_omni_collection_recipe(manifest.value("recipe", std::string())) &&
-            manifest.contains("components") && manifest["components"].is_array() &&
-            !manifest["components"].empty() &&
-            manifest.contains("models") && manifest["models"].is_array();
-        if (!valid_manifest) {
-            throw std::runtime_error(
+        if (!is_omni_collection_manifest(manifest)) {
+            throw std::invalid_argument(
                 "Repository " + checkpoint + " contains '" + manifest_filename +
                 "' but it is not a Lemonade Omni collection manifest (expected an exported "
                 "collection JSON with recipe \"collection.omni\", a non-empty 'components' "
@@ -501,7 +566,7 @@ nlohmann::json fetch_pull_variants(const models::ArtifactSourceResolver& resolve
 
     auto vset = enumerate_gguf_variants(repo_files, file_sizes);
     if (vset.variants.empty()) {
-        throw std::runtime_error(
+        throw std::invalid_argument(
             "No supported model files found in repository " + checkpoint +
             ". Supported repository types: GGUF models (*.gguf), ONNX RyzenAI models, and "
             "Lemonade Omni collections (a '" + manifest_filename +

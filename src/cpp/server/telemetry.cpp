@@ -1502,5 +1502,31 @@ thread_local std::string g_incoming_trace_id;
 thread_local std::string g_incoming_parent_span_id;
 thread_local std::string g_incoming_client_id;
 thread_local std::string g_incoming_session_id;
+thread_local std::string g_current_route_decision;
+
+std::map<std::string, nlohmann::json> route_span_attributes(const std::string& payload) {
+    std::map<std::string, nlohmann::json> attributes;
+    if (payload.empty()) {
+        return attributes;
+    }
+    nlohmann::json route = nlohmann::json::parse(payload, nullptr, /*allow_exceptions=*/false);
+    if (!route.is_object()) {
+        // Telemetry is observational: a malformed payload yields no attributes
+        // rather than disturbing the request it is describing.
+        return attributes;
+    }
+    for (const auto& [key, value] : route.items()) {
+        if (value.is_string() || value.is_number() || value.is_boolean()) {
+            attributes.emplace("llm.route." + key, value);
+        }
+    }
+    return attributes;
+}
+
+void apply_route_attributes(InferenceSpan& span) {
+    for (const auto& [key, value] : route_span_attributes(g_current_route_decision)) {
+        span.set_attribute(key, value);
+    }
+}
 
 } // namespace lemon::telemetry

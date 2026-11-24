@@ -1,6 +1,6 @@
 #pragma once
 
-// AMD GPU telemetry for Windows system-stats, via DXGI, DXCore and PDH.
+// AMD GPU telemetry for Windows system-stats, via DXGI, DXCore, D3DKMT and PDH.
 // Libraries are loaded dynamically so the build needs no vendor SDK.
 
 #ifdef _WIN32
@@ -8,6 +8,8 @@
 #include <lemon/system_metrics_platform.h>
 
 #include <windows.h>
+#include <winternl.h>
+#include <d3dkmthk.h>
 #include <dxgi.h>
 #include <dxcore.h>
 #include <pdh.h>
@@ -109,6 +111,67 @@ private:
     IDXCoreAdapterFactory* factory_ = nullptr;
 };
 
+// ---- D3DKMT: kernel adapter capabilities ------------------------------------
+
+class D3dkmtLibrary {
+public:
+    D3dkmtLibrary() {
+        library_ = LoadLibraryExA("gdi32.dll", nullptr,
+                                  LOAD_LIBRARY_SEARCH_SYSTEM32);
+        if (!library_) return;
+        open_ = sym<OpenFromLuidFn>("D3DKMTOpenAdapterFromLuid");
+        query_ = sym<QueryInfoFn>("D3DKMTQueryAdapterInfo");
+        close_ = sym<CloseFn>("D3DKMTCloseAdapter");
+    }
+
+    ~D3dkmtLibrary() {
+        if (library_) FreeLibrary(library_);
+    }
+
+    D3dkmtLibrary(const D3dkmtLibrary&) = delete;
+    D3dkmtLibrary& operator=(const D3dkmtLibrary&) = delete;
+
+    // The Remote Desktop indirect display adapter copies its render GPU's
+    // DXGI description (vendor, device, memory), so only the kernel adapter
+    // type tells it apart. Unknown types count as GPUs to keep the adapter.
+    bool runs_gpu_work(const LUID& luid) const {
+        if (!open_ || !query_ || !close_) return true;
+        D3DKMT_OPENADAPTERFROMLUID open{};
+        open.AdapterLuid = luid;
+        if (!NT_SUCCESS(open_(&open))) return true;
+
+        D3DKMT_ADAPTERTYPE type{};
+        D3DKMT_QUERYADAPTERINFO info{};
+        info.hAdapter = open.hAdapter;
+        info.Type = KMTQAITYPE_ADAPTERTYPE;
+        info.pPrivateDriverData = &type;
+        info.PrivateDriverDataSize = sizeof(type);
+        const bool known = NT_SUCCESS(query_(&info));
+
+        D3DKMT_CLOSEADAPTER close{};
+        close.hAdapter = open.hAdapter;
+        close_(&close);
+
+        return !known || type.RenderSupported || type.ComputeOnly;
+    }
+
+private:
+    using OpenFromLuidFn = NTSTATUS(APIENTRY*)(D3DKMT_OPENADAPTERFROMLUID*);
+    using QueryInfoFn = NTSTATUS(APIENTRY*)(const D3DKMT_QUERYADAPTERINFO*);
+    using CloseFn = NTSTATUS(APIENTRY*)(const D3DKMT_CLOSEADAPTER*);
+
+    template <typename T>
+    T sym(const char* name) const {
+        return reinterpret_cast<T>(
+            reinterpret_cast<void*>(GetProcAddress(library_, name)));
+    }
+
+    LibraryHandle library_ = nullptr;
+    OpenFromLuidFn open_ = nullptr;
+    QueryInfoFn query_ = nullptr;
+    CloseFn close_ = nullptr;
+};
+
 // ---- DXGI: adapter identity and memory capacity -----------------------------
 
 class DxgiLibrary {
@@ -137,7 +200,8 @@ public:
 
     bool ready() const { return create_ != nullptr; }
 
-    std::vector<AmdAdapter> query_adapters(const DxCoreLibrary& dxcore) const {
+    std::vector<AmdAdapter> query_adapters(const DxCoreLibrary& dxcore,
+                                           const D3dkmtLibrary& d3dkmt) const {
         std::vector<AmdAdapter> adapters;
         if (!create_) return adapters;
 
@@ -156,7 +220,8 @@ public:
             DXGI_ADAPTER_DESC1 desc{};
             if (SUCCEEDED(adapter1->GetDesc1(&desc)) &&
                 desc.VendorId == kAmdVendorId &&
-                (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) == 0) {
+                (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) == 0 &&
+                d3dkmt.runs_gpu_work(desc.AdapterLuid)) {
                 adapters.push_back(
                     make_adapter(desc, dxcore.is_integrated(desc.AdapterLuid)));
             }
@@ -372,7 +437,8 @@ inline std::vector<GpuDeviceMetrics> query_amd_gpu_metrics() {
     DxgiLibrary dxgi;
     if (!dxgi.ready()) return {};
     DxCoreLibrary dxcore;
-    const auto adapters = dxgi.query_adapters(dxcore);
+    D3dkmtLibrary d3dkmt;
+    const auto adapters = dxgi.query_adapters(dxcore, d3dkmt);
     if (adapters.empty()) return {};
 
     const AmdLiveMetrics live = sample_live_metrics();

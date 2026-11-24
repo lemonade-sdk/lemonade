@@ -1,4 +1,5 @@
 #include <lemon/wrapped_server.h>
+#include <lemon/backends/backend_utils.h>
 #include <lemon/utils/process_manager.h>
 #include <lemon/utils/url_utils.h>
 #include <lemon/utils/http_client.h>
@@ -407,7 +408,16 @@ bool WrappedServer::has_backend_process_exited() const {
 
 void WrappedServer::start_server(std::unique_ptr<ServerProcess> process,
                                  const ServerCommand& command, long timeout_seconds) {
-    const std::string host = process->start(command);
+    ServerCommand launch = command;
+    if (descriptor_ && descriptor_->common_gpu_visibility) {
+        const std::string& recipe = descriptor_->recipe;
+        const std::string backend = recipe_options_.get_option(recipe + "_backend");
+        const std::string device = recipe_options_.get_option(recipe + "_device");
+        const std::string runtime = backend.rfind("cuda", 0) == 0 ? "cuda" : backend;
+        backends::BackendUtils::apply_accelerator_device_env_vars(
+            launch.env, server_name_, runtime, device);
+    }
+    const std::string host = process->start(launch);
     std::unique_ptr<ServerProcess> previous;
     {
         std::lock_guard<std::mutex> lock(process_mutex_);
@@ -618,7 +628,6 @@ bool WrappedServer::wait_for_ready(const std::string& endpoint, long timeout_sec
 }
 
 json WrappedServer::forward_get_request(const std::string& endpoint, long timeout_seconds) {
-    (void)timeout_seconds;
     if (!is_backend_alive()) {
         if (was_watchdog_triggered() || has_backend_process_exited()) {
             if (!was_watchdog_triggered()) {
@@ -635,7 +644,7 @@ json WrappedServer::forward_get_request(const std::string& endpoint, long timeou
     std::map<std::string, std::string> headers;
 
     try {
-        auto response = utils::HttpClient::get(url, headers, 0,
+        auto response = utils::HttpClient::get(url, headers, timeout_seconds,
                                                utils::HttpSecurityPolicy::TrustedLoopback);
         note_backend_activity();
 
@@ -850,6 +859,7 @@ void WrappedServer::forward_streaming_request(const std::string& endpoint,
         note_backend_activity();
     };
 
+    const auto cancel = current_request_cancel_context();
     try {
         if (sse) {
             // Use StreamingProxy to forward the SSE stream with telemetry callback
@@ -861,11 +871,14 @@ void WrappedServer::forward_streaming_request(const std::string& endpoint,
                     }
                 },
                 timeout_seconds,
-                mark_stream_progress
+                mark_stream_progress,
+                1000,
+                cancel
             );
         } else {
             StreamingProxy::forward_byte_stream(url, request_body, sink, timeout_seconds,
-                mark_stream_progress
+                mark_stream_progress,
+                cancel
             );
         }
     } catch (const std::exception& e) {
