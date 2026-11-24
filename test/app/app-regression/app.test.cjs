@@ -17,6 +17,8 @@ const MODEL_MANAGER = 'src/app/src/components/ModelManager.tsx';
 const OMNI_TOOLS = 'src/app/src/tools/omniTools.ts';
 const TOOL_DEFINITIONS = 'src/app/src/tools/toolDefinitions.json';
 
+const monitorPollingTests = require('./monitorPolling.test.cjs').tests;
+
 // chatModelOverride.ts is dependency-free so it can be transpiled and exercised
 // directly, without standing up React or the rest of ChatView.
 function loadChatModelOverride() {
@@ -40,6 +42,7 @@ function loadChatModelOverride() {
 }
 
 const tests = [
+  ...monitorPollingTests,
   {
     name: 'collection helpers preserve component order and collection identity',
     run() {
