@@ -499,7 +499,7 @@ static void test_a_write_during_a_rebuild_survives_it() {
         manager.register_user_model("user.Raced",
                                     json{{"model_name", "user.Raced"},
                                          {"recipe", "llamacpp"},
-                                         {"checkpoint", "org/raced:main.gguf"}});
+                                         {"checkpoint", "org/raced:main.gguf"}}, "", /*allow_backend_args=*/true);
     });
     const bool answered =
         registration.wait_for(std::chrono::seconds(2)) == std::future_status::ready;
@@ -536,7 +536,7 @@ static void test_the_commit_publishes_the_filter_reasons() {
     // is the one that stays published.
     ModelInfo present = manager.get_model_info("Present-Model");
     present.recipe_options = RecipeOptions("llamacpp", json{{"ctx_size", 1024}});
-    manager.replace_options("Present-Model", present.recipe_options.to_json());
+    manager.replace_options("Present-Model", present.recipe_options.to_json(), /*allow_backend_args=*/true);
     check("a patch to one row keeps the table of what the host cannot run",
           !manager.get_model_filter_reason("Absent-Model").empty());
 }
@@ -627,7 +627,7 @@ static void test_the_published_names_follow_the_set() {
 
     manager.register_user_model("user.Alpha", json{{"model_name", "user.Alpha"},
                                                    {"recipe", "llamacpp"},
-                                                   {"checkpoint", "someone/Alpha:main.gguf"}});
+                                                   {"checkpoint", "someone/Alpha:main.gguf"}}, "", /*allow_backend_args=*/true);
     manager.get_supported_models();  // the registration invalidated the set
     check("the registration wins the bare name",
           manager.resolve_model_name("Alpha") == "user.Alpha");
@@ -647,13 +647,13 @@ static void test_a_write_seeds_from_what_readers_hold() {
 
     manager.register_user_model("user.Gamma", json{{"model_name", "user.Gamma"},
                                                    {"recipe", "llamacpp"},
-                                                   {"checkpoint", "org/gamma:main.gguf"}});
+                                                   {"checkpoint", "org/gamma:main.gguf"}}, "", /*allow_backend_args=*/true);
     manager.get_supported_models();  // the registration invalidated the set
     check("the registration is in the published set", manager.model_exists("user.Gamma"));
 
     ModelInfo alpha = manager.get_model_info("Alpha");
     alpha.recipe_options = RecipeOptions("llamacpp", json{{"ctx_size", 2048}});
-    manager.replace_options("Alpha", alpha.recipe_options.to_json());  // one row changes
+    manager.replace_options("Alpha", alpha.recipe_options.to_json(), /*allow_backend_args=*/true);  // one row changes
     check("a patch to one row leaves the rest of the set published",
           manager.model_exists("Alpha") && manager.model_exists("Beta") &&
               manager.model_exists("user.Gamma"));
@@ -946,7 +946,7 @@ static void register_model(ModelManager& manager,
                            const std::string& checkpoint) {
     manager.register_user_model(name, json{{"model_name", name},
                                            {"recipe", recipe},
-                                           {"checkpoint", checkpoint}});
+                                           {"checkpoint", checkpoint}}, "", /*allow_backend_args=*/true);
 }
 
 static void test_registration_publishes(ModelManager& manager) {
@@ -1017,7 +1017,7 @@ static void test_in_place_update_publishes(ModelManager& manager) {
         return;
     }
 
-    manager.replace_options("user.Options", json{{key, json(4096)}});
+    manager.replace_options("user.Options", json{{key, json(4096)}}, /*allow_backend_args=*/true);
 
     check("an in-place update publishes to readers",
           manager.get_model_info("user.Options").recipe_options.get_option(key) == json(4096));

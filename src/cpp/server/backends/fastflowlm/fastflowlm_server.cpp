@@ -170,13 +170,18 @@ void FastFlowLMServer::load(const std::string& model_name,
             "\nVisit " + DRIVER_INSTALL_URL + " for driver installation instructions.");
     }
 
-    if (model_manager_ == nullptr) {
-        throw std::runtime_error("Model manager is unavailable while resolving the download source for: " +
-                                 model_info.checkpoint());
+    // Resolving the source can wait on a registry probe in auto mode, so an installed
+    // model must load without it.
+    const auto installed = fastflowlm::flm_installed_checkpoints();
+    if (!do_not_upgrade ||
+        std::find(installed.begin(), installed.end(), model_info.checkpoint()) == installed.end()) {
+        if (model_manager_ == nullptr) {
+            throw std::runtime_error("Model manager is unavailable while resolving the download source for: " +
+                                     model_info.checkpoint());
+        }
+        const RegistryId source = model_manager_->download_source_for(model_info);
+        download_model(model_info.checkpoint(), do_not_upgrade, source);
     }
-    const RegistryId source = model_manager_->download_source_for(model_info);
-
-    download_model(model_info.checkpoint(), do_not_upgrade, source);
 
     port_ = choose_port();
 
@@ -279,7 +284,13 @@ json FastFlowLMServer::embeddings(const json& request) {
             UnsupportedOperationException("Embeddings", "FLM " + model_type_to_string(model_type_) + " model")
         );
     }
-    return forward_request("/v1/embeddings", request);
+    // FLM validates the requested model tag (and older versions reject any name
+    // other than the loaded one), so forward the flm checkpoint (e.g.
+    // "embed-gemma:300m") rather than lemonade's model id ("...-FLM"), exactly
+    // like chat_completions/completions above. Fixes #3889.
+    json modified_request = request;
+    modified_request["model"] = checkpoint_;
+    return forward_request("/v1/embeddings", modified_request);
 }
 
 json FastFlowLMServer::audio_transcriptions(const json& request) {

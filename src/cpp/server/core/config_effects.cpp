@@ -10,6 +10,7 @@
 #include "lemon/model_manager.h"
 #include "lemon/router.h"
 #include "lemon/runtime_config.h"
+#include "lemon/server.h"
 #include "lemon/server/http_listener.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/http_client.h"
@@ -55,6 +56,9 @@ void ConfigEffects::apply(const std::string& key, const json& value) {
         ctx_.model_manager->catalog_set_changed();
     } else if (key == "default_model_source") {
         ctx_.model_manager->invalidate_models_cache(true);
+        ctx_.server->refresh_model_source();
+    } else if (key == "offline") {
+        ctx_.server->refresh_model_source();
     } else if (key == "extra_models_dir") {
         std::string dir = config.extra_models_dir();
         LOG(INFO, "Server") << "Extra models dir changed to: " << dir << std::endl;

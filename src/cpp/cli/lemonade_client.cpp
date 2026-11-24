@@ -1207,7 +1207,8 @@ int LemonadeClient::cleanup_cache(bool dry_run) const {
     }
 }
 
-int LemonadeClient::load_model(const std::string& model_name, const nlohmann::json& recipe_options, bool save_options, std::optional<bool> pinned) const {
+int LemonadeClient::load_model(const std::string& model_name, const nlohmann::json& recipe_options, bool save_options, std::optional<bool> pinned,
+                               const std::string& backend_source) const {
     std::cout << "Loading model: " << model_name << std::endl;
 
     try {
@@ -1216,6 +1217,9 @@ int LemonadeClient::load_model(const std::string& model_name, const nlohmann::js
         request_body["save_options"] = save_options;
         if (pinned.has_value()) {
             request_body["pinned"] = pinned.value();
+        }
+        if (!backend_source.empty()) {
+            request_body["backend_source"] = backend_source;
         }
 
         // since load can trigger a pull but doesn't send the related streaming events, we want long read timeouts.
@@ -1519,13 +1523,17 @@ int LemonadeClient::show_backend_info(const std::string& recipe, const std::stri
     }
 }
 
-int LemonadeClient::install_backend(const std::string& recipe, const std::string& backend, bool force) {
+int LemonadeClient::install_backend(const std::string& recipe, const std::string& backend, bool force,
+                                    const std::string& source) {
     std::cout << "Installing backend: " << recipe << ":" << backend << std::endl;
 
     try {
         json request_body = {{"recipe", recipe}, {"backend", backend}};
         request_body["stream"] = true;
         request_body["force"] = force;
+        if (!source.empty()) {
+            request_body["source"] = source;
+        }
         std::string body = request_body.dump();
 
         StreamingRequestState state;

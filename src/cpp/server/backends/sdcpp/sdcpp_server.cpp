@@ -15,8 +15,15 @@
 #include <iostream>
 #include <filesystem>
 #include <fstream>
+#include <algorithm>
 #include <chrono>
+#include <cmath>
+#include <functional>
+#include <limits>
+#include <thread>
 #include <cstring>
+#include <map>
+#include <mutex>
 #include <random>
 #include <sstream>
 #include <set>
@@ -78,6 +85,150 @@ std::string get_therock_version() {
     // stable-diffusion.cpp release assets include full ROCm runtime version in filenames
     // (for example: rocm-7.12.0), so keep the patch component.
     return trim_version_prefix(config["therock"]["version"].get<std::string>());
+}
+
+struct SdLaunchEnv {
+    std::string program;
+    std::string working_dir;
+    std::vector<std::pair<std::string, std::string>> env;
+};
+
+// The process environment sd-server needs to find its runtime libraries. Shared
+// by load() and the --list-devices probe so both see the same devices.
+SdLaunchEnv sdcpp_launch_env(const std::string& resolved_backend, const std::string& exe_path) {
+    SdLaunchEnv launch;
+    auto& env_vars = launch.env;
+    fs::path exe_dir = fs::path(exe_path).parent_path();
+#ifdef _WIN32
+    fs::path executable_path = fs::absolute(fs::path(exe_path));
+    exe_dir = executable_path.parent_path();
+#endif
+
+#ifndef _WIN32
+    std::string lib_path = exe_dir.string();
+
+    if (resolved_backend == "rocm-stable") {
+        std::string rocm_arch = SystemInfo::get_rocm_arch();
+        if (!rocm_arch.empty()) {
+            std::string therock_dirs = BackendUtils::join_runtime_dirs(
+                BackendUtils::get_therock_lib_paths(rocm_arch));
+            if (!therock_dirs.empty()) {
+                lib_path = therock_dirs + ":" + lib_path;
+            }
+        }
+    }
+
+    const char* existing_ld_path = std::getenv("LD_LIBRARY_PATH");
+    if (existing_ld_path && strlen(existing_ld_path) > 0) {
+        lib_path = lib_path + ":" + std::string(existing_ld_path);
+    }
+
+    env_vars.push_back({"LD_LIBRARY_PATH", lib_path});
+    LOG(DEBUG, "SDServer") << "Setting LD_LIBRARY_PATH=" << lib_path << std::endl;
+#else
+    // ROCm builds on Windows require hipblaslt.dll, rocblas.dll, amdhip64.dll, etc.
+    // These DLLs are distributed alongside sd-server.exe but need PATH to be set for loading
+    if (is_rocm_backend(resolved_backend)) {
+        std::string new_path = path_to_utf8(exe_dir);
+
+        if (resolved_backend == "rocm-stable") {
+            std::string rocm_arch = SystemInfo::get_rocm_arch();
+            if (!rocm_arch.empty()) {
+                std::vector<std::string> therock_dirs = BackendUtils::get_therock_lib_paths(rocm_arch);
+                std::string therock_bin = therock_dirs.empty() ? std::string() : therock_dirs.front();
+                if (!therock_bin.empty()) {
+                    for (auto it = therock_dirs.rbegin(); it != therock_dirs.rend(); ++it) {
+                        new_path = *it + ";" + new_path;
+                    }
+
+                    BackendUtils::stage_therock_hip_runtime(rocm_arch, exe_dir);
+                }
+            }
+        }
+
+        const char* existing_path = std::getenv("PATH");
+        if (existing_path && strlen(existing_path) > 0) {
+            new_path = new_path + ";" + std::string(existing_path);
+        }
+        env_vars.push_back({"PATH", new_path});
+
+        LOG(INFO, "SDServer") << "ROCm backend: added " << path_to_utf8(exe_dir) << " to PATH" << std::endl;
+    } else if (is_cuda_backend(resolved_backend)) {
+        // CUDA Windows builds bundle cudart64_*.dll, cublas64_*.dll, etc. next to
+        // sd-server.exe.
+        std::string new_path = path_to_utf8(exe_dir);
+
+        const char* existing_path = std::getenv("PATH");
+        if (existing_path && strlen(existing_path) > 0) {
+            new_path += ";" + std::string(existing_path);
+        }
+        env_vars.push_back({"PATH", new_path});
+        LOG(DEBUG, "SDServer") << "Prepending CUDA exe dir to PATH: " << path_to_utf8(exe_dir) << std::endl;
+    }
+#endif
+
+    launch.program = exe_path;
+#ifdef _WIN32
+    launch.program = path_to_utf8(executable_path);
+    launch.working_dir = path_to_utf8(executable_path.parent_path());
+#endif
+    return launch;
+}
+
+using GgmlDevices = std::vector<std::pair<std::string, std::string>>;
+
+struct DeviceProbe {
+    GgmlDevices devices;
+    std::string error;
+};
+
+// A failed probe is cached too, so a broken build is not re-run on every request.
+GgmlDevices probe_sdcpp_devices(const std::string& resolved_backend, const std::string& exe_path) {
+    static std::mutex cache_mutex;
+    static std::map<std::string, DeviceProbe> cache;
+
+    std::error_code ec;
+    const auto mtime = fs::last_write_time(path_from_utf8(exe_path), ec);
+    const std::string key = exe_path + "|" +
+        (ec ? std::string() : std::to_string(
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                mtime.time_since_epoch()).count()));
+    {
+        std::lock_guard<std::mutex> lock(cache_mutex);
+        auto it = cache.find(key);
+        if (it != cache.end()) {
+            if (!it->second.error.empty()) throw std::runtime_error(it->second.error);
+            return it->second.devices;
+        }
+    }
+
+    DeviceProbe probe;
+    try {
+        const SdLaunchEnv launch = sdcpp_launch_env(resolved_backend, exe_path);
+        std::string output;
+        // stderr carries ggml's init logging; only stdout holds the device table.
+        const int rc = ProcessManager::run_process_with_output(
+            launch.program, {"--list-devices"},
+            [&output](const std::string& line) { output += line + "\n"; return true; },
+            launch.working_dir, 60, /*capture_stderr=*/false, launch.env);
+        if (rc != 0) {
+            probe.error = "sd-server --list-devices failed with exit code " + std::to_string(rc);
+        } else {
+            probe.devices = BackendUtils::parse_ggml_device_list(output);
+        }
+    } catch (const std::exception& e) {
+        probe.error = std::string("sd-server --list-devices failed: ") + e.what();
+    }
+    LOG(DEBUG, "SDServer") << "sd-server (" << resolved_backend << ") reports "
+                           << probe.devices.size() << " device(s)"
+                           << (probe.error.empty() ? "" : ": " + probe.error) << std::endl;
+
+    {
+        std::lock_guard<std::mutex> lock(cache_mutex);
+        cache[key] = probe;
+    }
+    if (!probe.error.empty()) throw std::runtime_error(probe.error);
+    return probe.devices;
 }
 
 int generate_random_seed() {
@@ -174,6 +325,11 @@ InstallParams SDServer::get_install_params(const std::string& backend, const std
     return params;
 }
 
+std::vector<std::pair<std::string, std::string>> SDServer::list_devices(const std::string& backend) {
+    return probe_sdcpp_devices(resolve_sdcpp_backend(backend),
+                               BackendUtils::get_backend_binary_path(*sdcpp::spec(), backend));
+}
+
 SDServer::SDServer(const std::string& log_level, ModelManager* model_manager, BackendManager* backend_manager)
     : WrappedServer("sd-server", log_level, model_manager, backend_manager) {
     LOG(DEBUG, "SDServer") << "Created with log_level=" << log_level << std::endl;
@@ -193,6 +349,7 @@ void SDServer::load(const std::string& model_name,
     }
     std::string resolved_backend = resolve_sdcpp_backend(backend);
     std::string sdcpp_args = options.string_option("sdcpp_args").value_or("");
+    const std::string selected_device = options.get_option("sd-cpp_device");
 
     RuntimeConfig::validate_backend_choice("sdcpp", backend);
 
@@ -204,10 +361,16 @@ void SDServer::load(const std::string& model_name,
         device_type_ = DEVICE_CPU;
     }
 
-    backend_manager_->install_backend(sdcpp::spec()->recipe, backend);
+    backend_manager_->install_backend(sdcpp::spec()->recipe, backend, false, nullptr, load_cancel_flag());
 
     std::string model_path = model_info.resolved_path("main");
     std::string llm_path = model_info.resolved_path("text_encoder");
+    // sd-cpp routes the text encoder by family: --llm for LLM-style encoders
+    // (Flux2/Qwen-Image use qwen, LTX uses gemma), --t5xxl for T5-family ones
+    // (Wan uses umt5). The slots are independent -- HunyuanVideo 1.5 fills both
+    // -- and a model declares which it fills by the checkpoint keys it
+    // provides, so neither is guessed from the filename.
+    std::string t5xxl_path = model_info.resolved_path("t5xxl");
     std::string vae_path = model_info.resolved_path("vae");
 
     if (model_path.empty()) {
@@ -237,14 +400,24 @@ void SDServer::load(const std::string& model_name,
         "--listen-port", std::to_string(port_)
     };
 
-    if (llm_path.empty() || vae_path.empty()) {
+    if ((llm_path.empty() && t5xxl_path.empty()) || vae_path.empty()) {
         args.push_back("-m");
         args.push_back(model_path);
+        if (!t5xxl_path.empty()) {
+            args.push_back("--t5xxl");
+            args.push_back(t5xxl_path);
+        }
     } else {
         args.push_back("--diffusion-model");
         args.push_back(model_path);
-        args.push_back("--llm");
-        args.push_back(llm_path);
+        if (!llm_path.empty()) {
+            args.push_back("--llm");
+            args.push_back(llm_path);
+        }
+        if (!t5xxl_path.empty()) {
+            args.push_back("--t5xxl");
+            args.push_back(t5xxl_path);
+        }
         args.push_back("--vae");
         args.push_back(vae_path);
     }
@@ -253,23 +426,28 @@ void SDServer::load(const std::string& model_name,
         args.push_back("-v");
     }
 
-    if (resolved_backend == "vulkan") {
-        LOG(INFO, "SDServer")
-            << "Applying Vulkan SD workaround: --vae-tiling --diffusion-fa"
-            << std::endl;
-        args.push_back("--vae-tiling");
-        args.push_back("--diffusion-fa");
-    }
     std::set<std::string> reserved_flags = {
         "-m",
         "--model",
         "--diffusion-model",
         "--llm",
+        "--t5xxl",
         "--vae",
         "-v",
         "--listen-port"
     };
+    // Keep existing custom --backend support when the GUI device is automatic.
+    // An explicit selection must not be overridden by sdcpp_args.
+    if (!selected_device.empty() && selected_device != "auto") {
+        reserved_flags.insert("--backend");
+    }
 
+    // Parse the user's arguments before adding any of our own, so a flag they
+    // set explicitly is not also appended by us. These are not in
+    // reserved_flags on purpose -- passing them is legitimate, it just must not
+    // produce the same flag twice on the command line.
+    std::vector<std::string> custom_args_vec;
+    std::set<std::string> user_flags;
     if (!sdcpp_args.empty()) {
         std::string validation_error = validate_custom_args(sdcpp_args, reserved_flags);
         if (!validation_error.empty()) {
@@ -279,91 +457,61 @@ void SDServer::load(const std::string& model_name,
         }
 
         LOG(DEBUG, "SDServer") << "Adding custom arguments: " << sdcpp_args << std::endl;
-        std::vector<std::string> custom_args_vec = parse_custom_args(sdcpp_args);
-        args.insert(args.end(), custom_args_vec.begin(), custom_args_vec.end());
-    }
-
-    std::vector<std::pair<std::string, std::string>> env_vars;
-    fs::path exe_dir = fs::path(exe_path).parent_path();
-#ifdef _WIN32
-    fs::path executable_path = fs::absolute(fs::path(exe_path));
-    exe_dir = executable_path.parent_path();
-#endif
-
-#ifndef _WIN32
-    std::string lib_path = exe_dir.string();
-
-    if (resolved_backend == "rocm-stable") {
-        std::string rocm_arch = SystemInfo::get_rocm_arch();
-        if (!rocm_arch.empty()) {
-            std::string therock_dirs = BackendUtils::join_runtime_dirs(
-                BackendUtils::get_therock_lib_paths(rocm_arch));
-            if (!therock_dirs.empty()) {
-                lib_path = therock_dirs + ":" + lib_path;
+        custom_args_vec = parse_custom_args(sdcpp_args);
+        for (const std::string& token : custom_args_vec) {
+            if (token.rfind("--", 0) == 0 || (token.size() > 1 && token[0] == '-')) {
+                user_flags.insert(token);
             }
         }
     }
 
-    const char* existing_ld_path = std::getenv("LD_LIBRARY_PATH");
-    if (existing_ld_path && strlen(existing_ld_path) > 0) {
-        lib_path = lib_path + ":" + std::string(existing_ld_path);
-    }
-
-    env_vars.push_back({"LD_LIBRARY_PATH", lib_path});
-    LOG(DEBUG, "SDServer") << "Setting LD_LIBRARY_PATH=" << lib_path << std::endl;
-#else
-    // ROCm builds on Windows require hipblaslt.dll, rocblas.dll, amdhip64.dll, etc.
-    // These DLLs are distributed alongside sd-server.exe but need PATH to be set for loading
-    if (is_rocm_backend(resolved_backend)) {
-        std::string new_path = path_to_utf8(exe_dir);
-
-        if (resolved_backend == "rocm-stable") {
-            std::string rocm_arch = SystemInfo::get_rocm_arch();
-            if (!rocm_arch.empty()) {
-                std::vector<std::string> therock_dirs = BackendUtils::get_therock_lib_paths(rocm_arch);
-                std::string therock_bin = therock_dirs.empty() ? std::string() : therock_dirs.front();
-                if (!therock_bin.empty()) {
-                    for (auto it = therock_dirs.rbegin(); it != therock_dirs.rend(); ++it) {
-                        new_path = *it + ";" + new_path;
-                    }
-
-                    BackendUtils::stage_therock_hip_runtime(rocm_arch, exe_dir);
-                }
+    if (resolved_backend == "vulkan") {
+        std::vector<std::string> applied;
+        for (const char* flag : {"--vae-tiling", "--diffusion-fa"}) {
+            if (user_flags.count(flag) == 0) {
+                args.push_back(flag);
+                applied.push_back(flag);
             }
         }
-
-        const char* existing_path = std::getenv("PATH");
-        if (existing_path && strlen(existing_path) > 0) {
-            new_path = new_path + ";" + std::string(existing_path);
+        if (!applied.empty()) {
+            std::ostringstream joined;
+            for (size_t i = 0; i < applied.size(); ++i) {
+                if (i > 0) joined << " ";
+                joined << applied[i];
+            }
+            LOG(INFO, "SDServer")
+                << "Applying Vulkan SD workaround: " << joined.str() << std::endl;
         }
-        env_vars.push_back({"PATH", new_path});
+    }
 
-        LOG(INFO, "SDServer") << "ROCm backend: added " << path_to_utf8(exe_dir) << " to PATH" << std::endl;
+    args.insert(args.end(), custom_args_vec.begin(), custom_args_vec.end());
+
+    const SdLaunchEnv launch = sdcpp_launch_env(resolved_backend, exe_path);
+    std::vector<std::pair<std::string, std::string>> env_vars = launch.env;
+    const std::string& process_exe_path = launch.program;
+    const std::string& working_dir = launch.working_dir;
+
+    const bool explicit_device = !selected_device.empty() && selected_device != "auto";
+    if (explicit_device && (resolved_backend == "vulkan" || is_rocm_backend(resolved_backend))) {
+        const std::string prefix = resolved_backend == "vulkan" ? "vulkan" : "rocm";
+        // ggml numbers ROCm devices in HIP order, so a GPU id resolves to its HIP index.
+        const std::string device = BackendUtils::ggml_device_for_selection(
+            BackendUtils::resolve_gpu_selection(selected_device, resolved_backend), prefix,
+            probe_sdcpp_devices(resolved_backend, exe_path));
+        args.push_back("--backend");
+        args.push_back(device);
+        LOG(INFO, "SDServer") << "Selecting " << device << " via --backend" << std::endl;
     } else if (is_cuda_backend(resolved_backend)) {
-        // CUDA Windows builds bundle cudart64_*.dll, cublas64_*.dll, etc. next to
-        // sd-server.exe. Prepend the executable directory to PATH so the loader
-        // resolves them before any system-wide CUDA install.
-        std::string new_path = path_to_utf8(exe_dir);
-
-        const char* existing_path = std::getenv("PATH");
-        if (existing_path && strlen(existing_path) > 0) {
-            new_path += ";" + std::string(existing_path);
-        }
-        env_vars.push_back({"PATH", new_path});
-        LOG(DEBUG, "SDServer") << "Prepending CUDA exe dir to PATH: " << path_to_utf8(exe_dir) << std::endl;
+        BackendUtils::apply_accelerator_device_env_vars(env_vars, "SDServer",
+                                                        resolved_backend, selected_device,
+                                                        SystemInfo::get_cuda_arch());
+    } else if (explicit_device && !is_rocm_backend(resolved_backend) &&
+               resolved_backend != "vulkan" &&
+               !(resolved_backend == "metal" && selected_device == "metal") &&
+               !(resolved_backend == "cpu" && selected_device == "cpu")) {
+        throw std::invalid_argument("Device '" + selected_device +
+                                    "' is incompatible with sd.cpp backend '" + resolved_backend + "'");
     }
-#endif
-
-    if (is_cuda_backend(resolved_backend)) {
-        BackendUtils::apply_cuda_env_vars(env_vars, "SDServer");
-    }
-
-    std::string process_exe_path = exe_path;
-    std::string working_dir;
-#ifdef _WIN32
-    process_exe_path = path_to_utf8(executable_path);
-    working_dir = path_to_utf8(executable_path.parent_path());
-#endif
 
     ServerCommand command;
     command.program = process_exe_path;
@@ -520,6 +668,240 @@ json SDServer::image_generations(const json& request) {
     return forward_request("/v1/images/generations", sd_request, 0);
 }
 
+json SDServer::video_generations(const json& request, std::atomic<bool>* cancel) {
+    if (request.contains("output_format") && request["output_format"] == "mp4") {
+        return ErrorResponse::from_exception(
+            InvalidRequestException("stable-diffusion.cpp video supports output_format webm, webp or avi"));
+    }
+
+    // /sdcpp/v1/vid_gen is sd-cpp's NATIVE route and takes a real JSON body --
+    // unlike /v1/images/generations, which is OpenAI-shaped and reads its
+    // parameters from a <sd_cpp_extra_args> blob smuggled inside the prompt.
+    // Reusing that convention here silently loses every parameter (the server
+    // falls back to 512x512) and corrupts the prompt with the blob text, so the
+    // body is built from scratch. Field names and nesting come from the
+    // backend's own /sdcpp/v1/capabilities defaults.
+    json body = json::object();
+    body["prompt"] = request.value("prompt", std::string());
+    if (request.contains("negative_prompt") && request["negative_prompt"].is_string()) {
+        body["negative_prompt"] = request["negative_prompt"];
+    }
+
+    // Prefer explicit request dimensions, then the model's recipe options.
+    // Omitted entirely when neither supplies them, so sd-server keeps its own
+    // defaults rather than us inventing a resolution the model wasn't trained on.
+    auto dimension = [&](const char* key) -> std::optional<int> {
+        if (request.contains(key) && request[key].is_number_integer()) {
+            return request[key].get<int>();
+        }
+        if (recipe_options_.has_option(key)) {
+            json value = recipe_options_.get_option(key);
+            if (value.is_number() && value.get<int>() > 0) return value.get<int>();
+        }
+        return std::nullopt;
+    };
+    if (auto width = dimension("width")) body["width"] = *width;
+    if (auto height = dimension("height")) body["height"] = *height;
+
+    // Same ladder, but with the descriptor's default as a last rung rather
+    // than stopping at what this model happens to set -- see the video_frames
+    // option in sdcpp.h for why leaving it unset is not a viable outcome.
+    auto video_param = [&](const char* key) -> std::optional<int> {
+        if (request.contains(key) && request[key].is_number_integer()) {
+            return request[key].get<int>();
+        }
+        json value = recipe_options_.get_option(key);
+        if (value.is_number() && value.get<int>() > 0) return value.get<int>();
+        return std::nullopt;
+    };
+    const auto fps = video_param("fps");
+    std::optional<int> frames;
+    if (request.contains("video_frames") && request["video_frames"].is_number_integer()) {
+        frames = request["video_frames"].get<int>();
+    } else if (request.contains("duration") && request["duration"].is_number()) {
+        // sd.cpp only generates 4n+1 frames and floors any other count, which
+        // would cut a short clip by up to a third, so round to the nearest one.
+        const double wanted = request["duration"].get<double>() * fps.value_or(16);
+        const double max_steps = static_cast<double>((std::numeric_limits<int>::max() - 1) / 4);
+        const double steps = std::clamp(std::round((wanted - 1.0) / 4.0), 0.0, max_steps);
+        frames = 4 * static_cast<int>(steps) + 1;
+    } else {
+        frames = video_param("video_frames");
+    }
+    if (frames) body["video_frames"] = *frames;
+    if (fps) body["fps"] = *fps;
+    // A negative seed means random, as for images; sd-server would otherwise
+    // fall back to its fixed default and give every clip the same noise.
+    if (request.contains("seed") && request["seed"].is_number_integer()) {
+        const int64_t seed = request["seed"].get<int64_t>();
+        body["seed"] = seed >= 0 ? seed : static_cast<int64_t>(generate_random_seed());
+    }
+    if (request.contains("output_format") && request["output_format"].is_string()) {
+        body["output_format"] = request["output_format"];
+    }
+
+    // Sampling knobs live under sample_params, and cfg under its guidance
+    // object -- flat top-level copies are ignored by this route.
+    json sample_params = json::object();
+    auto sampling = [&](const char* request_key, const char* option_key) -> std::optional<double> {
+        if (request.contains(request_key) && request[request_key].is_number()) {
+            return request[request_key].get<double>();
+        }
+        if (recipe_options_.has_option(option_key)) {
+            json value = recipe_options_.get_option(option_key);
+            if (value.is_number()) return value.get<double>();
+        }
+        return std::nullopt;
+    };
+    if (auto steps = sampling("steps", "steps")) {
+        // A recipe option is not range-checked like a request, and casting a double
+        // outside int's range is undefined.
+        if (*steps >= 1 && *steps <= std::numeric_limits<int>::max())
+            sample_params["sample_steps"] = static_cast<int>(*steps);
+    }
+    if (auto flow_shift = sampling("flow_shift", "flow_shift")) {
+        sample_params["flow_shift"] = *flow_shift;
+    }
+    if (request.contains("sampling_method") && request["sampling_method"].is_string()) {
+        sample_params["sample_method"] = request["sampling_method"];
+    } else if (recipe_options_.has_option("sampling_method")) {
+        json method = recipe_options_.get_option("sampling_method");
+        if (method.is_string()) {
+            sample_params["sample_method"] = method;
+        }
+    }
+    if (auto cfg = sampling("cfg_scale", "cfg_scale")) {
+        sample_params["guidance"] = json{{"txt_cfg", *cfg}};
+    }
+    if (!sample_params.empty()) {
+        body["sample_params"] = sample_params;
+    }
+
+    // A cancel that lands while the model is loading must not reach sd-server:
+    // it starts generating at once, so the cancel below would have to stop it.
+    if (cancel && cancel->load()) {
+        return ErrorResponse::from_exception(
+            BackendException(server_name_, "video generation canceled", 499));
+    }
+
+    LOG(DEBUG, "SDServer") << "Forwarding video request to sd-server: "
+                           << body.dump(2) << std::endl;
+
+    // vid_gen is asynchronous: it answers 202 with a job handle and does the
+    // work in the background. forward_request reports any non-200 as a backend
+    // error, so the 202 body is accepted here and the job polled to completion.
+    // The submit carries the job's cancel flag so a stalled sd-server cannot
+    // hold a cancel or a shutdown for the 300 s default timeout.
+    json accepted;
+    {
+        RequestCancelScope cancel_scope(utils::RequestCancelToken{cancel, nullptr});
+        accepted = forward_request("/sdcpp/v1/vid_gen", body, 0);
+    }
+    const bool submitted = !(accepted.contains("error") && accepted["error"].is_object() &&
+                             accepted["error"].value("status_code", 0) != 202);
+    if (cancel && cancel->load() && !submitted) {
+        // The abort can land after sd-server queued the clip but before its
+        // 202 reached us, which leaves a job with no handle to cancel it by.
+        LOG(INFO, "SDServer") << "video submit canceled before sd-server answered; "
+                              << "stopping sd-server in case it accepted the clip" << std::endl;
+        stop_server();
+        return ErrorResponse::from_exception(
+            BackendException(server_name_, "video generation canceled", 499));
+    }
+    const json* handle = &accepted;
+    if (accepted.contains("error") && accepted["error"].is_object()) {
+        const json& err = accepted["error"];
+        if (err.value("status_code", 0) == 202 && err.contains("details") &&
+            err["details"].is_object() && err["details"].contains("response")) {
+            handle = &err["details"]["response"];
+        } else {
+            return accepted;
+        }
+    }
+
+    const std::string poll_url = handle->value("poll_url", std::string());
+    if (poll_url.empty()) {
+        // Some builds may answer synchronously; pass that straight through.
+        return *handle;
+    }
+
+    // sd-server only cancels a job that is still queued: once frames are being
+    // produced it answers 409 and keeps the GPU busy. Stopping the process is the
+    // only way to free it, and returning after the stop keeps the job from
+    // reporting canceled while the clip is still running. stop_server() rather
+    // than a watchdog reset, which the router would answer by reloading and
+    // replaying the canceled request; the next request reloads the model instead.
+    // Both calls answer at once from a healthy sd-server, so a short timeout
+    // only cuts off a stalled one; the global 300 s default would hold a cancel
+    // or a shutdown for that long.
+    static constexpr long kBackendCallTimeoutSeconds = 5;
+
+    auto cancel_backend_job = [this, &poll_url]() {
+        json reply;
+        try {
+            reply = forward_request(poll_url + "/cancel", json::object(),
+                                    kBackendCallTimeoutSeconds);
+        } catch (const std::exception& e) {
+            reply = {{"error", {{"message", e.what()}}}};
+        }
+        if (!(reply.contains("error") && reply["error"].is_object())) {
+            LOG(INFO, "SDServer") << "canceled backend video job " << poll_url << std::endl;
+            return;
+        }
+        LOG(INFO, "SDServer") << "backend declined to cancel " << poll_url << ": "
+                              << reply["error"].dump() << "; stopping sd-server" << std::endl;
+        stop_server();
+    };
+
+    // No wall-clock deadline: a long clip legitimately runs for many minutes.
+    // Give up when the caller cancels, or when the backend dies, which
+    // is_backend_alive() catches via forward_get_request.
+    constexpr int kMaxFailedPolls = 5;
+    int failed_polls = 0;
+    while (true) {
+        if (cancel && cancel->load()) {
+            cancel_backend_job();
+            return ErrorResponse::from_exception(
+                BackendException(server_name_, "video generation canceled", 499));
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        json status = forward_get_request(poll_url, kBackendCallTimeoutSeconds);
+        // A job payload always carries a string "status"; anything else is a
+        // transport/backend error envelope from forward_get_request. Checking
+        // for a "status" field rather than for "error" matters: the job payload
+        // itself always has an "error" key, null while the job is healthy.
+        if (!status.contains("status") || !status["status"].is_string()) {
+            // A dead backend is left to the router, which reloads it and retries.
+            if (!is_backend_alive()) {
+                return status;
+            }
+            if (++failed_polls < kMaxFailedPolls) {
+                continue;
+            }
+            // Failing the job while sd-server may still be generating would free the
+            // slot with the GPU still busy, the same mismatch a refused cancel causes.
+            LOG(WARNING, "SDServer") << "lost track of video job " << poll_url << " after "
+                                     << failed_polls << " failed polls: " << status.dump()
+                                     << "; stopping sd-server" << std::endl;
+            stop_server();
+            return status;
+        }
+        failed_polls = 0;
+        const std::string state = status.value("status", std::string());
+        if (state == "queued" || state == "generating") {
+            continue;
+        }
+        if (!status.value("error", json()).is_null()) {
+            return ErrorResponse::from_exception(
+                BackendException(server_name_, status["error"].dump(), 500));
+        }
+        if (status.contains("result") && !status["result"].is_null()) {
+            return status["result"];
+        }
+        return status;
+    }
+}
+
 json SDServer::image_edits(const json& request) {
     // Use sd-server's /v1/images/edits endpoint (EDIT mode).
     // Images are placed into ref_images, which works well with editing models
@@ -638,9 +1020,6 @@ std::string SDServer::upscale_via_cli(
         return "";
     }
 
-    std::vector<std::pair<std::string, std::string>> env_vars;
-    std::filesystem::path cli_dir = cli_exe.parent_path();
-
     std::string resolved_backend = backend;
     if (backend == "rocm") {
         std::string channel = "stable";
@@ -649,49 +1028,8 @@ std::string SDServer::upscale_via_cli(
         }
         resolved_backend = "rocm-" + channel;
     }
-#ifndef _WIN32
-    std::string lib_path = cli_dir.string();
-
-    if (resolved_backend == "rocm-stable") {
-        std::string rocm_arch = SystemInfo::get_rocm_arch();
-        if (!rocm_arch.empty()) {
-            std::string therock_dirs = BackendUtils::join_runtime_dirs(
-                BackendUtils::get_therock_lib_paths(rocm_arch));
-            if (!therock_dirs.empty()) {
-                lib_path = therock_dirs + ":" + lib_path;
-            }
-        }
-    }
-
-    const char* existing_ld_path = std::getenv("LD_LIBRARY_PATH");
-    if (existing_ld_path && strlen(existing_ld_path) > 0) {
-        lib_path = lib_path + ":" + std::string(existing_ld_path);
-    }
-    env_vars.push_back({"LD_LIBRARY_PATH", lib_path});
-#else
-    if (resolved_backend == "rocm-stable") {
-        std::string new_path = cli_dir.string();
-        std::string rocm_arch = SystemInfo::get_rocm_arch();
-        std::vector<std::string> therock_dirs;
-        if (!rocm_arch.empty()) {
-            therock_dirs =
-                BackendUtils::get_therock_lib_paths(rocm_arch);
-            for (auto it = therock_dirs.rbegin(); it != therock_dirs.rend(); ++it) {
-                if (!it->empty()) {
-                    new_path = *it + ";" + new_path;
-                }
-            }
-        }
-
-        const char* existing_path = std::getenv("PATH");
-        if (existing_path && strlen(existing_path) > 0) new_path += ";" + std::string(existing_path);
-        env_vars.push_back({"PATH", new_path});
-
-        if (!therock_dirs.empty()) {
-            BackendUtils::stage_therock_hip_runtime(rocm_arch, cli_exe.parent_path());
-        }
-    }
-#endif
+    std::vector<std::pair<std::string, std::string>> env_vars =
+        sdcpp_launch_env(resolved_backend, cli_exe.string()).env;
 
     std::string raw = JsonUtils::base64_decode(b64_image);
 
@@ -783,12 +1121,21 @@ namespace lemon {
 namespace backends {
 namespace sdcpp {
 
+class SDCppOps final : public BackendOps {
+public:
+    std::optional<std::vector<std::pair<std::string, std::string>>> runtime_devices(
+        const std::string& backend) const override {
+        if (backend != "rocm" && backend != "vulkan") return std::nullopt;
+        return SDServer::list_devices(backend);
+    }
+};
+
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
     return make_server<SDServer>(ctx);
 }
 
 const BackendSpec* spec() { return make_spec<SDServer>(descriptor); }
-const BackendOps* ops() { return default_backend_ops(); }
+const BackendOps* ops() { return single_ops<SDCppOps>(); }
 }  // namespace sdcpp
 }  // namespace backends
 }  // namespace lemon

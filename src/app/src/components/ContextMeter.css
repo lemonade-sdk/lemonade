@@ -1,0 +1,63 @@
+/* Circular composer control: same 30px pill as Effective Settings. */
+.composer__context-meter { position: relative; flex: 0 0 auto; }
+.composer__tools-toggle.composer__context-trigger {
+  width: 30px; height: 30px; min-height: 30px; padding: 4px; gap: 0; border-radius: 50%;
+}
+.context-meter__track, .context-meter__fill { fill: none; stroke-width: 2.4; }
+.context-meter__track { stroke: var(--border-strong); }
+.context-meter__fill { stroke: var(--accent); stroke-linecap: round; transition: stroke-dasharray 180ms ease; }
+.context-meter__unknown { fill: var(--text-tertiary); }
+.composer__context-trigger[data-level="warning"] .context-meter__fill { stroke: var(--warning); }
+.composer__context-trigger[data-level="danger"] .context-meter__fill { stroke: var(--danger); }
+.composer__context-trigger[aria-expanded="true"] { border-color: var(--border-strong); background: var(--surface-2); }
+
+.context-meter__popover {
+  position: absolute; bottom: calc(100% + 10px); right: 0; z-index: var(--z-dropdown, 200);
+  width: min(348px, calc(100vw - 24px)); max-height: min(560px, calc(100vh - 140px));
+  overflow-y: auto; padding: var(--space-4);
+  border: 1px solid var(--border-strong); border-radius: var(--radius-lg);
+  background: var(--surface-raised); box-shadow: 0 12px 40px rgb(0 0 0 / 0.28);
+  color: var(--text-primary); font-size: var(--text-sm);
+}
+.context-meter__heading, .context-meter__row, .context-meter__total {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-2);
+}
+.context-meter__heading { margin-bottom: var(--space-2); }
+.context-meter__heading > span { color: var(--text-primary); font-weight: var(--weight-semibold); }
+.context-meter__total { justify-content: flex-start; margin-bottom: var(--space-3); font-variant-numeric: tabular-nums; }
+.context-meter__total > strong { font-size: var(--text-lg); }
+.context-meter__total > span { color: var(--text-secondary); }
+.context-meter__stack { position: relative; width: 100%; height: 12px; }
+.context-meter__stack-segments {
+  display: flex; width: 100%; height: 100%; background: var(--surface-3);
+  border: 1px solid var(--border-strong); border-radius: var(--radius-pill); overflow: hidden;
+}
+.context-meter__stack-segments > span { flex: 0 0 auto; transition: opacity 130ms ease, filter 130ms ease; }
+.context-meter__stack-segments > span[data-dimmed="true"] { opacity: 0.18; filter: grayscale(0.3); }
+.context-meter__stack-highlight {
+  position: absolute; top: -4px; height: calc(100% + 8px); min-width: 4px;
+  border: 2px solid var(--text-primary); border-radius: 4px;
+  box-shadow: 0 0 0 2px var(--surface-raised), 0 0 8px 2px var(--accent);
+  pointer-events: none; transition: left 130ms ease, width 130ms ease;
+}
+.context-meter__caption { margin: var(--space-3) 0 var(--space-2); color: var(--text-secondary); font-size: var(--text-xs); }
+.context-meter__rows { margin: 0; }
+.context-meter__row { min-height: 29px; padding: 2px 5px; margin-inline: -5px; border-radius: var(--radius-sm); }
+.context-meter__row dt { display: flex; align-items: center; gap: var(--space-2); min-width: 0; color: var(--text-primary); }
+.context-meter__row dd { margin: 0; white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: var(--weight-semibold); color: var(--text-primary); }
+.context-meter__row[tabindex] { cursor: default; }
+.context-meter__row[data-highlighted="true"] { background: var(--surface-3); }
+.context-meter__row[data-highlighted="true"] dt, .context-meter__row[data-highlighted="true"] dd { font-weight: var(--weight-bold); }
+.context-meter__row--quiet dt, .context-meter__row--quiet dd { color: var(--text-secondary); font-weight: var(--weight-regular); }
+.context-meter__row--total { margin-top: var(--space-2); padding-top: var(--space-2); border-top: 1px solid var(--border-strong); }
+.context-meter__dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 9px; box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.16); }
+/* Separate adjacent color families (especially thinking / answer). */
+.context-meter__part--system { background: var(--chart-series-1); }
+.context-meter__part--definitions { background: var(--chart-series-2); }
+.context-meter__part--conversation { background: var(--chart-series-3); }
+.context-meter__part--results { background: var(--chart-series-4); }
+.context-meter__part--other { background: var(--chart-series-5); }
+.context-meter__part--thinking { background: var(--chart-series-6); }
+.context-meter__part--answer { background: var(--accent); }
+.context-meter__note { margin: var(--space-3) 0 0; color: var(--text-secondary); font-size: var(--text-xs); line-height: 1.45; }
+.context-meter__note--alert { color: var(--danger); font-weight: var(--weight-semibold); }

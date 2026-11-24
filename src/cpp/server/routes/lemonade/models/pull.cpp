@@ -66,8 +66,9 @@ const RouteArg kCheckpoint{"checkpoint", ArgIn::JsonBody, {{"type", "string"}}, 
                            "`owner/repo` and selects its registry."};
 const RouteArg kCheckpoints{"checkpoints", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Available,
                             "Checkpoints by role, for multi-checkpoint models: `main`, plus `mmproj` for vision, "
-                            "`draft` for dflash, eagle and multi-token prediction, and `text_encoder` and `vae` for "
-                            "image generation, each when `main` does not embed it."};
+                            "`draft` for dflash, eagle and multi-token prediction, `lora` for a llama.cpp GGUF LoRA "
+                            "adapter, and `text_encoder` and `vae` for image generation, each when `main` does not "
+                            "embed it."};
 const RouteArg kReasoning{"reasoning", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
                           "`true` adds the `reasoning` label, for a reasoning model such as DeepSeek. Defaults "
                           "to `false`."};
@@ -116,7 +117,10 @@ public:
         s.summary = "Install a model";
         s.description =
             "Installs a model from the built-in registry, or registers a new `user.*` model from "
-            "a Hugging Face or ModelScope checkpoint and installs it.";
+            "a Hugging Face or ModelScope checkpoint and installs it. Backend arguments in imported "
+            "definitions, including embedded models and legacy option blocks, require [admin authorization](../guide/configuration/README.md#admin-api-key). "
+            "Defining or changing a collection manifest checkpoint or registry source also requires admin "
+            "authorization; pulling an existing collection without these overrides remains available.";
         s.notes = {
             "Pulling an already-downloaded model downloads any newer commit from its registry. "
             "Loading a model never checks for updates, and "
@@ -204,12 +208,17 @@ public:
         s.examples = {job_example, success_example, events_example, register_example,
                       collection_example};
         s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kInvalidSource, kInvalidModelDefinition,
-                    kLemondOffline, kUnknownModel, kIllegalLabels, kRegistryUnavailable, kPullFailed};
+                    kLemondOffline, kUnknownModel, kIllegalLabels, kRegistryUnavailable, kPullFailed,
+                    kBackendArgsAdminRequired};
         s.request_format = RequestFormat::Json;
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
+        if (!authorize_backend_args(req, res)) {
+            return;
+        }
+
         try {
             std::string model_name = req.arg(kModelName).get<std::string>();
 
@@ -223,7 +232,10 @@ public:
             // The registry is resolved once, up front, so download, cache layout and
             // later refresh agree on it.
             try {
-                lemon::apply_default_pull_source(req.body, ctx_.config->default_model_source());
+                lemon::apply_default_pull_source(req.body, [this] {
+                    return remote_registry_source_name(
+                        ctx_.model_manager->download_source_for(ModelInfo{}));
+                });
             } catch (const std::invalid_argument& e) {
                 write_plain_error(res, kInvalidSource, e.what());
                 return;
@@ -248,7 +260,7 @@ public:
                     /*require_definition=*/false,
                     /*allow_embedded_models=*/true,
                     local_import,
-                    res)) {
+                    res, is_admin_request(req))) {
                 return;
             }
 
@@ -266,20 +278,21 @@ public:
                 return;
             }
 
-            json download_request = collection_file_import ? req.body : json::object();
+            json download_request = json::object();
             for (const RouteArg* field : {&kSource, &kRegistrySource}) {
                 if (req.has(*field)) {
                     download_request[field->name] = req.arg(*field);
                 }
             }
 
+            const bool allow_backend_args = is_admin_request(req) || !collection_file_import;
             if (stream) {
                 ModelManager* model_manager = ctx_.model_manager;
                 DownloadManager::Operation operation =
                     [model_manager, model_name, download_request,
-                     do_not_upgrade](DownloadProgressCallback progress_cb, utils::CancelToken cancel) {
+                     do_not_upgrade, allow_backend_args](DownloadProgressCallback progress_cb, utils::CancelToken cancel) {
                         model_manager->download_model(model_name, download_request, do_not_upgrade,
-                                                      progress_cb, cancel);
+                                                      progress_cb, cancel, allow_backend_args);
                     };
 
                 if (!subscribe) {
@@ -292,12 +305,15 @@ public:
                     DownloadManager::stream(operation, sink);
                 });
             } else {
-                ctx_.model_manager->download_model(model_name, download_request, do_not_upgrade);
+                ctx_.model_manager->download_model(model_name, download_request, do_not_upgrade,
+                                                   nullptr, utils::CancelToken(), allow_backend_args);
 
                 json response = {{"status", "success"}, {"model_name", model_name}};
                 res.set_content(response.dump(), "application/json");
             }
 
+        } catch (const BackendArgsAuthorizationError& e) {
+            write_plain_error(res, kBackendArgsAdminRequired, e.what());
         } catch (const lemon::UnknownModelError& e) {
             LOG(ERROR, "Server") << "ERROR in handle_pull: " << e.what() << std::endl;
             res.status = kUnknownModel.status;

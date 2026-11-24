@@ -11,6 +11,7 @@
   "auto_evict": false,
   "auto_evict_threshold_pct": 0.9,
   "auto_update_models": false,
+  "backend_source": "github",
   "broadcast": true,
   "cloud_providers": [],
   "config_version": 2,
@@ -58,6 +59,10 @@
   "log_level": "info",
   "log_max_file_size_mb": 10,
   "log_max_files": 5,
+  "loom": {
+    "args": "",
+    "hrx_bin": "builtin"
+  },
   "max_loaded_models": 1,
   "model_catalogs": [],
   "models_dir": "auto",

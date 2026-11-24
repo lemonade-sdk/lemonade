@@ -1,12 +1,15 @@
 #pragma once
 
-#include <string>
-#include <functional>
-#include <nlohmann/json.hpp>
-#include <httplib.h>
-#include "utils/http_client.h"
 #include "utils/aixlog.hpp"
+#include "utils/cancel_token.h"
+#include "utils/http_client.h"
+
+#include <functional>
 #include <iomanip>
+#include <string>
+
+#include <httplib.h>
+#include <nlohmann/json.hpp>
 
 namespace lemon {
 
@@ -60,7 +63,8 @@ public:
         std::function<void(const TelemetryData&)> on_complete = nullptr,
         long timeout_seconds = 300,
         std::function<void()> on_chunk = nullptr,
-        long heartbeat_interval_ms = 1000
+        long heartbeat_interval_ms = 1000,
+        const lemon::utils::CancelToken& cancel = {}
     );
 
     static void forward_byte_stream(
@@ -68,7 +72,8 @@ public:
         const std::string& request_body,
         httplib::DataSink& sink,
         long timeout_seconds = 300,
-        std::function<void()> on_chunk = nullptr
+        std::function<void()> on_chunk = nullptr,
+        const lemon::utils::CancelToken& cancel = {}
     );
 
     // Splits on all three SSE line terminators (LF, CRLF, CR). A trailing CR is

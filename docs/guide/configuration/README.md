@@ -49,6 +49,7 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
   "auto_evict": false,
   "auto_evict_threshold_pct": 0.9,
   "auto_update_models": false,
+  "backend_source": "github",
   "broadcast": true,
   "cloud_providers": [],
   "config_version": 2,
@@ -96,6 +97,10 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
   "log_level": "info",
   "log_max_file_size_mb": 10,
   "log_max_files": 5,
+  "loom": {
+    "args": "",
+    "hrx_bin": "builtin"
+  },
   "max_loaded_models": 1,
   "model_catalogs": [],
   "models_dir": "auto",
@@ -226,7 +231,8 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
 | `extra_models_dir` | string | "" | Secondary directory recursively scanned for GGUF model files. Empty disables extra discovery; existing paths must be readable by `lemond`. See [Imported models](./custom-models.md#imported-models-extra_models_dir) |
 | `models_dir` | string | "auto" | Directory for cached model files. `"auto"` follows `HF_HUB_CACHE` / `HF_HOME` / platform default |
 | `ctx_size` | int | -1 | Default context size for LLM models. Use `-1` for auto-resolution: the server computes the largest context that fits in available device memory using GGUF architecture metadata. Use a positive integer to set an explicit size. |
-| `default_model_source` | string | "huggingface" | Remote registry used to pull checkpoints when a request does not name one (`huggingface` or `modelscope`). Explicit `--source`, a `source`/`registry_source` field, or a provider URL always overrides it. |
+| `default_model_source` | string | "huggingface" | Remote registry policy for checkpoints without a source. Accepts `huggingface`, `modelscope`, or `auto`. |
+| `backend_source` | string | "github" | Where backend binaries are downloaded from: `github` (GitHub Releases) or `modelscope` (the [`lemonade-sdk/backends`](https://modelscope.cn/datasets/lemonade-sdk/backends) mirror on ModelScope, for networks that cannot reach GitHub reliably). See [Downloading backends from ModelScope](#downloading-backends-from-modelscope). |
 | `download_rate_limit` | string | "" | Caps model/backend download speed. Byte rate with curl-style suffixes: `512`, `100K`, `10M`, etc. Use `""` for unlimited download speed. A non-empty value also serializes concurrent transfers. |
 | `offline` | bool | false | Skip model downloads |
 | `auto_check_model_updates` | bool | true | Check downloaded Hugging Face-backed models for updates during server startup. Set to `false` to check only with `lemonade check-updates` or `POST /v1/models/check-updates`. Manual downloads and updates remain enabled. |
@@ -238,7 +244,26 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
 | `rocm_channel` | string | "stable" | ROCm backend channel: "stable" (default) or "nightly". See [llama.cpp Backend](./llamacpp.md) for details |
 | `rocm_install_method` | string | "auto" | How to install the bundled ROCm runtime: "auto" (pip wheels, tarball fallback), "wheel" (wheels only), or "tarball" (no Python/pip). See [llama.cpp Backend](./llamacpp.md#choosing-the-rocm-install-method) for details |
 
-FLM manages its own model storage, so it does not persist a registry source with each model. An FLM pull follows the current `default_model_source` unless that request supplies an explicit `--source`; changing the default therefore changes the registry used by later FLM pulls and upgrades.
+Run `lemonade config set default_model_source=auto` to check both registry APIs in the background at startup or when entering auto mode. The check also runs when leaving offline mode with `auto` active. Hugging Face is preferred. If its API fails and ModelScope's API responds, source-less pulls use ModelScope. A source-less pull waits for a check if the source is still unknown. If neither probe succeeds, the next source-less pull checks again. The selected registry must host the requested checkpoint and variant.
+
+Explicit `--source`, a `source`/`registry_source` field, and provider URLs take precedence. Custom models keep their recorded registry. FLM manages its own storage and follows the current policy for each pull or upgrade without an explicit source.
+
+### Downloading backends from ModelScope
+
+Where GitHub is slow or unreachable, such as in mainland China, set `backend_source` to `modelscope` to download backends and the ROCm runtime from the [`lemonade-sdk/backends`](https://modelscope.cn/datasets/lemonade-sdk/backends) dataset instead of GitHub Releases. It mirrors the files `backend_versions.json` pins, with the same names. Pair it with `default_model_source` so models come from ModelScope too:
+
+```bash
+lemonade config set backend_source=modelscope
+lemonade config set default_model_source=modelscope
+```
+
+`LEMONADE_BACKEND_SOURCE` sets it for the process. For one request, pass `--source` to `lemonade backends install` (`"source"` on `POST /v1/install`), or `--backend-source` to `lemonade load` and `lemonade run` (`"backend_source"` on `POST /v1/load`). With `modelscope`:
+
+- Each file must match the SHA-256 pinned for it in `checksums.modelscope`; a file without one is refused. GitHub downloads do not use these hashes.
+- Only pinned versions are mirrored. With a `*_bin` of `latest`, the installed version is reused; with none installed, the install fails.
+- `thinksound`, `acestep`, `trellis`, `openmoss` and datacenter GPU builds are not mirrored; install them with `--source github`. Container backends pull from their own registries.
+- `rocm_install_method=auto` installs the TheRock tarball, since the mirror has no pip wheel index. A runtime already installed from wheels keeps working.
+- `MODELSCOPE_ENDPOINT` moves the API, as for model pulls. No token is sent: the dataset is public.
 
 Both `models_dir` and `extra_models_dir` can be changed at runtime through [`POST /internal/set`](../../api/internal.md#post-internalset). Existing `extra_models_dir` paths are preflighted as directories and must be enumerable by the `lemond` process. Nonexistent paths are accepted so the directory watcher can observe them if they are created later.
 
@@ -519,6 +544,12 @@ When `LEMONADE_API_KEY` is set, the inference and model-management endpoints rej
 The `LEMONADE_ADMIN_API_KEY` environment variable provides elevated access to both regular API endpoints and internal endpoints (`/internal/*`). When set, it takes precedence over `LEMONADE_API_KEY` for client authentication.
 
 `LEMONADE_ADMIN_API_KEY` enables privilege separation between two classes of authenticated clients. Holders of `LEMONADE_API_KEY` can reach the regular API endpoints, while only holders of `LEMONADE_ADMIN_API_KEY` can reach the internal control endpoints (`/internal/*`, e.g. shutdown and configuration). A client presenting only `LEMONADE_API_KEY` cannot reach `/internal/*` if `LEMONADE_ADMIN_API_KEY` is set to a distinct value. If `LEMONADE_ADMIN_API_KEY` is not set, it defaults to the value of `LEMONADE_API_KEY`, so the regular key then also authenticates against `/internal/*` and no privilege separation exists.
+
+Supplying backend command-line arguments (`*_args`) or changing `merge_args` through model loading, background-job load steps, saved model options, registration, or import also requires admin authorization. This includes options inside `recipe_options`, legacy option blocks, and embedded collection model definitions. Clearing saved backend arguments also requires admin authorization. Requests with insufficient privileges return HTTP 403 before changing models or saved options. Regular clients can still load models with arguments already configured by the operator.
+
+Submitting a collection's manifest checkpoint or its registry source also requires admin authorization because the manifest can supply backend arguments, even when resending an unchanged value. Regular clients can still load or pull existing operator-configured collections without these fields; their configured manifest sources remain trusted.
+
+Set different regular and admin keys to separate these permissions. With only the regular key configured, that key authorizes argument overrides too; with neither key configured, no authentication is required. With only an admin key configured, ordinary API operations remain open, but argument overrides require the admin key.
 
 **Authentication Hierarchy:**
 

@@ -4,6 +4,7 @@
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
 #include "lemon/backends/backend_registry.h"  // spec_for() — descriptor->install spec, no server includes
+#include "lemon/backends/backend_source.h"
 #include "lemon/models/download_progress.h"
 
 #include "lemon/utils/archive_platform.h"
@@ -21,6 +22,7 @@
 #include <map>
 #include <mutex>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <lemon/utils/aixlog.hpp>
 #include <algorithm>
@@ -77,7 +79,8 @@ namespace lemon::backends {
         return hash_string_from_json(*current);
     }
 
-    static std::string lookup_expected_asset_hash(const std::string& recipe,
+    static std::string lookup_expected_asset_hash(const std::string& source,
+                                                  const std::string& recipe,
                                                   const std::string& backend,
                                                   const std::string& version,
                                                   const std::string& repo,
@@ -86,7 +89,13 @@ namespace lemon::backends {
             const std::string config_path = utils::get_resource_path("resources/backend_versions.json");
             const json config = utils::JsonUtils::load_from_file(config_path);
 
-            const std::vector<std::vector<std::string>> candidate_paths = {
+            std::vector<std::vector<std::string>> candidate_paths;
+            if (backend_source::is_modelscope(source)) {
+                // Generated for every mirrored file; GitHub downloads ignore it.
+                candidate_paths.push_back({"checksums", "modelscope", "github", repo, version, filename});
+                candidate_paths.push_back({"checksums", "modelscope", "therock", version, filename});
+            }
+            candidate_paths.insert(candidate_paths.end(), {
                 {"checksums", "github", repo, version, filename},
                 {"checksums", repo, version, filename},
                 {"checksums", recipe, backend, version, filename},
@@ -97,7 +106,7 @@ namespace lemon::backends {
                 {"artifact_hashes", recipe, backend, version, filename},
                 {"artifact_hashes", recipe, version, filename},
                 {"artifact_hashes", filename}
-            };
+            });
 
             for (const auto& path : candidate_paths) {
                 // Skip repo-keyed shapes when no repo is available (e.g. TheRock).
@@ -173,6 +182,32 @@ namespace lemon::backends {
         return p == pattern.size();
     }
 
+    std::string BackendUtils::effective_backend_source() {
+        if (!backend_source::request_override.empty()) {
+            return backend_source::request_override;
+        }
+        if (auto* cfg = RuntimeConfig::global()) {
+            return cfg->backend_source();
+        }
+        return backend_source::kGitHub;
+    }
+
+    static std::string modelscope_endpoint() {
+        return utils::get_environment_variable_utf8("MODELSCOPE_ENDPOINT");
+    }
+
+    // The mirror has no copy of AMD's wheel index, so "auto" installs the tarball.
+    std::string BackendUtils::effective_rocm_install_method() {
+        std::string method = "auto";
+        if (auto* cfg = RuntimeConfig::global()) {
+            method = cfg->rocm_install_method();
+        }
+        if (method == "auto" && backend_source::is_modelscope(BackendUtils::effective_backend_source())) {
+            return "tarball";
+        }
+        return method;
+    }
+
     // Resolve a '*' wildcard in a release asset filename to the concrete asset
     // name published for `tag`. Some upstreams embed a component that changes
     // on every build (e.g. the macOS runner version in sd-cpp's Darwin asset:
@@ -186,6 +221,43 @@ namespace lemon::backends {
                                               const BackendSpec& spec) {
         if (pattern.find('*') == std::string::npos) {
             return pattern;
+        }
+
+        const std::string source = BackendUtils::effective_backend_source();
+        if (backend_source::is_modelscope(source)) {
+            // The mirror's assets.json lists the release, so no GitHub API call.
+            const std::string manifest_url =
+                backend_source::release_manifest_url(modelscope_endpoint(), repo, tag);
+            LOG(DEBUG, spec.log_name()) << "Resolving asset wildcard '" << pattern
+                << "' for " << repo << "@" << tag << " via " << manifest_url << std::endl;
+            utils::HttpResponse manifest_resp =
+                utils::HttpClient::get(manifest_url);
+            if (manifest_resp.status_code != 200) {
+                throw std::runtime_error(
+                    "ModelScope mirror returned HTTP " + std::to_string(manifest_resp.status_code) +
+                    " for the file list of " + repo + "@" + tag +
+                    ". The mirror only carries the versions Lemonade pins.");
+            }
+            json manifest;
+            try {
+                manifest = json::parse(manifest_resp.body);
+            } catch (const std::exception& e) {
+                throw std::runtime_error("Failed to parse the ModelScope file list for " + repo +
+                                         "@" + tag + ": " + e.what());
+            }
+            if (manifest.contains("files") && manifest["files"].is_array()) {
+                for (const auto& f : manifest["files"]) {
+                    if (f.contains("name") && f["name"].is_string() &&
+                        wildcard_match(pattern, f["name"].get<std::string>())) {
+                        const std::string name = f["name"].get<std::string>();
+                        LOG(INFO, spec.log_name()) << "Resolved asset wildcard '"
+                            << pattern << "' to '" << name << "'" << std::endl;
+                        return name;
+                    }
+                }
+            }
+            throw std::runtime_error("No mirrored asset matching '" + pattern + "' found for " +
+                                     repo + "@" + tag);
         }
 
         const std::string url = "https://api.github.com/repos/" + repo +
@@ -307,6 +379,34 @@ namespace lemon::backends {
         }
         // Default to ZIP extraction
         return extract_zip(archive_path, dest_dir, backend_name);
+    }
+
+    void BackendUtils::keep_archive_subdir(const std::string& staging_dir, const std::string& subdir) {
+        const fs::path root = fs::path(staging_dir);
+        const fs::path relative = fs::path(subdir).lexically_normal();
+        if (relative.empty() || relative.is_absolute() || relative.has_root_name() ||
+            *relative.begin() == "..") {
+            throw std::runtime_error("Archive subdirectory escapes the install tree: " + subdir);
+        }
+        const fs::path kept = root / relative;
+        std::error_code ec;
+        if (!fs::is_directory(kept, ec)) {
+            throw std::runtime_error("Archive has no " + subdir + " directory");
+        }
+        const fs::path holding = root.string() + ".keep";
+        fs::remove_all(holding, ec);
+        fs::rename(kept, holding, ec);
+        if (ec) {
+            throw std::runtime_error("Failed to isolate " + subdir + ": " + ec.message());
+        }
+        fs::remove_all(root, ec);
+        if (ec) {
+            throw std::runtime_error("Failed to prune extracted archive: " + ec.message());
+        }
+        fs::rename(holding, root, ec);
+        if (ec) {
+            throw std::runtime_error("Failed to restore " + subdir + ": " + ec.message());
+        }
     }
 
     std::string BackendUtils::get_install_directory(const std::string& dir_name, const std::string& backend) {
@@ -507,6 +607,31 @@ namespace lemon::backends {
         return parsed ? policy->image + "@" + parsed->digest : "";
     }
 
+    std::vector<std::string> BackendUtils::get_installed_backend_images(const std::string& recipe,
+                                                                        const std::string& backend) {
+        const std::string current = get_installed_backend_image(recipe, backend);
+        if (current.empty()) {
+            return {};
+        }
+        std::vector<std::string> images = {current};
+        const std::string digest = current.substr(current.find('@'));
+        for (const auto& former : get_container_policy(recipe, backend)->former_images) {
+            images.push_back(former + digest);
+        }
+        return images;
+    }
+
+    std::vector<std::string> BackendUtils::get_present_installed_images(
+        const utils::ContainerManager& manager, const std::string& recipe, const std::string& backend) {
+        std::vector<std::string> present;
+        for (const auto& image : get_installed_backend_images(recipe, backend)) {
+            if (manager.has_image(image)) {
+                present.push_back(image);
+            }
+        }
+        return present;
+    }
+
     std::string BackendUtils::get_backend_version(const std::string& recipe, const std::string& backend) {
         std::string resolved_backend = backend;
         if (recipe_has_rocm_channels(recipe) && backend == "rocm") {
@@ -542,7 +667,8 @@ namespace lemon::backends {
                                            const std::string& repo,
                                            const std::string& asset_pattern,
                                            const std::string& backend,
-                                           DownloadProgressCallback progress_cb) {
+                                           DownloadProgressCallback progress_cb,
+                                           const std::string& archive_subdir) {
         std::string install_dir;
         std::string version_file;
         std::string exe_path = find_external_backend_binary(spec.recipe, backend);
@@ -654,8 +780,15 @@ namespace lemon::backends {
                 }
             } zip_guard{zip_path};
 
-            const std::string base_download_url = "https://github.com/" + repo + "/releases/download/" +
-                                                  expected_version + "/";
+            const std::string source = BackendUtils::effective_backend_source();
+            const std::string endpoint = modelscope_endpoint();
+            auto asset_url = [&](const std::string& name) {
+                return backend_source::release_asset_url(source, endpoint, repo, expected_version, name);
+            };
+            if (backend_source::is_modelscope(source)) {
+                LOG(INFO, spec.log_name()) << "Downloading " << repo << "@" << expected_version
+                                           << " from the ModelScope mirror" << std::endl;
+            }
 
             // Decide single-file vs. split-archive without hitting the GitHub
             // Releases API (which is rate-limited to 60 req/hr per IP, and
@@ -678,7 +811,7 @@ namespace lemon::backends {
             bool is_split = false;
             std::vector<std::string> part_assets;
             if (spec.supports_split_archive) {
-                const std::string partcount_url = base_download_url + base + ".partcount";
+                const std::string partcount_url = asset_url(base + ".partcount");
                 auto resp = utils::HttpClient::get(partcount_url);
                 if (resp.status_code == 200) {
                     int total_parts = 0;
@@ -716,7 +849,7 @@ namespace lemon::backends {
                 // 404 = no manifest = single-file release; fall through.
             }
             if (!is_split) {
-                std::string url = base_download_url + filename;
+                std::string url = asset_url(filename);
                 LOG(DEBUG, spec.log_name()) << "Downloading from: " << url << std::endl;
 
                 utils::ProgressCallback http_progress_cb;
@@ -737,8 +870,9 @@ namespace lemon::backends {
                 }
 
                 utils::DownloadOptions archive_download_opts;
-                archive_download_opts.expected_hash = lookup_expected_asset_hash(
-                    spec.recipe, backend, expected_version, repo, filename);
+                archive_download_opts.expected_hash = backend_source::require_pinned_hash(
+                    source, lookup_expected_asset_hash(source, spec.recipe, backend, expected_version, repo, filename),
+                    repo + "@" + expected_version + "/" + filename);
                 archive_download_opts.resume_partial = false;
 
                 auto download_result = utils::HttpClient::download_file(
@@ -761,7 +895,7 @@ namespace lemon::backends {
                 const int total_parts = static_cast<int>(part_assets.size());
                 for (const auto& part_filename : part_assets) {
                     ++part_index;
-                    std::string part_url = base_download_url + part_filename;
+                    std::string part_url = asset_url(part_filename);
                     std::string part_path = zip_path + ".part" + std::to_string(part_index - 1);
 
                     LOG(DEBUG, spec.log_name()) << "Downloading part "
@@ -794,8 +928,10 @@ namespace lemon::backends {
                     }
 
                     utils::DownloadOptions part_download_opts;
-                    part_download_opts.expected_hash = lookup_expected_asset_hash(
-                        spec.recipe, backend, expected_version, repo, part_filename);
+                    part_download_opts.expected_hash = backend_source::require_pinned_hash(
+                        source,
+                        lookup_expected_asset_hash(source, spec.recipe, backend, expected_version, repo, part_filename),
+                        repo + "@" + expected_version + "/" + part_filename);
                     part_download_opts.resume_partial = false;
 
                     auto part_result = utils::HttpClient::download_file(
@@ -833,6 +969,9 @@ namespace lemon::backends {
             // staging guard removes the partial tree when we throw.
             if (!extract_archive(zip_path, staging_dir, spec.log_name())) {
                 throw std::runtime_error("Failed to extract archive: " + zip_path);
+            }
+            if (!archive_subdir.empty()) {
+                keep_archive_subdir(staging_dir, archive_subdir);
             }
             if (spec.build_matches && !spec.build_matches(staging_dir, filename)) {
                 throw std::runtime_error("Downloaded archive does not contain the requested backend build: " + filename);
@@ -1634,10 +1773,7 @@ namespace lemon::backends {
         //   tarball - TheRock tarball only (no Python/pip)
         // method.txt records "wheel" or "tarball" at install time; when methods
         // disagree (e.g. user switched knobs), backend_manager triggers reinstall.
-        std::string method = "auto";
-        if (auto* cfg = RuntimeConfig::global()) {
-            method = cfg->rocm_install_method();
-        }
+        const std::string method = effective_rocm_install_method();
 
         reset_therock_wheels_cancelled();
 
@@ -2076,7 +2212,8 @@ namespace lemon::backends {
         std::string platform = "linux";
 #endif
         std::string filename = "therock-dist-" + platform + "-" + url_variant + "-" + version + ".tar.gz";
-        std::string url = "https://stable.repo.amd.com/rocm/core/tarball/" + filename;
+        const std::string source = BackendUtils::effective_backend_source();
+        std::string url = backend_source::therock_tarball_url(source, modelscope_endpoint(), version, filename);
 
         fs::path cache_dir = get_backend_download_cache_dir();
         std::string tarball_path = (cache_dir / filename).string();
@@ -2102,12 +2239,10 @@ namespace lemon::backends {
             http_progress_cb = utils::create_throttled_progress_callback();
         }
 
-        // TheRock asset verification stays metadata-driven. Once upstream publishes
-        // per-asset checksums, backend_versions.json can provide them without
-        // changing download code. Until then this remains an optional lookup.
+        // AMD publishes no checksums; checksums.modelscope.therock was hashed when pinning.
         utils::DownloadOptions therock_download_opts;
-        therock_download_opts.expected_hash = lookup_expected_asset_hash(
-            "therock", arch, version, "", filename);
+        therock_download_opts.expected_hash = backend_source::require_pinned_hash(
+            source, lookup_expected_asset_hash(source, "therock", arch, version, "", filename), filename);
 
         auto download_result = utils::HttpClient::download_file(
             url,
@@ -2519,6 +2654,244 @@ namespace lemon::backends {
                                << std::endl;
         }
 #endif
+    }
+
+    int BackendUtils::parse_gpu_device_index(const std::string& selection,
+                                              const std::string& prefix) {
+        std::string normalized = selection;
+        std::transform(normalized.begin(), normalized.end(), normalized.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (normalized.size() <= prefix.size() || normalized.compare(0, prefix.size(), prefix) != 0 ||
+            !std::all_of(normalized.begin() + prefix.size(), normalized.end(),
+                         [](unsigned char c) { return std::isdigit(c) != 0; })) {
+            throw std::invalid_argument("Invalid GPU selection '" + selection +
+                                        "' (expected " + prefix + "0, " + prefix + "1, ...)");
+        }
+        try {
+            return std::stoi(normalized.substr(prefix.size()));
+        } catch (const std::exception&) {
+            throw std::invalid_argument("GPU index out of range: " + selection);
+        }
+    }
+
+    std::string BackendUtils::cuda_visible_device_for_selection(
+            const std::string& selection,
+            const std::vector<std::pair<int, std::string>>& detected_gpus) {
+        const int index = parse_gpu_device_index(selection, "cuda");
+        for (const auto& gpu : detected_gpus) {
+            if (gpu.first != index) continue;
+            // A sole CUDA GPU can always be addressed as 0. Avoid UUID filtering
+            // here: some RTX 50 drivers reject single-GPU UUID masks.
+            if (detected_gpus.size() == 1 && index == 0) return "0";
+            if (!gpu.second.empty()) return gpu.second;
+            throw std::invalid_argument("Cannot safely select " + selection +
+                ": NVIDIA GPU UUID unavailable");
+        }
+        throw std::invalid_argument("Selected GPU " + selection + " is not available");
+    }
+
+    void BackendUtils::validate_cuda_device_arch_for_selection(
+            const std::string& selection,
+            const std::string& required_arch,
+            const std::vector<std::pair<int, std::string>>& detected_archs) {
+        if (required_arch.empty()) return;
+        const int index = parse_gpu_device_index(selection, "cuda");
+        for (const auto& gpu : detected_archs) {
+            if (gpu.first != index) continue;
+            if (gpu.second == required_arch) return;
+            throw std::invalid_argument("Selected GPU " + selection + " (" +
+                (gpu.second.empty() ? "unknown architecture" : gpu.second) +
+                ") does not match the installed sd.cpp CUDA asset architecture " + required_arch);
+        }
+        throw std::invalid_argument("Selected GPU " + selection + " is not available");
+    }
+
+    std::vector<std::pair<std::string, std::string>> BackendUtils::rocm_device_env_for_selection(
+            const std::string& selection,
+            const std::vector<std::pair<int, std::string>>& hip_gpus,
+            int available_gpu_count) {
+        const int index = parse_gpu_device_index(selection, "rocm");
+        for (const auto& gpu : hip_gpus) {
+            if (gpu.first != index) continue;
+            if (!gpu.second.empty()) {
+                // ROCr applies its mask first; HIP then sees the one GPU as 0.
+                return {{"ROCR_VISIBLE_DEVICES", gpu.second}, {"HIP_VISIBLE_DEVICES", "0"}};
+            }
+            return {{"HIP_VISIBLE_DEVICES", std::to_string(index)}};
+        }
+        if (!hip_gpus.empty() || index >= available_gpu_count) {
+            throw std::invalid_argument("Selected GPU " + selection + " is not available");
+        }
+        if (available_gpu_count > 1) {
+            throw std::invalid_argument(
+                "Cannot safely select " + selection + ": this host has " +
+                std::to_string(available_gpu_count) +
+                " AMD GPUs and their HIP device order is unknown. Use auto.");
+        }
+        return {{"HIP_VISIBLE_DEVICES", "0"}};
+    }
+
+    std::vector<std::pair<std::string, std::string>> BackendUtils::parse_ggml_device_list(
+            const std::string& output) {
+        std::vector<std::pair<std::string, std::string>> devices;
+        std::istringstream lines(output);
+        std::string line;
+        while (std::getline(lines, line)) {
+            const size_t tab = line.find('\t');
+            if (tab == std::string::npos || tab == 0) continue;
+            std::string description = line.substr(tab + 1);
+            const size_t end = description.find_last_not_of(" \t\r\n");
+            description = end == std::string::npos ? "" : description.substr(0, end + 1);
+            devices.emplace_back(line.substr(0, tab), description);
+        }
+        return devices;
+    }
+
+    std::string BackendUtils::ggml_device_for_selection(
+            const std::string& selection,
+            const std::string& prefix,
+            const std::vector<std::pair<std::string, std::string>>& devices) {
+        const std::string wanted = prefix + std::to_string(parse_gpu_device_index(selection, prefix));
+        std::string found;
+        for (const auto& device : devices) {
+            std::string name = device.first;
+            std::transform(name.begin(), name.end(), name.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            if (name == wanted) return device.first;
+            if (name.compare(0, prefix.size(), prefix) == 0) {
+                found += (found.empty() ? "" : ", ") + device.first +
+                         (device.second.empty() ? "" : " (" + device.second + ")");
+            }
+        }
+        throw std::invalid_argument("Selected GPU " + selection + " is not available" +
+            (found.empty() ? std::string(": the backend reported no ") + prefix + " devices"
+                           : ". The backend reported: " + found));
+    }
+
+    std::string BackendUtils::canonical_gpu_selection(
+            const std::string& selection,
+            const std::string& prefix,
+            const std::vector<std::pair<int, std::vector<std::string>>>& gpus) {
+        // Index forms and backend names are plain words; every id has a '-' (UUID)
+        // or ':' (PCI address).
+        if (selection.find_first_of("-:") == std::string::npos) return selection;
+        auto lower = [](std::string text) {
+            std::transform(text.begin(), text.end(), text.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            return text;
+        };
+        const std::string wanted = lower(selection);
+        for (const auto& gpu : gpus) {
+            for (const auto& id : gpu.second) {
+                if (!id.empty() && lower(id) == wanted) return prefix + std::to_string(gpu.first);
+            }
+        }
+        throw std::invalid_argument("Selected GPU " + selection + " is not on this server");
+    }
+
+    std::string BackendUtils::resolve_gpu_selection(const std::string& selection,
+                                                    const std::string& backend) {
+        const bool cuda = backend.rfind("cuda", 0) == 0;
+        const bool rocm = backend == "rocm" || backend.rfind("rocm-", 0) == 0;
+        if (!cuda && !rocm) return selection;
+
+        std::vector<std::pair<int, std::vector<std::string>>> gpus;
+        const json system_info = SystemInfoCache::get_system_info_with_cache();
+        const char* list = cuda ? "nvidia_gpu" : "amd_gpu";
+        if (system_info.contains("devices") && system_info["devices"].contains(list) &&
+            system_info["devices"][list].is_array()) {
+            int ordinal = 0;
+            for (const auto& gpu : system_info["devices"][list]) {
+                const int position = ordinal++;
+                if (!gpu.value("available", false)) continue;
+                const int index = cuda ? gpu.value("index", position) : gpu.value("hip_index", -1);
+                if (index < 0) continue;
+                gpus.push_back({index, {gpu.value("uuid", ""), gpu.value("pci_bus_id", "")}});
+            }
+        }
+        return canonical_gpu_selection(selection, cuda ? "cuda" : "rocm", gpus);
+    }
+
+    void BackendUtils::apply_accelerator_device_env_vars(
+            std::vector<std::pair<std::string, std::string>>& env_vars,
+            const std::string& log_tag,
+            const std::string& backend,
+            const std::string& requested,
+            const std::string& required_cuda_arch) {
+        const bool automatic = requested.empty() || requested == "auto";
+        const std::string selection = automatic ? requested : resolve_gpu_selection(requested, backend);
+        if (selection != requested) {
+            LOG(INFO, log_tag) << "GPU " << requested << " is " << selection << std::endl;
+        }
+        if (backend == "cuda") {
+            if (automatic) {
+                apply_cuda_env_vars(env_vars, log_tag);
+                return;
+            }
+
+            const json system_info = SystemInfoCache::get_system_info_with_cache();
+            std::vector<std::pair<int, std::string>> gpus;
+            std::vector<std::pair<int, std::string>> gpu_archs;
+            if (system_info.contains("devices") && system_info["devices"].contains("nvidia_gpu") &&
+                system_info["devices"]["nvidia_gpu"].is_array()) {
+                int ordinal = 0;
+                for (const auto& gpu : system_info["devices"]["nvidia_gpu"]) {
+                    if (gpu.value("available", false)) {
+                        const int index = gpu.value("index", ordinal);
+                        gpus.emplace_back(index, gpu.value("uuid", ""));
+                        gpu_archs.emplace_back(index, gpu.value("family", ""));
+                    }
+                    ++ordinal;
+                }
+            }
+            validate_cuda_device_arch_for_selection(selection, required_cuda_arch, gpu_archs);
+            const std::string visible = cuda_visible_device_for_selection(selection, gpus);
+            env_vars.emplace_back("CUDA_VISIBLE_DEVICES", visible);
+            LOG(INFO, log_tag) << "Selecting " << selection
+                               << " via CUDA_VISIBLE_DEVICES=" << visible << std::endl;
+            apply_cuda_env_vars(env_vars, log_tag, /*skip_visible_devices=*/true);
+            return;
+        }
+        if (backend == "rocm" || backend == "rocm-stable") {
+            if (!automatic) {
+                const json system_info = SystemInfoCache::get_system_info_with_cache();
+                int available_count = 0;
+                std::vector<std::pair<int, std::string>> hip_gpus;
+                if (system_info.contains("devices") && system_info["devices"].contains("amd_gpu") &&
+                    system_info["devices"]["amd_gpu"].is_array()) {
+                    for (const auto& gpu : system_info["devices"]["amd_gpu"]) {
+                        if (!gpu.value("available", false)) continue;
+                        ++available_count;
+                        if (gpu.value("hip_index", -1) >= 0) {
+                            hip_gpus.emplace_back(gpu["hip_index"].get<int>(), gpu.value("uuid", ""));
+                        }
+                    }
+                }
+                for (const auto& [name, value] : rocm_device_env_for_selection(selection, hip_gpus, available_count)) {
+                    env_vars.emplace_back(name, value);
+                    LOG(INFO, log_tag) << "Selecting " << selection << " via " << name << "=" << value << std::endl;
+                }
+                // GPU_DEVICE_ORDINAL filters below these masks and would renumber them.
+                if (const char* ordinal = std::getenv("GPU_DEVICE_ORDINAL"); ordinal && *ordinal) {
+                    LOG(WARNING, log_tag) << "GPU_DEVICE_ORDINAL=" << ordinal
+                                          << " is set and may hide the selected GPU" << std::endl;
+                }
+            }
+            return;
+        }
+        if (backend == "vulkan") {
+            if (!automatic) {
+                const int index = parse_gpu_device_index(selection, "vulkan");
+                env_vars.emplace_back("GGML_VK_VISIBLE_DEVICES", std::to_string(index));
+                LOG(INFO, log_tag) << "Selecting Vulkan device index " << index
+                                   << " via GGML_VK_VISIBLE_DEVICES" << std::endl;
+            }
+            return;
+        }
+        if (!automatic) {
+            throw std::invalid_argument("GPU selection '" + selection +
+                                        "' is not supported by backend '" + backend + "'");
+        }
     }
 
     void BackendUtils::validate_device_backend_match(

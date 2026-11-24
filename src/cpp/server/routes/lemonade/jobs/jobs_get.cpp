@@ -53,6 +53,7 @@ public:
                 "created_at": {"type": "string", "description": "When the job was created, as an ISO 8601 UTC time."},
                 "started_at": {"type": "string", "description": "When the job first ran, present once it has."},
                 "finished_at": {"type": "string", "description": "When the job finished, present once it has."},
+                "stopped_at": {"type": "string", "description": "When the job was last paused or interrupted. Cleared when it resumes."},
                 "summary": {"type": "string", "description": "Summary text that Lemonade never writes itself: present only when the job's entry in `jobs.json`, in the Lemonade config directory, has one."},
                 "error": {"type": "string", "description": "Why the job failed or was interrupted, present when known."}
             }
@@ -74,7 +75,7 @@ public:
             write_unknown_job(res);
             return;
         }
-        res.set_content(job->dump(), "application/json");
+        res.set_content(job->to_api_json().dump(), "application/json");
     }
 };
 

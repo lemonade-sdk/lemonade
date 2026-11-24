@@ -66,6 +66,7 @@ const EXPECTED = {
   classification: 'classification',
   classifier: 'classification',
   '3d': 'model3d',
+  video: 'video',
 };
 
 for (const [label, kind] of Object.entries(EXPECTED)) {
@@ -90,7 +91,7 @@ for (const [, label] of deploymentSection.matchAll(/^\| `([a-z0-9-]+)` \|/gm)) d
 // "Also accepted as `embedding`." / "Also accepted as `classifier`."
 for (const [, alias] of deploymentSection.matchAll(/Also accepted as `([a-z0-9-]+)`/g)) documented.add(alias);
 
-assert.equal(documented.size, 11, 'nine deployment labels plus the two documented aliases');
+assert.equal(documented.size, 12, 'ten deployment labels plus the two documented aliases');
 
 const literal = capabilitiesSource.slice(
   capabilitiesSource.indexOf('const DEPLOYMENT_LABEL_KIND'),
@@ -159,6 +160,7 @@ const LOADED = {
   'audio-generation': 'audio-generation',
   classification: 'classification',
   mesh: 'model3d',
+  video: 'video',
 };
 for (const [type, kind] of Object.entries(LOADED)) {
   assert.equal(

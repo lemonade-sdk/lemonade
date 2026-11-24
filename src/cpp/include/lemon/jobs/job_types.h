@@ -2,7 +2,9 @@
 
 #include <nlohmann/json.hpp>
 
+#include <cstddef>
 #include <cstdint>
+#include <map>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -11,6 +13,10 @@ namespace lemon {
 namespace jobs {
 
 using json = nlohmann::ordered_json;
+
+// The running job's id, added to the context an op receives and never persisted. The
+// leading underscore keeps it apart from step ids, which name the other context entries.
+inline constexpr const char* kJobIdContextKey = "_job_id";
 
 class JobError : public std::runtime_error {
 public:
@@ -140,11 +146,16 @@ struct Job {
     bool deleted = false;
     json inputs = json::object();
     json context = json::object();
+    // Media budget bookkeeping, not job data.
+    std::map<std::string, size_t> media_extract_bytes;
     std::vector<StepRecord> steps;
     std::string cursor;
     std::string created_at;
     std::string started_at;
     std::string finished_at;
+    // When the job last became paused or interrupted; cleared on resume. Both states can
+    // resume, so finished_at stays empty for them.
+    std::string stopped_at;
     std::string summary;
     std::string error;
 
@@ -177,11 +188,19 @@ struct Job {
                   {"steps", st},
                   {"cursor", cursor},
                   {"created_at", created_at}};
+        if (!media_extract_bytes.empty()) j["media_extract_bytes"] = media_extract_bytes;
         if (deleted) j["deleted"] = true;
         if (!started_at.empty()) j["started_at"] = started_at;
         if (!finished_at.empty()) j["finished_at"] = finished_at;
+        if (!stopped_at.empty()) j["stopped_at"] = stopped_at;
         if (!summary.empty()) j["summary"] = summary;
         if (!error.empty()) j["error"] = error;
+        return j;
+    }
+
+    json to_api_json() const {
+        json j = to_json();
+        j.erase("media_extract_bytes");
         return j;
     }
 
@@ -193,12 +212,15 @@ struct Job {
         job.deleted = j.value("deleted", false);
         if (j.contains("inputs")) job.inputs = j["inputs"];
         if (j.contains("context")) job.context = j["context"];
+        if (j.contains("media_extract_bytes") && j["media_extract_bytes"].is_object())
+            job.media_extract_bytes = j["media_extract_bytes"].get<std::map<std::string, size_t>>();
         if (j.contains("steps") && j["steps"].is_array())
             for (const auto& s : j["steps"]) job.steps.push_back(StepRecord::from_json(s));
         job.cursor = j.value("cursor", "");
         job.created_at = j.value("created_at", "");
         job.started_at = j.value("started_at", "");
         job.finished_at = j.value("finished_at", "");
+        job.stopped_at = j.value("stopped_at", "");
         job.summary = j.value("summary", "");
         job.error = j.value("error", "");
         return job;
