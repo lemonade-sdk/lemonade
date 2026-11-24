@@ -204,13 +204,21 @@ export async function resumeVideoJob(
   // A clip that finished before the cancel landed is kept, not discarded; the
   // server answers 404 to a cancel for any job that is no longer running, so
   // that case falls through to the status polls.
+  // A cancel that failed before reaching the server leaves the job running, so
+  // it is sent again with each poll until the server answers it.
   const stop = async (): Promise<VideoJobResult> => {
     onStatus?.({ ...record, status: 'canceling' });
-    try {
-      await transport.cancel(id, timeoutSignal(requestTimeoutMs));
-    } catch (err) {
-      if (isPermanent(err) && !isGone(err)) throw new VideoJobStopUnconfirmedError(id);
-    }
+    let cancelAnswered = false;
+    const sendCancel = async () => {
+      try {
+        await transport.cancel(id, timeoutSignal(requestTimeoutMs));
+        cancelAnswered = true;
+      } catch (err) {
+        if (isGone(err)) cancelAnswered = true;
+        else if (isPermanent(err)) throw new VideoJobStopUnconfirmedError(id);
+      }
+    };
+    await sendCancel();
     for (let i = 0; i < maxCancelPolls; i += 1) {
       await sleep(pollMs);
       let latest: VideoJobRecord | null = null;
@@ -224,6 +232,7 @@ export async function resumeVideoJob(
         return download();
       }
       if (latest && TERMINAL.has(latest.status)) throw new VideoJobCanceledError();
+      if (!cancelAnswered) await sendCancel();
     }
     throw new VideoJobStopUnconfirmedError(id);
   };

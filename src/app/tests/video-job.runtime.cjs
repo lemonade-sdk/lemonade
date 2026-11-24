@@ -204,6 +204,43 @@ const noSleep = async () => {};
   }
 
   {
+    // A cancel that fails before reaching the server is sent again, so the
+    // job does not keep generating until Stop gives up.
+    const server = fakeServer(['running']);
+    let cancelFailures = 2;
+    let canceled = false;
+    server.transport.cancel = async id => {
+      server.calls.cancel.push(id);
+      if (cancelFailures > 0) { cancelFailures -= 1; throw new Error('network blip'); }
+      canceled = true;
+    };
+    const get = server.transport.get;
+    server.transport.get = async id => (canceled ? { id, status: 'canceled' } : get(id));
+    const controller = new AbortController();
+    const job = runVideoJob(server.transport, {}, {
+      signal: controller.signal,
+      onStatus: record => { if (record.status === 'running') controller.abort(); },
+      sleep: noSleep,
+      maxCancelPolls: 5,
+    });
+    await assert.rejects(job, err => isVideoJobCanceled(err));
+    assert.deepEqual(server.calls.cancel, ['job-1', 'job-1', 'job-1']);
+  }
+
+  {
+    // A cancel the server answered is not sent again.
+    const server = fakeServer(['running', 'running', 'running', 'canceled']);
+    const controller = new AbortController();
+    const job = runVideoJob(server.transport, {}, {
+      signal: controller.signal,
+      onStatus: record => { if (record.status === 'running') controller.abort(); },
+      sleep: noSleep,
+    });
+    await assert.rejects(job, err => isVideoJobCanceled(err));
+    assert.deepEqual(server.calls.cancel, ['job-1']);
+  }
+
+  {
     // The stop requests carry their own deadline, so one hung request cannot
     // hold Stop open.
     const server = fakeServer(['running']);
