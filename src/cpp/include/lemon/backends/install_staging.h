@@ -1,9 +1,11 @@
 #pragma once
 
+#include <algorithm>
 #include <filesystem>
 #include <stdexcept>
 #include <string>
 #include <system_error>
+#include <vector>
 
 // Header-only, dependency-light staging/atomic-swap helpers for backend
 // installation. Kept free of the heavier backend_utils.cpp dependencies so the
@@ -12,11 +14,12 @@ namespace lemon::backends {
 
     /**
      * Recursively search `dir` for a regular file named `binary_name` (or
-     * `binary_name + ".exe"` on Windows). Returns the full path, or "" if not
-     * found or `dir` does not exist.
+     * `binary_name + ".exe"` on Windows) with all required files next to it.
+     * Returns the full path, or "" when there is no matching installation.
      */
     inline std::string find_executable_in_dir(const std::string& dir,
-                                              const std::string& binary_name) {
+                                              const std::string& binary_name,
+                                              const std::vector<std::string>& required_files = {}) {
         namespace fs = std::filesystem;
         if (!fs::exists(dir)) {
             return "";
@@ -32,6 +35,11 @@ namespace lemon::backends {
                     || fname == binary_name_exe
 #endif
                 ) {
+                    const auto parent = dir_entry.path().parent_path();
+                    if (!std::all_of(required_files.begin(), required_files.end(),
+                                     [&](const auto& file) { return fs::is_regular_file(parent / file); })) {
+                        continue;
+                    }
                     return dir_entry.path().string();
                 }
             }
@@ -42,7 +50,7 @@ namespace lemon::backends {
     /**
      * Atomically promote a fully-prepared staging directory to `install_dir`.
      *
-     * Verifies that `staging_dir` contains `binary_name` before touching the
+     * Verifies the executable and its required files before touching the
      * currently-installed copy. The caller MUST create `staging_dir` as a
      * sibling of `install_dir` so the renames stay on one filesystem.
      *
@@ -56,7 +64,7 @@ namespace lemon::backends {
      *
      * Outcomes:
      *   - returns the path to the installed executable on success;
-     *   - returns "" when `staging_dir` does not contain `binary_name` (nothing
+     *   - returns "" when `staging_dir` is missing a required file (nothing
      *     was promoted; `staging_dir` is removed, `install_dir` is untouched);
      *   - throws std::runtime_error when the filesystem swap itself fails — the
      *     previous install is left in place (or rolled back), and `staging_dir`
@@ -65,12 +73,13 @@ namespace lemon::backends {
      */
     inline std::string commit_staged_install(const std::string& staging_dir,
                                              const std::string& install_dir,
-                                             const std::string& binary_name) {
+                                             const std::string& binary_name,
+                                             const std::vector<std::string>& required_files = {}) {
         namespace fs = std::filesystem;
 
         // Verify the freshly-staged tree actually contains the backend
-        // executable before we touch the currently-installed copy.
-        std::string staged_exe = find_executable_in_dir(staging_dir, binary_name);
+        // executable and its required files before touching the installed copy.
+        std::string staged_exe = find_executable_in_dir(staging_dir, binary_name, required_files);
         if (staged_exe.empty()) {
             std::error_code ec;
             fs::remove_all(staging_dir, ec);  // drop the bad staging tree; keep install_dir
@@ -112,7 +121,7 @@ namespace lemon::backends {
         // New install is in place; drop the backup.
         fs::remove_all(backup_dir, ec);
 
-        return find_executable_in_dir(install_dir, binary_name);
+        return find_executable_in_dir(install_dir, binary_name, required_files);
     }
 
 }  // namespace lemon::backends

@@ -668,7 +668,8 @@ namespace lemon::backends {
                                            const std::string& asset_pattern,
                                            const std::string& backend,
                                            DownloadProgressCallback progress_cb,
-                                           const std::string& archive_subdir) {
+                                           const std::string& archive_subdir,
+                                           const std::vector<std::string>& required_install_files) {
         std::string install_dir;
         std::string version_file;
         std::string exe_path = find_external_backend_binary(spec.recipe, backend);
@@ -679,7 +680,7 @@ namespace lemon::backends {
             version_file = get_version_file(install_dir);
 
             // Check if already installed with correct version
-            exe_path = find_executable_in_install_dir(install_dir, spec.binary);
+            exe_path = find_executable_in_dir(install_dir, spec.binary, required_install_files);
             needs_install = exe_path.empty();
 
             if (!needs_install && fs::exists(version_file)) {
@@ -1014,10 +1015,9 @@ namespace lemon::backends {
             // install_dir untouched on verification failure (returns ""), and on
             // a swap (rename) failure it rolls the backup back and throws — so a
             // botched download/extraction/swap never destroys the working binary.
-            exe_path = commit_staged_install(staging_dir, install_dir, spec.binary);
+            exe_path = commit_staged_install(staging_dir, install_dir, spec.binary, required_install_files);
             if (exe_path.empty()) {
-                LOG(ERROR, spec.log_name()) << "Extraction completed but executable not found" << std::endl;
-                throw std::runtime_error("Extraction failed: executable not found");
+                throw std::runtime_error("Extraction failed: executable or required runtime files not found");
             }
             // Swap succeeded: staging was consumed by the rename, so disarm the guard.
             staging_guard.active = false;

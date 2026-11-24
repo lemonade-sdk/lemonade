@@ -20,6 +20,7 @@ namespace {
 struct Origin {
     std::string repository;
     std::string revision;
+    bool bundle_local = false;
 };
 
 std::string string_field(const json& object, const char* key) {
@@ -35,6 +36,13 @@ std::map<std::string, Origin> read_origins(const json& card, const json& lock) {
     const json locked = lock.is_object() ? lock.value("origins", json::object()) : json::object();
     for (const auto& [name, origin] : declared->items()) {
         const std::string kind = string_field(origin, "kind");
+        // Loom 0.3 loom-fetch gives materialized bundle files a document origin.
+        // Those files are checked locally and never downloaded from that origin.
+        if ((kind == "url" || kind == "local") && name.compare(0, 8, "document") == 0 &&
+            name.find_first_not_of('_', 8) == std::string::npos) {
+            origins.emplace(name, Origin{"", "", true});
+            continue;
+        }
         if (kind != "hf") {
             throw std::runtime_error("Loom origin '" + name + "' has kind '" + kind +
                                      "'; only Hugging Face origins are supported");
@@ -89,9 +97,13 @@ bool starts_with(const std::string& text, const std::string& prefix) {
     return text.rfind(prefix, 0) == 0;
 }
 
-// info.json is bundle data, so it may only size and back the pool. A listener,
-// model, device or flagfile flag from it would escape Lemonade's auth and routing.
+// A bundle can size and back the pool and choose up to the runtime's default
+// worker count. Lemonade keeps control of listener, model, device and flagfile arguments.
 bool is_recordable_serve_arg(const std::string& arg) {
+    if (starts_with(arg, "--workers=")) {
+        const std::string count = arg.substr(sizeof("--workers=") - 1);
+        return count.size() == 1 && count.front() >= '1' && count.front() <= '8';
+    }
     static const char* const kPrefixes[] = {
         "--memory_bytes=", "--parameter_mode=", "--pool_backing=",
         "--state_slab_bytes=", "--weight_slab_bytes=",
@@ -176,6 +188,11 @@ BundlePlan plan_bundle(const json& card, const json& lock) {
         const auto digest = locked.find(origin);
         if (digest == locked.end()) {
             throw std::runtime_error("Loom lock has no digest for " + origin);
+        }
+        if (source->second.bundle_local) {
+            plan.locked_files.push_back(LockedFile{path, digest->second.size,
+                                                   digest->second.sha256});
+            return;
         }
         plan.origin_files.push_back(OriginFile{path, source->second.repository,
                                                source->second.revision, file,
@@ -334,7 +351,8 @@ std::vector<std::string> build_server_argv(const std::string& model_dir, int por
                                            const std::string& preset,
                                            const std::vector<std::string>& serve_args,
                                            const std::string& custom_args,
-                                           const std::string& device_query) {
+                                           const std::string& device_query,
+                                           bool legacy_parameter_modes) {
     std::vector<std::string> argv = {
         "--model=" + model_dir + "/" + kCardFile,
         "--listen=127.0.0.1:" + std::to_string(port),
@@ -351,6 +369,13 @@ std::vector<std::string> build_server_argv(const std::string& model_dir, int por
         }
         const auto parsed = utils::parse_custom_args(custom_args);
         argv.insert(argv.end(), parsed.begin(), parsed.end());
+    }
+    if (!legacy_parameter_modes) {
+        // Loom 0.3 reads buffered files by default. Old cards and saved arguments
+        // may still contain these former parameter modes.
+        argv.erase(std::remove_if(argv.begin(), argv.end(), [](const std::string& arg) {
+                       return arg == kPreloadFlag || arg == "--parameter_mode=mmap";
+                   }), argv.end());
     }
     return argv;
 }

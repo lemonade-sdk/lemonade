@@ -25,6 +25,7 @@ namespace lemon::backends {
         // If set, only this directory of the extracted archive is installed, as
         // the install root (e.g. a wheel's <name>.data/scripts).
         std::string archive_subdir;
+        std::vector<std::string> required_install_files;  // Files next to the installed executable.
     };
 
     struct BackendSpec {
@@ -121,7 +122,8 @@ namespace lemon::backends {
                                         const std::string& filename,
                                         const std::string& backend,
                                         DownloadProgressCallback progress_cb = nullptr,
-                                        const std::string& archive_subdir = "");
+                                        const std::string& archive_subdir = "",
+                                        const std::vector<std::string>& required_install_files = {});
 
         /** Replace `staging_dir` with its `subdir`, so only that part of an
          *  extracted archive is installed. Throws when `subdir` escapes the

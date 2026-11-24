@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <vector>
 #include <mutex>
 #include <string>
 #include <functional>
@@ -58,6 +59,7 @@ public:
         std::string filename;
         std::string version;
         std::string archive_subdir;
+        std::vector<std::string> required_install_files;
     };
 
     // Unlike the enrichment helpers above, this returns the repo and lets

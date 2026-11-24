@@ -111,6 +111,19 @@ void check_bundle_plan() {
     check("Non-Hugging-Face origins are rejected",
           throws_exception([&] { (void)loom::plan_bundle(url_origin, kLock); }));
 
+    json materialized = kCard;
+    materialized["origins"]["document"] = {{"kind", "url"}};
+    materialized["programs"]["source"]["inputs"][0]["origin"] = "@document/program/prepare.loom";
+    json materialized_lock = kLock;
+    materialized_lock["files"].push_back({{"origin", "@document/program/prepare.loom"},
+                                           {"size", 123u}, {"sha256", "digest"}});
+    const auto installed = loom::plan_bundle(materialized, materialized_lock);
+    check("Installed document files are verified locally",
+          installed.origin_files.size() == 2 && installed.locked_files.size() == 2 &&
+              installed.locked_files[0].path == "program/prepare.loom");
+    check("Installed document files still require a locked digest",
+          throws_exception([&] { (void)loom::plan_bundle(materialized, kLock); }));
+
     json missing_digest = kLock;
     missing_digest["files"].erase(1);
     check("A parameter without a locked digest is rejected",
@@ -173,6 +186,17 @@ void check_launch_contract() {
     check("Launch argv binds loopback and appends benign custom flags",
           loom::build_server_argv("/run", 14123, "vision-mtp", {"--memory_bytes=57000000000"},
                                   "--workers=4", "completion_spin_ns=123") == expected);
+    check("The legacy runtime still receives its parameter mode",
+          loom::build_server_argv("/run", 1, "", {"--pool_backing=fixed", loom::kPreloadFlag},
+                                  "", "", true) ==
+              std::vector<std::string>({"--model=/run/model.json", "--listen=127.0.0.1:1", device,
+                                        "--pool_backing=fixed", "--parameter_mode=preload"}));
+    check("The 0.3 launch drops obsolete parameter modes from both input sources",
+          loom::build_server_argv("/run", 1, "", {"--pool_backing=fixed", loom::kPreloadFlag},
+                                  "--parameter_mode=mmap --parameter_mode=direct", "completion_spin_ns=123") ==
+              std::vector<std::string>({"--model=/run/model.json", "--listen=127.0.0.1:1",
+                                        device + "?completion_spin_ns=123",
+                                        "--pool_backing=fixed", "--parameter_mode=direct"}));
     check("Launch argv omits an unset preset and serve flags",
           loom::build_server_argv("/run", 1, "", {}, "") ==
               std::vector<std::string>({"--model=/run/model.json", "--listen=127.0.0.1:1", device}));
@@ -345,6 +369,14 @@ void check_card_metadata() {
           loom::serve_args(small, true, "--workers=4") == small.args);
     check("Preload is not added when the card omits it",
           loom::serve_args(small, true, "") == small.args);
+    const json flash = json::parse(R"({"devices":{"strix-halo":{"quick_start":{
+        "preset":"vision-mtp","device":"amdgpu://?completion_spin_ns=4294967295",
+        "args":["--workers=8"]}}}})");
+    const loom::QuickStart flash_start = loom::quick_start(flash, loom::kStrixHaloTarget);
+    check("The Flash Quick start keeps its device query, workers and elastic default",
+          flash_start.preset == "vision-mtp" &&
+              flash_start.device_query == "completion_spin_ns=4294967295" &&
+              loom::serve_args(flash_start, false, "") == Args({"--workers=8"}));
     check("A bundle reports whether it records a Quick start for a GPU",
           loom::records_quick_start(cards, loom::kStrixHaloTarget) &&
               !loom::records_quick_start(cards, "gfx1150") &&
@@ -356,7 +388,8 @@ void check_card_metadata() {
     for (const std::string bad :
          {"\"--listen=0.0.0.0:18080\"", "\"--model=other.json\"", "\"--device=amdgpu://1\"",
           "\"--devices=d.json\"", "\"--flagfile=f\"", "\"--preset=x\"", "\"--listen\"",
-          "\"0.0.0.0:80\"", "\"--memory_bytes=\"", "\"--memory_bytes=1 --listen=0.0.0.0:1\"", "1"}) {
+          "\"0.0.0.0:80\"", "\"--memory_bytes=\"", "\"--memory_bytes=1 --listen=0.0.0.0:1\"",
+          "\"--workers=0\"", "\"--workers=9\"", "\"--workers=8 --listen=0.0.0.0:1\"", "1"}) {
         const json info_with_bad = json::parse(
             R"({"devices":{"strix-halo":{"quick_start":{"preset":"chat","device":"amdgpu://","args":["--memory_bytes=1",)" +
             bad + "]}}}}");
@@ -413,6 +446,23 @@ void check_card_metadata() {
 }
 
 void check_installer_contract() {
+#if defined(_WIN32) || (defined(__linux__) && (defined(__x86_64__) || defined(__amd64__)))
+    const auto current = LoomServer::get_install_params("hrx", "v0.3.0");
+#if defined(_WIN32)
+    check("Loom 0.3.0 uses the Windows wheel with the C++ importer",
+          current.filename == "hrx_loom-0.3.0-py3-none-win_amd64.whl");
+    check("The Windows wheel installs its executable and runtime DLLs together",
+          current.archive_subdir == "hrx_loom-0.3.0.data/scripts" &&
+              current.required_install_files == std::vector<std::string>{"iree.dll", "loomc.dll"});
+#else
+    check("Loom 0.3.0 uses the Linux wheel with the C++ importer",
+          current.filename == "hrx_loom-0.3.0-py3-none-manylinux_2_39_x86_64.whl");
+    check("The Linux wheel installs its executable and native libraries together",
+          current.archive_subdir == "hrx_loom-0.3.0.data/scripts" &&
+              current.required_install_files == std::vector<std::string>{"libiree.so", "libloomc.so"});
+#endif
+#endif
+
 #if defined(_WIN32)
     const auto params = LoomServer::get_install_params("hrx", "v0.2.0");
     check("Windows installs the win_amd64 wheel",

@@ -123,18 +123,18 @@ bool place_origin_file(const loom::OriginFile& file, const fs::path& dir) {
     return true;
 }
 
-// A snapshot Lemonade fetched records its Loom release; one fetched for another
-// release holds a card this loom-serve rejects (0.2.0 refuses 0.1.0's
-// `pool_capacity`). A snapshot without that record (loom-fetch, `hf download`)
-// is ready once every file its card reads is here or, for an origin file, in
-// its own repository's cache.
+// A snapshot Lemonade fetched records its Loom release. The v0.3.0 runtime
+// also accepts the published v0.2.0 controller ABI. The v0.1.0 schema still
+// contains the unsupported pool_capacity field. A snapshot without a marker
+// is ready once its files are present alongside the card or in the
+// originating repository's cache.
 bool snapshot_ready(const fs::path& dir) {
     std::error_code ec;
     try {
         if (!fs::is_regular_file(dir / loom::kCardFile, ec)) return false;
         if (fs::is_regular_file(dir / loom::kCompleteMarker, ec)) {
-            return read_json_file(dir / loom::kCompleteMarker).value("loom", "") ==
-                   loom::kBundleRevision;
+            const auto release = read_json_file(dir / loom::kCompleteMarker).value("loom", "");
+            return release == loom::kBundleRevision || release == "v0.2.0";
         }
         const json card = read_json_file(dir / loom::kCardFile);
         const loom::BundlePlan plan = loom::plan_bundle(card, read_json_file(dir / loom::kLockFile));
@@ -404,17 +404,32 @@ InstallParams LoomServer::get_install_params(const std::string& backend, const s
     if (backend != kBackend) {
         throw std::runtime_error("Loom has no '" + backend + "' backend");
     }
-    const std::string wheel_version = version.rfind('v', 0) == 0 ? version.substr(1) : version;
+    const std::string release_version = version.rfind('v', 0) == 0 ? version.substr(1) : version;
     InstallParams params;
     params.repo = "ROCm/hrx-system";
+    const char* platform;
+    const bool use_wheel = release_version == "0.2.0" || release_version == "0.3.0";
 #if defined(_WIN32)
-    params.filename = "hrx_loom-" + wheel_version + "-py3-none-win_amd64.whl";
+    platform = "win_amd64";
+    if (release_version == "0.3.0") {
+        params.required_install_files = {"iree.dll", "loomc.dll"};
+    }
 #elif defined(__linux__) && (defined(__x86_64__) || defined(__amd64__))
-    params.filename = "hrx_loom-" + wheel_version + "-py3-none-manylinux_2_39_x86_64.whl";
+    platform = "manylinux_2_39_x86_64";
+    if (release_version == "0.3.0") {
+        params.required_install_files = {"libiree.so", "libloomc.so"};
+    }
 #else
     throw std::runtime_error("Loom is available on Windows and Linux x86-64 only");
 #endif
-    params.archive_subdir = "hrx_loom-" + wheel_version + ".data/scripts";
+    // The 0.3 wheels include the C++ importer. Their companion libraries
+    // distinguish a complete install from the same-version standalone server.
+    if (use_wheel) {
+        params.filename = "hrx_loom-" + release_version + "-py3-none-" + platform + ".whl";
+        params.archive_subdir = "hrx_loom-" + release_version + ".data/scripts";
+    } else {
+        params.filename = "loom-serve-" + release_version + "-" + platform + ".zip";
+    }
     return params;
 }
 
@@ -466,16 +481,18 @@ void LoomServer::load(const std::string& model_name, const ModelInfo& model_info
         throw std::runtime_error(model_name + " is not supported on this GPU (" + target + ")");
     }
 
-    constexpr bool kPreload = true;
+    const std::string sdk_version =
+        backend_manager_->get_install_params(loom::descriptor.recipe, kBackend).version;
+    const bool legacy_parameter_modes = sdk_version == "v0.2.0" || sdk_version == "0.2.0";
     const std::string loom_args = options.get_option("loom_args").get<std::string>();
     const loom::QuickStart quick_start = loom::quick_start(info, target);
-    const std::vector<std::string> serve_args = loom::serve_args(quick_start, kPreload, loom_args);
+    const std::vector<std::string> serve_args = loom::serve_args(quick_start, legacy_parameter_modes, loom_args);
 
     port_ = choose_port();
     ServerCommand command;
     command.program = BackendUtils::get_backend_binary_path(*loom::spec(), kBackend);
     command.args = loom::build_server_argv(utils::path_to_utf8(dir), port_, quick_start.preset,
-                                           serve_args, loom_args, quick_start.device_query);
+                                           serve_args, loom_args, quick_start.device_query, legacy_parameter_modes);
     command.port = port_;
     command.ready_endpoint = "/readyz";
 

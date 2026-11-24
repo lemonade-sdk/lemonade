@@ -21,9 +21,11 @@
 #include <iterator>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace fs = std::filesystem;
 using lemon::backends::commit_staged_install;
+using lemon::backends::find_executable_in_dir;
 
 struct TestResult {
     int passed = 0;
@@ -134,6 +136,36 @@ static void test_fresh_install(TestResult& r) {
     fs::remove_all(root);
 }
 
+static void test_required_runtime_files(TestResult& r) {
+    const auto root = make_temp_root("runtime");
+    const auto install = root / "loom";
+    const auto staging = root / "loom.staging";
+    const std::string binary = "loom-serve";
+    const std::vector<std::string> required{"iree.dll", "loomc.dll"};
+
+    write_file(install / binary, "STANDALONE");
+    write_file(install / "version.txt", "v0.3.0");
+    r.check(find_executable_in_dir(install.string(), binary, required).empty(),
+            "standalone install does not satisfy the wheel runtime layout");
+
+    write_file(staging / binary, "WHEEL");
+    write_file(staging / "iree.dll", "IREE");
+    write_file(staging / "separate" / "loomc.dll", "LOOMC");
+    r.check(commit_staged_install(staging.string(), install.string(), binary, required).empty(),
+            "a DLL outside the executable directory does not satisfy the install");
+    r.check(read_file(install / binary) == "STANDALONE", "a failed wheel install preserves the old binary");
+
+    write_file(staging / binary, "WHEEL");
+    write_file(staging / "iree.dll", "IREE");
+    write_file(staging / "loomc.dll", "LOOMC");
+    write_file(staging / "version.txt", "v0.3.0");
+    r.check(!commit_staged_install(staging.string(), install.string(), binary, required).empty() &&
+                read_file(install / binary) == "WHEEL" && read_file(install / "version.txt") == "v0.3.0",
+            "a complete wheel atomically replaces the same-version standalone install");
+
+    fs::remove_all(root);
+}
+
 // 4) REGRESSION GUARD (POSIX): if the filesystem swap itself fails, the working
 //    install must survive and the failure must be reported (thrown), not
 //    silently swallowed. We force the backup rename to fail by making the parent
@@ -179,6 +211,7 @@ int main() {
     test_successful_swap(r);
     test_failed_install_preserves_working_binary(r);
     test_fresh_install(r);
+    test_required_runtime_files(r);
 #ifndef _WIN32
     test_swap_failure_preserves_working_binary(r);
 #endif

@@ -19,9 +19,9 @@ inline constexpr const char* kCompleteMarker = ".lemonade-loom.json";
 // Bound on the card, lock, and info.json read while inspecting a repository.
 inline constexpr std::uint64_t kMaxMetadataBytes = 8 * 1024 * 1024;
 // Loom release the bundles are fetched for: the loom-fun tag of the cards this
-// loom-serve reads, and the backend_versions.json pin. A snapshot Lemonade recorded
-// for another release (an older card loom-serve rejects) is fetched again.
-inline constexpr const char* kBundleRevision = "v0.2.0";
+// loom-serve reads, and the backend_versions.json pin. A snapshot recorded
+// for a supported older release can also be reused offline.
+inline constexpr const char* kBundleRevision = "v0.3.0";
 
 // Keys of info.json's `devices` map, one per GPU a bundle is built and gated for.
 inline constexpr const char* kStrixHaloTarget = "strix-halo";
@@ -105,7 +105,7 @@ QuickStart quick_start(const json& info, const std::string& target);
 // before cards recorded one does not).
 bool records_quick_start(const json& info, const std::string& target);
 
-// --parameter_mode=preload: reads the weights into host memory first, which
+// Legacy Loom 0.2 --parameter_mode=preload reads weights into host memory first, which
 // avoids ROCm/hrx-system#3332 (the default parameter mode fails under the stock
 // 8 MiB RLIMIT_MEMLOCK on Linux).
 inline constexpr const char* kPreloadFlag = "--parameter_mode=preload";
@@ -119,7 +119,8 @@ std::vector<std::string> build_server_argv(const std::string& model_dir, int por
                                            const std::string& preset,
                                            const std::vector<std::string>& serve_args,
                                            const std::string& custom_args,
-                                           const std::string& device_query = "");
+                                           const std::string& device_query = "",
+                                           bool legacy_parameter_modes = false);
 
 // loom-serve registers the bundle under the card's model id and reads
 // chat_template_kwargs itself, so the `/no_think` prefix Lemonade adds for other
