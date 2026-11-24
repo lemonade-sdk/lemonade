@@ -25,6 +25,7 @@
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/version.h"
+#include "lemon/web_search.h"
 
 namespace lemon {
 
@@ -93,7 +94,7 @@ json normalize_messages(const json& messages) {
 }
 
 // If `model` exists in the raw registry but was filtered out on this system
-// (e.g. a `*-Hybrid` (ryzenai-llm) model on Linux/Docker, or a `*-FLM` model
+// (e.g. a `*-NPU` (ryzenai-llm) model on Linux/Docker, or a `*-FLM` model
 // on a machine without an AMD Ryzen AI NPU), return a tool-call error JSON
 // naming the reason and suggesting a portable alternative. Returns nullopt
 // when the model is supported here, or when it's not in the registry at all
@@ -219,10 +220,12 @@ std::string unique_token() {
 
 }  // namespace
 
-McpServer::McpServer(Router* router, ModelManager* model_manager, EnsureLoadedFn ensure_loaded)
+McpServer::McpServer(Router* router, ModelManager* model_manager,
+                     EnsureLoadedFn ensure_loaded, ServerToolFn server_tool)
     : router_(router),
       model_manager_(model_manager),
-      ensure_loaded_(std::move(ensure_loaded)) {
+      ensure_loaded_(std::move(ensure_loaded)),
+      server_tool_(std::move(server_tool)) {
     tools_ = build_tools();
 }
 
@@ -1124,8 +1127,395 @@ json McpServer::tool_list_models(const json& arguments) {
 std::vector<McpTool> McpServer::build_tools() {
     return {
         McpTool(
+            []() -> json {
+                json descriptor = json{
+                            {"name", "lemonade_get_model_info"},
+                            {"annotations", {
+                                {"readOnlyHint", true},
+                                {"destructiveHint", false},
+                                {"openWorldHint", false},
+                            }},
+                            {"description",
+                             "Get the server's detailed record for one exact model ID returned "
+                             "by lemonade_list_models. Returns the same model metadata used by "
+                             "the REST model APIs, including recipe, download state, components, "
+                             "recipe options, and Router metadata when present."},
+                            {"inputSchema", {
+                                {"type", "object"},
+                                {"required", json::array({"model_name"})},
+                                {"additionalProperties", false},
+                                {"properties", {
+                                    {"model_name", {{"type", "string"},
+                                                    {"description", "Exact model ID from lemonade_list_models."}}},
+                                }},
+                            }},
+                        };
+                descriptor["_meta"]["lemonade/result"]["description"] =
+                    "Returns a result from lemonade_get_model_info, including structured content on success.";
+                for (auto& item : descriptor["inputSchema"]["properties"].items()) {
+                    auto& property = item.value();
+                    if (property.is_object() && !property.contains("description")) {
+                        property["description"] = "Argument " + item.key() +
+                            " for the " + descriptor["name"].get<std::string>() + " tool.";
+                    }
+                }
+                return descriptor;
+            }(),
+            [this](const json& arguments) {
+                return server_tool_("lemonade_get_model_info", arguments);
+            }),
+        McpTool(
+            []() -> json {
+                json descriptor = json{
+                            {"name", "lemonade_load_model"},
+                            {"annotations", {
+                                {"readOnlyHint", false},
+                                {"destructiveHint", false},
+                                {"openWorldHint", true},
+                            }},
+                            {"description",
+                             "Explicitly load a Lemonade model using the same implementation as "
+                             "POST /v1/load. The model_name must be exact. A known registry model "
+                             "that is not local may be downloaded by the existing load path. "
+                             "collection.router models are virtual and are acknowledged without "
+                             "starting a Router backend process. `options` contains ephemeral "
+                             "recipe-specific load options such as llamacpp_backend or "
+                             "llamacpp_device; they are not persisted by this MCP tool."},
+                            {"inputSchema", {
+                                {"type", "object"},
+                                {"required", json::array({"model_name"})},
+                                {"additionalProperties", false},
+                                {"properties", {
+                                    {"model_name", {{"type", "string"},
+                                                    {"description", "Exact model ID from lemonade_list_models."}}},
+                                    {"ctx_size", {{"type", "integer"},
+                                                  {"description", "Optional context size. Use -1 for automatic sizing."}}},
+                                    {"pinned", {{"type", "boolean"},
+                                                {"description", "Optional residency pin state for this load."}}},
+                                    {"options", {{"type", "object"},
+                                                 {"additionalProperties", true},
+                                                 {"description", "Optional recipe-specific load options. Applied only to this load; model/model_name/save_options/pinned are not allowed here."}}},
+                                }},
+                            }},
+                        };
+                descriptor["_meta"]["lemonade/result"]["description"] =
+                    "Returns a result from lemonade_load_model, including structured content on success.";
+                for (auto& item : descriptor["inputSchema"]["properties"].items()) {
+                    auto& property = item.value();
+                    if (property.is_object() && !property.contains("description")) {
+                        property["description"] = "Argument " + item.key() +
+                            " for the " + descriptor["name"].get<std::string>() + " tool.";
+                    }
+                }
+                return descriptor;
+            }(),
+            [this](const json& arguments) {
+                return server_tool_("lemonade_load_model", arguments);
+            }),
+        McpTool(
+            []() -> json {
+                json descriptor = json{
+                            {"name", "lemonade_unload_model"},
+                            {"annotations", {
+                                {"readOnlyHint", false},
+                                {"destructiveHint", false},
+                                {"openWorldHint", false},
+                            }},
+                            {"description",
+                             "Unload exactly one named model using the same implementation as "
+                             "POST /v1/unload. model_name is mandatory: this MCP tool never "
+                             "exposes the REST endpoint's empty-name unload-all behavior."},
+                            {"inputSchema", {
+                                {"type", "object"},
+                                {"required", json::array({"model_name"})},
+                                {"additionalProperties", false},
+                                {"properties", {
+                                    {"model_name", {{"type", "string"},
+                                                    {"description", "Exact model ID to unload."}}},
+                                }},
+                            }},
+                        };
+                descriptor["_meta"]["lemonade/result"]["description"] =
+                    "Returns a result from lemonade_unload_model, including structured content on success.";
+                for (auto& item : descriptor["inputSchema"]["properties"].items()) {
+                    auto& property = item.value();
+                    if (property.is_object() && !property.contains("description")) {
+                        property["description"] = "Argument " + item.key() +
+                            " for the " + descriptor["name"].get<std::string>() + " tool.";
+                    }
+                }
+                return descriptor;
+            }(),
+            [this](const json& arguments) {
+                return server_tool_("lemonade_unload_model", arguments);
+            }),
+        McpTool(
+            []() -> json {
+                json descriptor = json{
+                            {"name", "lemonade_get_loaded_models"},
+                            {"annotations", {
+                                {"readOnlyHint", true},
+                                {"destructiveHint", false},
+                                {"openWorldHint", false},
+                            }},
+                            {"description",
+                             "List the models currently loaded in Lemonade, including runtime "
+                             "recipe/type/device information reported by the server. Use this "
+                             "when the question is specifically about current residency; use "
+                             "lemonade_list_models for broader discovery."},
+                            {"inputSchema", {
+                                {"type", "object"},
+                                {"additionalProperties", false},
+                                {"properties", json::object()},
+                            }},
+                        };
+                descriptor["_meta"]["lemonade/result"]["description"] =
+                    "Returns a result from lemonade_get_loaded_models, including structured content on success.";
+                for (auto& item : descriptor["inputSchema"]["properties"].items()) {
+                    auto& property = item.value();
+                    if (property.is_object() && !property.contains("description")) {
+                        property["description"] = "Argument " + item.key() +
+                            " for the " + descriptor["name"].get<std::string>() + " tool.";
+                    }
+                }
+                return descriptor;
+            }(),
+            [this](const json& arguments) {
+                return server_tool_("lemonade_get_loaded_models", arguments);
+            }),
+        McpTool(
+            []() -> json {
+                json descriptor = json{
+                            {"name", "lemonade_get_server_health"},
+                            {"annotations", {
+                                {"readOnlyHint", true},
+                                {"destructiveHint", false},
+                                {"openWorldHint", false},
+                            }},
+                            {"description",
+                             "Return Lemonade server health and runtime limits using the same "
+                             "implementation as GET /api/v1/health."},
+                            {"inputSchema", {
+                                {"type", "object"},
+                                {"additionalProperties", false},
+                                {"properties", json::object()},
+                            }},
+                        };
+                descriptor["_meta"]["lemonade/result"]["description"] =
+                    "Returns a result from lemonade_get_server_health, including structured content on success.";
+                for (auto& item : descriptor["inputSchema"]["properties"].items()) {
+                    auto& property = item.value();
+                    if (property.is_object() && !property.contains("description")) {
+                        property["description"] = "Argument " + item.key() +
+                            " for the " + descriptor["name"].get<std::string>() + " tool.";
+                    }
+                }
+                return descriptor;
+            }(),
+            [this](const json& arguments) {
+                return server_tool_("lemonade_get_server_health", arguments);
+            }),
+        McpTool(
+            []() -> json {
+                json descriptor = json{
+                            {"name", "lemonade_pull_model"},
+                            {"annotations", {
+                                {"readOnlyHint", false},
+                                {"destructiveHint", false},
+                                {"openWorldHint", true},
+                            }},
+                            {"description",
+                             "Download or register a model using the same implementation as "
+                             "POST /v1/pull. For a built-in/registered model, pass its exact "
+                             "model_name. For a custom remote model, pass a user.* model_name "
+                             "plus checkpoint and recipe. This call is synchronous and may take "
+                             "a long time for large model downloads."},
+                            {"inputSchema", {
+                                {"type", "object"},
+                                {"required", json::array({"model_name"})},
+                                {"additionalProperties", false},
+                                {"properties", {
+                                    {"model_name", {{"type", "string"},
+                                                    {"description", "Exact registered model ID, or user.* ID for a new custom model."}}},
+                                    {"checkpoint", {{"type", "string"},
+                                                    {"description", "Optional remote repository/checkpoint selector accepted by /pull."}}},
+                                    {"recipe", {{"type", "string"},
+                                                {"description", "Recipe required when registering a custom checkpoint."}}},
+                                    {"source", {{"type", "string"},
+                                                {"description", "Optional remote registry source, for example huggingface or modelscope."}}},
+                                    {"do_not_upgrade", {{"type", "boolean"},
+                                                        {"description", "Skip upgrading an already-cached registered model."}}},
+                                }},
+                            }},
+                        };
+                descriptor["_meta"]["lemonade/result"]["description"] =
+                    "Returns a result from lemonade_pull_model, including structured content on success.";
+                for (auto& item : descriptor["inputSchema"]["properties"].items()) {
+                    auto& property = item.value();
+                    if (property.is_object() && !property.contains("description")) {
+                        property["description"] = "Argument " + item.key() +
+                            " for the " + descriptor["name"].get<std::string>() + " tool.";
+                    }
+                }
+                return descriptor;
+            }(),
+            [this](const json& arguments) {
+                return server_tool_("lemonade_pull_model", arguments);
+            }),
+        McpTool(
+            []() -> json {
+                json descriptor = json{
+                            {"name", "lemonade_delete_model"},
+                            {"annotations", {
+                                {"readOnlyHint", false},
+                                {"destructiveHint", true},
+                                {"openWorldHint", false},
+                            }},
+                            {"description",
+                             "Delete exactly one model using the same implementation as POST "
+                             "/v1/delete. This is destructive. The model_name must identify an "
+                             "existing model exactly and confirm must be true. A loaded model is "
+                             "unloaded first, matching the REST endpoint."},
+                            {"inputSchema", {
+                                {"type", "object"},
+                                {"required", json::array({"model_name", "confirm"})},
+                                {"additionalProperties", false},
+                                {"properties", {
+                                    {"model_name", {{"type", "string"},
+                                                    {"description", "Exact existing model ID to delete."}}},
+                                    {"confirm", {{"type", "boolean"},
+                                                 {"enum", json::array({true})},
+                                                 {"description", "Must be true to execute deletion."}}},
+                                }},
+                            }},
+                        };
+                descriptor["_meta"]["lemonade/result"]["description"] =
+                    "Returns a result from lemonade_delete_model, including structured content on success.";
+                for (auto& item : descriptor["inputSchema"]["properties"].items()) {
+                    auto& property = item.value();
+                    if (property.is_object() && !property.contains("description")) {
+                        property["description"] = "Argument " + item.key() +
+                            " for the " + descriptor["name"].get<std::string>() + " tool.";
+                    }
+                }
+                return descriptor;
+            }(),
+            [this](const json& arguments) {
+                return server_tool_("lemonade_delete_model", arguments);
+            }),
+        McpTool(
+            []() -> json {
+                json descriptor = json{
+                            {"name", "lemonade_get_system_info"},
+                            {"annotations", {
+                                {"readOnlyHint", true},
+                                {"destructiveHint", false},
+                                {"openWorldHint", false},
+                            }},
+                            {"description",
+                             "Return Lemonade hardware and recipe/backend capability information "
+                             "using the same implementation as GET /api/v1/system-info."},
+                            {"inputSchema", {
+                                {"type", "object"},
+                                {"additionalProperties", false},
+                                {"properties", json::object()},
+                            }},
+                        };
+                descriptor["_meta"]["lemonade/result"]["description"] =
+                    "Returns a result from lemonade_get_system_info, including structured content on success.";
+                for (auto& item : descriptor["inputSchema"]["properties"].items()) {
+                    auto& property = item.value();
+                    if (property.is_object() && !property.contains("description")) {
+                        property["description"] = "Argument " + item.key() +
+                            " for the " + descriptor["name"].get<std::string>() + " tool.";
+                    }
+                }
+                return descriptor;
+            }(),
+            [this](const json& arguments) {
+                return server_tool_("lemonade_get_system_info", arguments);
+            }),
+        McpTool(
+            []() -> json {
+                json descriptor = json{
+                            {"name", "lemonade_list_backends"},
+                            {"annotations", {
+                                {"readOnlyHint", true},
+                                {"destructiveHint", false},
+                                {"openWorldHint", false},
+                            }},
+                            {"description",
+                             "List Lemonade recipes/backends and their installation/support "
+                             "state. This is the backend-focused view of the canonical "
+                             "/api/v1/system-info data."},
+                            {"inputSchema", {
+                                {"type", "object"},
+                                {"additionalProperties", false},
+                                {"properties", json::object()},
+                            }},
+                        };
+                descriptor["_meta"]["lemonade/result"]["description"] =
+                    "Returns a result from lemonade_list_backends, including structured content on success.";
+                for (auto& item : descriptor["inputSchema"]["properties"].items()) {
+                    auto& property = item.value();
+                    if (property.is_object() && !property.contains("description")) {
+                        property["description"] = "Argument " + item.key() +
+                            " for the " + descriptor["name"].get<std::string>() + " tool.";
+                    }
+                }
+                return descriptor;
+            }(),
+            [this](const json& arguments) {
+                return server_tool_("lemonade_list_backends", arguments);
+            }),
+        McpTool(
+            []() -> json {
+                json descriptor = json{
+                            {"name", "lemonade_install_backend"},
+                            {"annotations", {
+                                {"readOnlyHint", false},
+                                {"destructiveHint", true},
+                                {"openWorldHint", true},
+                            }},
+                            {"description",
+                             "Install or update one Lemonade recipe/backend through the same "
+                             "implementation as POST /api/v1/install. The MCP call is "
+                             "synchronous; use lemonade_list_backends first to inspect support "
+                             "and current state."},
+                            {"inputSchema", {
+                                {"type", "object"},
+                                {"required", json::array({"recipe", "backend"})},
+                                {"additionalProperties", false},
+                                {"properties", {
+                                    {"recipe", {{"type", "string"}, {"pattern", "\\S"}}},
+                                    {"backend", {{"type", "string"}, {"pattern", "\\S"}}},
+                                    {"force", {{"type", "boolean"},
+                                               {"description", "Override an unsupported-state guard when the underlying API permits it."}}},
+                                }},
+                            }},
+                        };
+                descriptor["_meta"]["lemonade/result"]["description"] =
+                    "Returns a result from lemonade_install_backend, including structured content on success.";
+                for (auto& item : descriptor["inputSchema"]["properties"].items()) {
+                    auto& property = item.value();
+                    if (property.is_object() && !property.contains("description")) {
+                        property["description"] = "Argument " + item.key() +
+                            " for the " + descriptor["name"].get<std::string>() + " tool.";
+                    }
+                }
+                return descriptor;
+            }(),
+            [this](const json& arguments) {
+                return server_tool_("lemonade_install_backend", arguments);
+            }),
+        McpTool(
             json{
                 {"name", "lemonade_list_models"},
+                {"annotations", {
+                    {"readOnlyHint", true},
+                    {"destructiveHint", false},
+                    {"openWorldHint", false},
+                }},
                 {"description",
                  "List models known to the Lemonade server. ALWAYS call this "
                  "first if you don't already know the exact model name to use "
@@ -1359,6 +1749,45 @@ std::vector<McpTool> McpServer::build_tools() {
             },
             [this](const json& arguments) {
                 return tool_omni(arguments);
+            }),
+        McpTool(
+            json{
+                {"name", "lemonade_web_search"},
+                {"description", "Search live web or news for current information, products, "
+                                "releases and research. Use search_type=news for recent headlines. "
+                                "Only the query goes to an external provider; linked pages are not fetched."},
+                {"inputSchema", {
+                    {"type", "object"},
+                    {"required", json::array({"query"})},
+                    {"properties", {
+                        {"query", {{"type", "string"}, {"description", "Search terms (1-256 UTF-8 bytes)."}}},
+                        {"search_type", {{"type", "string"}, {"enum", json::array({"web", "news"})},
+                                         {"description", "Use news for current events/headlines; default web."}}},
+                        {"max_results", {{"type", "integer"}, {"minimum", 1},
+                                         {"description", "Optional number of results, maximum 5 (default 5)."}}},
+                    }},
+                }},
+                {"annotations", {{"readOnlyHint", true}, {"destructiveHint", false}, {"openWorldHint", true}}},
+                {"_meta", {{"lemonade/result", {{"description", "Success returns structuredContent "
+                    "with query, search_type, results (title, HTTPS url, snippet; optional "
+                    "source and published_at), and truncated, plus numbered text. "
+                    "Provider failures return isError: true."}}}}},
+            },
+            [](const json& arguments) {
+                const json payload = web_search::search(arguments);
+                std::ostringstream text;
+                const auto& results = payload.at("results");
+                if (results.empty()) text << "No web search results were returned.";
+                for (size_t i = 0; i < results.size(); ++i) {
+                    const auto& result = results[i];
+                    text << "[" << (i + 1) << "] " << result.at("title").get<std::string>() << "\n";
+                    if (result.contains("source")) text << "Source: " << result.at("source").get<std::string>() << "\n";
+                    if (result.contains("published_at")) text << "Published: " << result.at("published_at").get<std::string>() << "\n";
+                    text << result.at("url").get<std::string>() << "\n"
+                         << result.at("snippet").get<std::string>() << "\n";
+                }
+                return json{{"content", json::array({json{{"type", "text"}, {"text", text.str()}}})},
+                            {"structuredContent", payload}, {"isError", false}};
             }),
         McpTool(
             json{

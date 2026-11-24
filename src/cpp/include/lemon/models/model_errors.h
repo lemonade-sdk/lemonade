@@ -6,6 +6,11 @@
 
 namespace lemon {
 
+class BackendArgsAuthorizationError : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
+
 // Thrown by ModelManager::download_model when a pull request names a model
 // that (a) is not registered, (b) is not in the filtered-out registry, and
 // (c) lacks the `user.` prefix that would make it a new-model registration

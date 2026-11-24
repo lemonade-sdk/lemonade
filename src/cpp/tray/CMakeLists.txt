@@ -205,7 +205,7 @@ if(WIN32)
             $<TARGET_FILE_DIR:LemonadeServer>/resources
         COMMENT "Copying resources to LemonadeServer output directory"
     )
-    add_dependencies(LemonadeServer copy_resources)
+    add_dependencies(LemonadeServer copy_resources lemonade-hip-probe)
 endif()
 
 # ============================================================

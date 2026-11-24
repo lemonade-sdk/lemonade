@@ -7,10 +7,13 @@
 #include "lemon/runtime_config.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/error_types.h"
+#include "lemon/model_types.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/aixlog.hpp"
+#include "lemon/utils/http_client.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
+#include <chrono>
 #include <ctime>
 #include <filesystem>
 #include <utility>
@@ -19,6 +22,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <thread>
 
 namespace fs = std::filesystem;
 using namespace lemon::utils;
@@ -108,6 +112,7 @@ void TheNoiseServer::load(const std::string& model_name,
     const std::string backend = resolve_thenoise_backend(options.get_option("thenoise_backend"));
 
     RuntimeConfig::validate_backend_choice("thenoise", backend);
+    const std::string selected_device = options.get_option("thenoise_device");
 
     device_type_ = DEVICE_GPU;
 
@@ -123,7 +128,12 @@ void TheNoiseServer::load(const std::string& model_name,
     if (!fs::exists(fs::path(dit_path))) {
         throw std::runtime_error("DiT model file does not exist: " + dit_path);
     }
-    if (vae_path.empty() || !fs::exists(fs::path(vae_path))) {
+    // Video adapters may carry the VAE inside the main checkpoint (LTX 2.3).
+    // Preserve the image requirement and never ignore a declared missing file.
+    const bool vae_required = get_model_type_from_labels(model_info.labels) != ModelType::VIDEO ||
+                              !model_info.checkpoint("vae").empty();
+    if ((vae_required || !vae_path.empty()) &&
+        (vae_path.empty() || !fs::exists(path_from_utf8(vae_path)))) {
         throw std::runtime_error("VAE model file not found: " + vae_path);
     }
     if (text_encoder_path.empty() || !fs::exists(fs::path(text_encoder_path))) {
@@ -146,11 +156,31 @@ void TheNoiseServer::load(const std::string& model_name,
     std::vector<std::string> args = {
         "serve",
         "--dit", dit_path,
-        "--vae", vae_path,
         "--text-encoder", text_encoder_path,
         "--host", "127.0.0.1",
         "--port", std::to_string(port_)
     };
+
+    if (!vae_path.empty()) args.insert(args.end(), {"--vae", vae_path});
+
+    // Optional components are named by role in the catalog. TheNoise decides
+    // which ones its adapter needs (e.g. LTX 2.5 packs the text projections
+    // into its text encoder). Do not infer components from checkpoint names.
+    const std::pair<const char*, const char*> video_components[] = {
+        {"dit_low", "--dit-low"},
+        {"audio_vae", "--audio-vae"},
+        {"spatial_upscaler", "--spatial-upscaler"},
+        {"text_projection", "--text-projection"},
+    };
+    for (const auto& [role, flag] : video_components) {
+        if (model_info.checkpoint(role).empty()) continue;
+        const auto path = model_info.resolved_path(role);
+        if (path.empty() || !fs::is_regular_file(path_from_utf8(path))) {
+            throw std::runtime_error(std::string("TheNoise checkpoint '") + role +
+                                     "' not found: " + model_info.checkpoint(role));
+        }
+        args.insert(args.end(), {flag, path});
+    }
 
     // lora_dir / upscaler_dir are server-wide config (config.json
     // "thenoise" section) and are not overridable per model.
@@ -174,6 +204,7 @@ void TheNoiseServer::load(const std::string& model_name,
     launch_bundled_python(exe_path, args, env_vars);
     LOG(DEBUG, "TheNoise") << "Launching bundled interpreter: " << exe_path << std::endl;
 #endif
+    BackendUtils::apply_accelerator_device_env_vars(env_vars, "TheNoise", backend, selected_device);
 
     ServerCommand command;
     command.program = exe_path;
@@ -332,6 +363,9 @@ json TheNoiseServer::build_request(const json& request) const {
     // are not descriptor options, so raw forms are never re-forwarded.
     std::set<std::string> handled;
     for (const auto& opt : thenoise::descriptor.options) {
+        // These new video recipe options are not consumed by this image adapter.
+        if (opt.name == std::string("video_frames") || opt.name == std::string("fps") ||
+            opt.name == std::string("flow_shift")) continue;
         handled.insert(opt.name);
     }
     for (const char* key : {
@@ -422,14 +456,224 @@ json TheNoiseServer::image_variations(const json& /* request */) {
     );
 }
 
+json TheNoiseServer::video_generations(const json& request, std::atomic<bool>* cancel) {
+    constexpr long control_timeout = 5;
+    constexpr int max_control_failures = 3;
+    constexpr auto cancel_grace = std::chrono::minutes(5);
+    const auto canceled = [&] { return cancel && cancel->load(); };
+    const auto error = [&](const std::string& message, int status = 0) {
+        return BackendException("thenoise", message, status).to_json();
+    };
+    const auto canceled_result = [&](bool settled) {
+        auto result = error("video generation canceled", 499);
+        // The job service can keep a model it loaded for this request warm when
+        // the backend has acknowledged that there is no inference left running.
+        if (settled) result["error"]["details"]["backend_job_settled"] = true;
+        return result;
+    };
+    if (canceled()) return canceled_result(true);
+
+    // VideoSpec is strict: do not forward the image request, Lemonade's model
+    // alias, ctx_size, clip_file or other job bookkeeping. Only explicit recipe
+    // values override native video defaults (the descriptor's image defaults
+    // are not appropriate for video).
+    const auto options = get_recipe_options();
+    json body = {{"prompt", request.value("prompt", std::string())}};
+    const auto supplied = [&](const char* key) {
+        return request.contains(key) && !request[key].is_null();
+    };
+    const auto option = [&](const char* key, const char* target, bool zero_is_unset = false) {
+        if (supplied(key)) {
+            body[target] = request[key];
+        } else if (options.has_option(key)) {
+            const auto value = options.get_option(key);
+            if (!value.is_null() && !(zero_is_unset && value.is_number() && value == 0)) {
+                body[target] = value;
+            }
+        }
+    };
+    for (const char* key : {"width", "height", "steps", "negative_prompt"}) {
+        option(key, key);
+    }
+    option("fps", "fps", true);
+    option("flow_shift", "flow_shift", true);
+    option("cfg_scale", "guidance_scale");
+    // Explicit frame count > explicit duration > stored frame count > native default.
+    if (supplied("video_frames")) {
+        body["frames"] = request["video_frames"];
+    } else if (supplied("duration")) {
+        body["duration"] = request["duration"];
+    } else {
+        option("video_frames", "frames", true);
+    }
+    if (supplied("sampling_method")) {
+        body["sampler"] = request["sampling_method"];
+    } else {
+        option("sampler", "sampler");
+        if (body.contains("sampler") && body["sampler"] == "") body.erase("sampler");
+    }
+    if (supplied("seed")) {
+        // Lemonade accepts any negative seed to request random noise.
+        body["seed"] = request["seed"] < 0 ? json(-1) : request["seed"];
+    }
+    if (supplied("lora_specs")) {
+        body["lora_specs"] = request["lora_specs"].is_string()
+            ? split_lora_specs(request["lora_specs"].get<std::string>()) : request["lora_specs"];
+    } else if (options.has_option("lora_specs")) {
+        const auto specs = options.string_option("lora_specs");
+        if (specs && !specs->empty()) body["lora_specs"] = split_lora_specs(*specs);
+    }
+    const auto format = supplied("output_format") && request["output_format"].is_string()
+        ? request["output_format"].get<std::string>() : std::string("webm");
+    if ((supplied("output_format") && !request["output_format"].is_string()) ||
+        (format != "webm" && format != "mp4")) {
+        return ErrorResponse::from_exception(
+            InvalidRequestException("TheNoise video supports output_format webm or mp4"));
+    }
+    body["output_format"] = format;
+
+    if (!is_backend_alive()) return error("backend is not running");
+    BackendRequestScope scope(*this, BackendRequestKind::NonStreaming);
+    const auto post = [&](const std::string& path, const json& payload) {
+        auto response = HttpClient::post(get_base_url() + path, payload.dump(),
+                                        {{"Content-Type", "application/json"}}, control_timeout,
+                                        HttpSecurityPolicy::TrustedLoopback);
+        note_backend_activity();
+        return response;
+    };
+    const auto get = [&](const std::string& path, long timeout,
+                         const RequestCancelToken& token = {}) {
+        auto response = HttpClient::get(get_base_url() + path, {}, timeout,
+                                       HttpSecurityPolicy::TrustedLoopback, 0, token, false);
+        note_backend_activity();
+        return response;
+    };
+    // Losing the handle or repeatedly losing contact is exceptional: do not
+    // leave an orphaned job consuming the GPU, and do not replay the submit.
+    const auto lost_job = [&](const std::string& message) {
+        LOG(WARNING, "TheNoise") << "Video job state unknown: " << message << std::endl;
+        stop_server();
+        return canceled() ? canceled_result(false) : error(message);
+    };
+
+    std::string job_path;
+    try {
+        // Keep the short submit alive even if cancel is requested in flight;
+        // we need its ID to cancel the accepted job rather than kill the model.
+        if (canceled()) return canceled_result(true);
+        const auto response = post("/jobs/video", body);
+        if (response.status_code != 202) {
+            const auto message = "video submission failed (HTTP " + std::to_string(response.status_code) + "): " + response.body;
+            if (response.status_code >= 400 && response.status_code < 500) {
+                return canceled() ? canceled_result(true) : error(message, response.status_code);
+            }
+            return lost_job(message);
+        }
+        const auto id = json::parse(response.body).at("id").get<std::string>();
+        if (id.empty() || id.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-") != std::string::npos) {
+            return lost_job("invalid backend video job ID");
+        }
+        job_path = "/jobs/" + id;
+    } catch (const std::exception& e) {
+        return lost_job(std::string("video submission failed: ") + e.what());
+    }
+
+    bool cancel_sent = false;
+    int cancel_failures = 0;
+    int poll_failures = 0;
+    auto cancel_deadline = std::chrono::steady_clock::time_point::max();
+    json status;
+    for (;;) {
+        if (canceled() && cancel_deadline == std::chrono::steady_clock::time_point::max()) {
+            // A GPU stage can legitimately take time to reach its next check.
+            cancel_deadline = std::chrono::steady_clock::now() + cancel_grace;
+        }
+        if (canceled() && !cancel_sent) {
+            try {
+                const auto response = post(job_path + "/cancel", json::object());
+                // 409 also occurs if a previous cancel reached the backend or
+                // completion won the race. Poll for the actual terminal state.
+                cancel_sent = response.status_code == 200 || response.status_code == 409;
+            } catch (const std::exception&) {
+                // The request may have reached TheNoise; polling is still safe.
+            }
+            if (!cancel_sent) ++cancel_failures;
+        }
+        try {
+            const auto response = get(job_path, control_timeout);
+            if (response.status_code != 200) {
+                throw std::runtime_error("video status HTTP " + std::to_string(response.status_code));
+            }
+            status = json::parse(response.body);
+            const auto state = status.at("status").get<std::string>();
+            if (state == "completed" || state == "failed" || state == "canceled") break;
+            if (state != "queued" && state != "running") {
+                throw std::runtime_error("unexpected video job state: " + state);
+            }
+            poll_failures = 0;
+        } catch (const std::exception& e) {
+            if (!is_backend_alive() || ++poll_failures >= max_control_failures) {
+                return lost_job(e.what());
+            }
+        }
+        if (cancel_failures >= max_control_failures) {
+            return lost_job("could not deliver video cancellation");
+        }
+        if (std::chrono::steady_clock::now() >= cancel_deadline) {
+            return lost_job("video cancellation did not settle within five minutes");
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(250));
+    }
+
+    // Cancel acceptance alone is not completion. Only a terminal state releases
+    // this inference slot; a normal cancel never stops the backend process.
+    if (canceled()) return canceled_result(true);
+    const auto state = status.at("status").get<std::string>();
+    if (state != "completed") {
+        const auto detail = status.value("error", json(nullptr));
+        return error("video job " + state + (detail.is_null() ? "" : ": " + detail.dump()));
+    }
+    try {
+        const auto& resolved = status.at("resolved");
+        const auto frames = resolved.at("frame_count").get<int>();
+        const auto fps = resolved.at("fps").get<int>();
+        const auto actual_format = resolved.at("output_format").get<std::string>();
+        if (frames <= 0 || fps <= 0 || actual_format != format) {
+            return error("invalid completed video metadata");
+        }
+        const auto mime = format == "mp4" ? "video/mp4" : "video/webm";
+        // The job is already terminal. Canceling the one-shot content transfer
+        // no longer requires a backend cancel or process stop.
+        const auto clip = get(job_path + "/content", 120, RequestCancelToken{cancel, nullptr});
+        if (canceled()) return canceled_result(true);
+        const auto type = clip.headers.find("content-type");
+        if (clip.status_code != 200 || clip.body.empty() ||
+            type == clip.headers.end() || type->second != mime) {
+            return error("could not retrieve encoded video (HTTP " + std::to_string(clip.status_code) + ")");
+        }
+        // Reuse Lemonade's existing video_store publishing path. Only metadata
+        // and the clip filename are persisted in the public job record.
+        return {{"b64_json", JsonUtils::base64_encode(clip.body)},
+                {"mime_type", mime}, {"output_format", actual_format},
+                {"frame_count", frames}, {"fps", fps}, {"duration", static_cast<double>(frames) / fps}};
+    } catch (const std::exception& e) {
+        return canceled() ? canceled_result(true) : error(std::string("video content failed: ") + e.what());
+    }
+}
+
 std::string TheNoiseServer::upscale_via_cli(
     const std::string& b64_image,
     const std::string& upscale_model_path,
     double upscale_factor) {
 
     std::string configured_backend;
-    if (auto* cfg = RuntimeConfig::global()) {
-        configured_backend = cfg->backend_string("thenoise", "backend");
+    if (recipe_options_.has_option("thenoise_backend")) {
+        configured_backend = recipe_options_.get_option("thenoise_backend").get<std::string>();
+    }
+    if (configured_backend.empty()) {
+        if (auto* cfg = RuntimeConfig::global()) {
+            configured_backend = cfg->backend_string("thenoise", "backend");
+        }
     }
     const std::string backend = resolve_thenoise_backend(configured_backend);
     RuntimeConfig::validate_backend_choice("thenoise", backend);
@@ -507,6 +751,9 @@ std::string TheNoiseServer::upscale_via_cli(
 #ifdef _WIN32
     launch_bundled_python(exe_path, args, env_vars);
 #endif
+    const std::string selected_device = recipe_options_.has_option("thenoise_device")
+        ? recipe_options_.get_option("thenoise_device").get<std::string>() : "";
+    BackendUtils::apply_accelerator_device_env_vars(env_vars, "TheNoise", backend, selected_device);
     auto proc = ProcessManager::start_process(
         exe_path, args, "", true, false, env_vars);
 

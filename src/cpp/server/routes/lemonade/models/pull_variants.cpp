@@ -19,13 +19,13 @@ const RouteError kSourceMismatch{
 const RouteError kMalformedCheckpoint{400, "", "`checkpoint` does not contain `/`"};
 const RouteError kUnsupportedRepo{
     400, "",
-    "`source` names an unsupported registry, or the Hugging Face GGUF repository is one "
-    "llama.cpp cannot run"};
+    "`source` names an unsupported registry, the repository has no GGUF, ONNX RyzenAI or "
+    "collection files, its collection manifest is invalid or too large, or the Hugging Face "
+    "GGUF repository is one llama.cpp cannot run"};
 const RouteError kCheckpointNotFound{404, "", "The registry has no such checkpoint"};
 const RouteError kVariantsFailed{
     500, "",
-    "Another failure occurs, for example a repository with no GGUF, ONNX RyzenAI or collection "
-    "files, or a network error"};
+    "Another failure occurs, for example a network error"};
 
 const RouteArg kCheckpoint{"checkpoint", ArgIn::Query, {{"type", "string"}}, true, Support::Available,
                            "Repository id, e.g. `unsloth/Qwen3-8B-GGUF`. A Hugging Face or ModelScope URL is "
@@ -122,22 +122,22 @@ public:
             if (has_url) {
                 checkpoint = url_repo_id;
             }
-            std::string source;
-            if (has_url) {
-                source = remote_registry_source_name(url_source);
-            } else {
-                source = req.has(kSource)
-                    ? req.arg(kSource).get<std::string>() : ctx_.config->default_model_source();
-            }
             if (checkpoint.find('/') == std::string::npos) {
                 write_plain_error(res, kMalformedCheckpoint,
                     "Malformed 'checkpoint': expected a repository id of the form 'owner/name'");
                 return;
             }
-            const auto parsed_source = parse_remote_registry_source(source);
             if (refuse_offline_download(ctx_, res)) {
                 return;
             }
+            std::string source;
+            if (has_url) {
+                source = remote_registry_source_name(url_source);
+            } else {
+                source = req.has(kSource) ? req.arg(kSource).get<std::string>()
+                    : remote_registry_source_name(ctx_.model_manager->download_source_for(ModelInfo{}));
+            }
+            const auto parsed_source = parse_remote_registry_source(source);
             bool not_found = false;
             const std::string resolved_source = remote_registry_source_name(parsed_source);
             json body = lemon::fetch_pull_variants(ctx_.model_manager->resolver(),

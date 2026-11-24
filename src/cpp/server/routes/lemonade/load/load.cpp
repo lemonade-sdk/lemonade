@@ -4,6 +4,7 @@
 
 #include <lemon/utils/aixlog.hpp>
 
+#include "lemon/backends/backend_source.h"
 #include "lemon/model_manager.h"
 #include "lemon/model_types.h"
 #include "lemon/recipe_options.h"
@@ -85,6 +86,10 @@ const RouteArg kWidth{"width", ArgIn::JsonBody, {{"type", json::array({"integer"
                       "`sd-cpp`: image width in pixels. Defaults to the model's own, else `512`."};
 const RouteArg kHeight{"height", ArgIn::JsonBody, {{"type", json::array({"integer", "null"})}}, false, Support::Available,
                        "`sd-cpp`: image height in pixels. Defaults to the model's own, else `512`."};
+const RouteArg kBackendSource{"backend_source", ArgIn::JsonBody, {{"enum", json::array({"github", "modelscope"})}},
+                              false, Support::Available,
+                              "Where to download the model's backend from if this load installs it, `github` or "
+                              "`modelscope`, for this load only. Defaults to the server's `backend_source`."};
 const RouteArg kMergeArgs{"merge_args", ArgIn::JsonBody, {{"type", json::array({"boolean", "null"})}}, false, Support::Available,
                           "If `true`, server-wide `*_args` still apply when the request sends `*_args`. If "
                           "`false`, the request's `*_args` are the only arguments passed: server-wide, saved "
@@ -103,7 +108,8 @@ public:
         s.summary = "Load a model";
         s.description =
             "Loads a registered model into memory, downloading it first when needed, so it is "
-            "ready before the first request.";
+            "ready before the first request. Request-supplied `*_args` and `merge_args` require "
+            "[admin authorization](../guide/configuration/README.md#admin-api-key), including empty or `null` values.";
         s.notes = {
             "Loading a collection (`recipe: \"collection.omni\"`) loads each component in turn "
             "with the component's own saved options; options in the request are not forwarded. A "
@@ -147,7 +153,7 @@ public:
         s.args = {
             kModelName, kPinned, kSaveOptions, model_options::kCtxSize, kLlamacppBackend,
             kLlamacppArgs, kWhispercppBackend, kWhispercppArgs, kSteps, kCfgScale, kWidth, kHeight,
-            kMergeArgs
+            kMergeArgs, kBackendSource
         };
 
         RouteResponse response;
@@ -165,13 +171,17 @@ public:
         collection_example.format = ResponseFormat::Json;
         collection_example.args = {{"model_name", "LMX-Omni-5.5B-Lite"}};
         s.examples = {example, collection_example};
-        s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid, kOnDemandCannotLoad}, ModelLoader::errors()});
+        s.errors = join_errors({{kBodyNotJson, kArgMissing, kArgInvalid, kOnDemandCannotLoad, kBackendArgsAdminRequired}, ModelLoader::errors()});
         s.error_format = ErrorFormat::OpenAi;
         s.request_format = RequestFormat::Json;
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
+        if (!authorize_backend_args(req, res)) {
+            return;
+        }
+
         auto thread_id = std::this_thread::get_id();
         LOG(DEBUG, "Server") << "===== LOAD ENDPOINT ENTERED (Thread: " << thread_id << ") =====" << std::endl;
 
@@ -181,6 +191,8 @@ public:
             canonical_model_name(ctx_, req.arg(kModelName).get<std::string>(), /*strip_latest=*/false);
         const std::string model_name = req.arg(kModelName).get<std::string>();
         json& request_json = req.body;
+
+        backend_source::ScopedOverride source_scope(req.value(kBackendSource, ""));
 
         try {
             // Cloud models are registered at cache build, cloud auth and install, so an
@@ -231,7 +243,7 @@ public:
                         }
                     }
                 }
-                model_manager.replace_options(model_name, saved_for_write);
+                model_manager.replace_options(model_name, saved_for_write, is_admin_request(req));
                 info = model_manager.get_model_info(model_name);
             }
 
@@ -292,6 +304,8 @@ public:
                 res.set_content(response.dump(), "application/json");
             }
 
+        } catch (const BackendArgsAuthorizationError& e) {
+            write_error(res, req.spec.error_format, kBackendArgsAdminRequired, e.what());
         } catch (const std::exception& e) {
             LOG(ERROR, "Server") << "Failed to load model: " << e.what() << std::endl;
             ctx_.model_loader->write_load_error(res, model_name, e.what());

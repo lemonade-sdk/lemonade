@@ -44,6 +44,7 @@ from utils.server_base import (
 )
 from utils.test_models import (
     PORT,
+    DELETE_TEST_MODEL,
     ENDPOINT_TEST_MODEL,
     MULTI_MODEL_QUATERNARY,
     MULTI_MODEL_TERTIARY,
@@ -347,13 +348,67 @@ class EndpointTests(ServerTestBase):
             )
             self.assertEqual(models_response.status_code, 200, models_response.text)
             entry = next(
-                model
-                for model in models_response.json()["data"]
-                if model["id"] == public_name
+                (
+                    model
+                    for model in models_response.json()["data"]
+                    if model["id"] == public_name
+                ),
+                None,
             )
+            self.assertIsNotNone(entry, f"{public_name} missing from /models")
             self.assertEqual(entry.get("checkpoint"), checkpoint)
             self.assertEqual(entry.get("recipe"), "llamacpp")
             self.assertFalse(entry.get("downloaded"))
+        finally:
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": canonical_name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+
+    def test_000b_register_keeps_cost_metadata(self):
+        """Cost fields sent at registration are saved and listed on /models.
+        /pull registers through the same path before it downloads."""
+        canonical_name = f"user.CostMetadata-{uuid.uuid4().hex[:8]}"
+        cost = {
+            "cost_tier": "low",
+            "cost_input_per_million": 0.25,
+            "cost_output_per_million": 1.5,
+            "latency_ms_hint": 120,
+        }
+        try:
+            response = requests.post(
+                f"{self.base_url}/models/register",
+                json={
+                    "model_name": canonical_name,
+                    "recipe": "llamacpp",
+                    "checkpoint": "example/cost-metadata-test:Q4_K_M",
+                    **cost,
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            public_name = response.json()["model_name"]
+
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(models_response.status_code, 200, models_response.text)
+            entry = next(
+                (
+                    model
+                    for model in models_response.json()["data"]
+                    if model["id"] == public_name
+                ),
+                None,
+            )
+            self.assertIsNotNone(entry, f"{public_name} missing from /models")
+            for key, value in cost.items():
+                self.assertEqual(entry.get(key), value, f"{key} in {entry}")
         finally:
             try:
                 requests.post(
@@ -1043,7 +1098,7 @@ class EndpointTests(ServerTestBase):
         # First delete model if it exists to ensure we're actually testing pull
         delete_response = requests.post(
             f"{self.base_url}/delete",
-            json={"model_name": ENDPOINT_TEST_MODEL},
+            json={"model_name": DELETE_TEST_MODEL},
             timeout=TIMEOUT_DEFAULT,
         )
         # 200 = deleted, 422 = not found (both are acceptable)
@@ -1056,13 +1111,13 @@ class EndpointTests(ServerTestBase):
         models_data = models_response.json()
         model_ids = [m["id"] for m in models_data["data"]]
         self.assertNotIn(
-            ENDPOINT_TEST_MODEL, model_ids, "Model should be deleted before pull test"
+            DELETE_TEST_MODEL, model_ids, "Model should be deleted before pull test"
         )
 
         # Now pull the model
         response = requests.post(
             f"{self.base_url}/pull",
-            json={"model_name": ENDPOINT_TEST_MODEL, "stream": False},
+            json={"model_name": DELETE_TEST_MODEL, "stream": False},
             timeout=TIMEOUT_MODEL_OPERATION,
         )
         self.assertEqual(response.status_code, 200)
@@ -1078,17 +1133,62 @@ class EndpointTests(ServerTestBase):
         models_data = models_response.json()
         model_ids = [m["id"] for m in models_data["data"]]
         self.assertIn(
-            ENDPOINT_TEST_MODEL, model_ids, "Model should be downloaded after pull"
+            DELETE_TEST_MODEL, model_ids, "Model should be downloaded after pull"
         )
 
-        print(f"[OK] Pull (non-streaming): model={ENDPOINT_TEST_MODEL}")
+        print(f"[OK] Pull (non-streaming): model={DELETE_TEST_MODEL}")
+
+    def test_007a_pull_keeps_cost_metadata(self):
+        """Cost fields sent with /pull are saved with the model it registers."""
+        canonical_name = f"user.CostPull-{uuid.uuid4().hex[:8]}"
+        cost = {
+            "cost_tier": "medium",
+            "cost_input_per_million": 0.5,
+            "cost_output_per_million": 2.0,
+            "latency_ms_hint": 300,
+        }
+        try:
+            response = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": canonical_name,
+                    "recipe": "llamacpp",
+                    "checkpoint": USER_MODEL_TE_CHECKPOINT,
+                    "stream": False,
+                    **cost,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(models_response.status_code, 200, models_response.text)
+            entry = next(
+                model
+                for model in models_response.json()["data"]
+                if model["id"] in (canonical_name, canonical_name.removeprefix("user."))
+            )
+            for key, value in cost.items():
+                self.assertEqual(entry.get(key), value, f"{key} in {entry}")
+        finally:
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": canonical_name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
 
     def test_008_pull_model_streaming(self):
         """Test pulling a model with streaming progress events."""
         # First delete model to ensure we're actually testing pull
         delete_response = requests.post(
             f"{self.base_url}/delete",
-            json={"model_name": ENDPOINT_TEST_MODEL},
+            json={"model_name": DELETE_TEST_MODEL},
             timeout=TIMEOUT_DEFAULT,
         )
         self.assertIn(delete_response.status_code, [200, 422])
@@ -1096,7 +1196,7 @@ class EndpointTests(ServerTestBase):
         # Pull with streaming
         response = requests.post(
             f"{self.base_url}/pull",
-            json={"model_name": ENDPOINT_TEST_MODEL, "stream": True},
+            json={"model_name": DELETE_TEST_MODEL, "stream": True},
             timeout=TIMEOUT_MODEL_OPERATION,
             stream=True,
         )
@@ -1130,7 +1230,7 @@ class EndpointTests(ServerTestBase):
         models_data = models_response.json()
         model_ids = [m["id"] for m in models_data["data"]]
         self.assertIn(
-            ENDPOINT_TEST_MODEL,
+            DELETE_TEST_MODEL,
             model_ids,
             "Model should be downloaded after streaming pull",
         )
@@ -3135,20 +3235,20 @@ class EndpointTests(ServerTestBase):
 
     def test_016_delete_model(self):
         """Test deleting a model removes it from local storage."""
-        # Model should already be pulled from setUpClass or pull tests
+        pull_model_with_retry(DELETE_TEST_MODEL)
         models_response = requests.get(
             f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT
         )
         models_data = models_response.json()
         model_ids = [m["id"] for m in models_data["data"]]
         self.assertIn(
-            ENDPOINT_TEST_MODEL, model_ids, "Model should exist before delete test"
+            DELETE_TEST_MODEL, model_ids, "Model should exist before delete test"
         )
 
         # Delete the model
         response = requests.post(
             f"{self.base_url}/delete",
-            json={"model_name": ENDPOINT_TEST_MODEL},
+            json={"model_name": DELETE_TEST_MODEL},
             timeout=TIMEOUT_DEFAULT,
         )
         self.assertEqual(response.status_code, 200)
@@ -3162,16 +3262,9 @@ class EndpointTests(ServerTestBase):
         )
         models_data = models_response.json()
         model_ids = [m["id"] for m in models_data["data"]]
-        self.assertNotIn(ENDPOINT_TEST_MODEL, model_ids)
+        self.assertNotIn(DELETE_TEST_MODEL, model_ids)
 
-        # Re-pull for subsequent tests (stats test needs a model)
-        requests.post(
-            f"{self.base_url}/pull",
-            json={"model_name": ENDPOINT_TEST_MODEL},
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
-
-        print(f"[OK] Deleted and re-pulled model: {ENDPOINT_TEST_MODEL}")
+        print(f"[OK] Deleted model: {DELETE_TEST_MODEL}")
 
     def test_017_delete_nonexistent_model(self):
         """Test that deleting a non-existent model returns error."""
@@ -8219,6 +8312,149 @@ class EndpointTests(ServerTestBase):
         self.assertEqual(response.status_code, 400)
         print("[OK] /install returns 400 for missing 'backend' parameter")
 
+    MIRROR_PATH = (
+        "/api/v1/datasets/lemonade-sdk/backends/repo?Revision=master&FilePath="
+    )
+
+    def _dry_run(self, recipe, backend, source):
+        response = requests.post(
+            f"{self.base_url}/install/dry-run",
+            json={"recipe": recipe, "backend": backend, "source": source},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()
+
+    def test_028a_backend_source_dry_run_urls(self):
+        """A request's backend source picks GitHub or the ModelScope mirror URL."""
+        from urllib.parse import quote
+
+        mirror = self._dry_run("onnxruntime", "cpu", "modelscope")
+        path = f"github/{mirror['repo']}/{mirror['version']}/{mirror['filename']}"
+        # The host follows MODELSCOPE_ENDPOINT, so only the dataset path is fixed.
+        self.assertTrue(
+            mirror["url"].endswith(self.MIRROR_PATH + quote(path, safe="")),
+            mirror["url"],
+        )
+
+        github = self._dry_run("onnxruntime", "cpu", "github")
+        self.assertEqual(
+            github["url"],
+            f"https://github.com/{github['repo']}/releases/download/"
+            f"{github['version']}/{github['filename']}",
+        )
+        print("[OK] dry-run URL follows the request's backend source")
+
+    def test_028b_backend_source_rejects_unknown(self):
+        """Only github and modelscope are accepted as a request's backend source."""
+        for path, body in (
+            ("install", {"recipe": "onnxruntime", "backend": "cpu", "source": "x"}),
+            (
+                "install/dry-run",
+                {"recipe": "onnxruntime", "backend": "cpu", "source": "x"},
+            ),
+            ("load", {"model_name": ENDPOINT_TEST_MODEL, "backend_source": "x"}),
+        ):
+            response = requests.post(
+                f"{self.base_url}/{path}", json=body, timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(response.status_code, 400, f"{path}: {response.text}")
+        print("[OK] unknown backend sources are rejected with 400")
+
+    def test_028c_install_from_modelscope_mirror(self):
+        """A backend installs from the ModelScope mirror, verified by its pinned SHA-256."""
+        import sys
+
+        if not sys.platform.startswith(("linux", "win32")):
+            self.skipTest("ort-server is only mirrored for Linux and Windows here")
+        recipe, backend = "onnxruntime", "cpu"
+        url = self._dry_run(recipe, backend, "modelscope")["url"]
+        try:
+            with requests.get(url, stream=True, timeout=30) as probe:
+                if probe.status_code == 404:
+                    self.skipTest("the mirror does not have this pin yet")
+        except requests.RequestException as e:
+            self.skipTest(f"ModelScope is not reachable from this runner: {e}")
+
+        uninstall = requests.post(
+            f"{self.base_url}/uninstall",
+            json={"recipe": recipe, "backend": backend},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        # An installed copy would make the install succeed without downloading.
+        self.assertEqual(uninstall.status_code, 200, uninstall.text)
+        try:
+            response = requests.post(
+                f"{self.base_url}/install",
+                json={
+                    "recipe": recipe,
+                    "backend": backend,
+                    "source": "modelscope",
+                    "stream": False,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            # Unpinned or mismatched files are refused, so success proves the hash.
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(response.json()["status"], "success")
+        finally:
+            requests.post(
+                f"{self.base_url}/uninstall",
+                json={"recipe": recipe, "backend": backend},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+        print("[OK] onnxruntime:cpu installed from the ModelScope mirror")
+
+    def test_028d_modelscope_backend_then_inference(self):
+        """Install a llamacpp backend from ModelScope, then run real inference.
+
+        Tests the full path: backend downloaded and hash-verified from the mirror,
+        model loaded, chat completion returns a non-empty response.
+        Skips if ModelScope is unreachable or the backend pin is not mirrored yet.
+        """
+        import sys
+
+        backend = "metal" if sys.platform == "darwin" else "cpu"
+
+        url = self._dry_run("llamacpp", backend, "modelscope")["url"]
+        try:
+            with requests.get(url, stream=True, timeout=30) as probe:
+                if probe.status_code == 404:
+                    self.skipTest(f"llamacpp:{backend} not mirrored yet")
+        except requests.RequestException as e:
+            self.skipTest(f"ModelScope not reachable: {e}")
+
+        uninstall = requests.post(
+            f"{self.base_url}/uninstall",
+            json={"recipe": "llamacpp", "backend": backend},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(uninstall.status_code, 200, uninstall.text)
+
+        load = requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": ENDPOINT_TEST_MODEL, "backend_source": "modelscope"},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(load.status_code, 200, load.text)
+
+        from openai import OpenAI
+
+        client = OpenAI(base_url=f"http://localhost:{PORT}/api/v1", api_key="x")
+        response = client.chat.completions.create(
+            model=ENDPOINT_TEST_MODEL,
+            messages=[{"role": "user", "content": "Say hello."}],
+            max_tokens=16,
+        )
+        self.assertTrue(
+            response.choices[0].message.content.strip(),
+            "Expected a non-empty response",
+        )
+        print(
+            f"[OK] llamacpp:{backend} from ModelScope mirror ran inference: "
+            f"{response.choices[0].message.content.strip()[:60]!r}"
+        )
+
     def test_029_system_info_release_url(self):
         """Test that system-info includes release_url for backends."""
         response = requests.get(f"{self.base_url}/system-info", timeout=TIMEOUT_DEFAULT)
@@ -8435,6 +8671,29 @@ class EndpointTests(ServerTestBase):
         self.assertIn("not compatible with llama.cpp", error)
         self.assertIn("does not declare a model architecture", error)
         print("[OK] Incompatible GGUF checkpoint was rejected before download")
+
+    @unittest.skipUnless(
+        os.environ.get("LEMONADE_INTEGRATION_TESTS") == "1",
+        "Skipped: set LEMONADE_INTEGRATION_TESTS=1 to run live HuggingFace tests",
+    )
+    def test_033_pull_variants_rejects_repo_without_supported_files(self):
+        """A repository with no GGUF, ONNX or Omni files is a 400, not a server error."""
+        checkpoint = "Qwen/Qwen1.5-0.5B-Chat"
+        response = requests.get(
+            f"{self.base_url}/pull/variants",
+            params={"checkpoint": checkpoint, "source": "huggingface"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            response.status_code,
+            400,
+            f"Expected 400 for a repository without supported files, got "
+            f"{response.status_code}: {response.text}",
+        )
+        self.assertIn(
+            "No supported model files found", response.json().get("error", "")
+        )
+        print("[OK] Repository without supported files was rejected with 400")
 
     def test_035_second_lemond_on_busy_port_exits_nonzero(self):
         """A second lemond on an in-use port must refuse to start and exit non-zero.

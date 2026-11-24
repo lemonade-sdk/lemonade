@@ -27,6 +27,20 @@ The decision is reported on the response:
   For streaming responses it is attached to the first SSE event. Its per-condition `trace` is included
   only when the request sets **`route_trace: true`**.
 
+When the selected candidate has [cost metadata](../guide/configuration/custom-models.md#cost-metadata),
+the decision's `outputs` carries it as `estimated_cost`, with whichever of `cost_tier`,
+`cost_input_per_million`, `cost_output_per_million` and `latency_ms_hint` the model sets:
+
+```json
+"outputs": {
+  "estimated_cost": {"cost_tier": "low", "cost_input_per_million": 0.15}
+}
+```
+
+The figures are the model author's, not a bill. A candidate
+without cost metadata adds nothing, and an `estimated_cost` set in the matched rule's own `outputs`
+is kept as written. `POST /v1/routing/validate` does not add it.
+
 See [Router Policies](../dev/router-policy.md) for authoring the policy.
 
 <!-- BEGIN GENERATED: router.routing_validate -->
