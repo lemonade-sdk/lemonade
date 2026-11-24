@@ -263,6 +263,26 @@ Returns a result from lemonade_get_loaded_models, including structured content o
 
 This tool takes no arguments.
 
+### `lemonade_get_server_health`
+
+Return Lemonade server health and runtime limits using the same implementation as GET /api/v1/health.
+
+**Returns**
+
+Returns a result from lemonade_get_server_health, including structured content on success.
+
+**MCP annotations**
+
+```json
+{
+  "destructiveHint": false,
+  "openWorldHint": false,
+  "readOnlyHint": true
+}
+```
+
+This tool takes no arguments.
+
 ### `lemonade_pull_model`
 
 Download or register a model using the same implementation as POST /v1/pull. For a built-in/registered model, pass its exact model_name. For a custom remote model, pass a user.* model_name plus checkpoint and recipe. This call is synchronous and may take a long time for large model downloads.
@@ -311,6 +331,70 @@ Returns a result from lemonade_delete_model, including structured content on suc
 |---|:---:|---|---|
 | `confirm` | yes | `{"enum":[true],"type":"boolean"}` | Must be true to execute deletion. |
 | `model_name` | yes | `{"type":"string"}` | Exact existing model ID to delete. |
+
+### `lemonade_get_system_info`
+
+Return Lemonade hardware and recipe/backend capability information using the same implementation as GET /api/v1/system-info.
+
+**Returns**
+
+Returns a result from lemonade_get_system_info, including structured content on success.
+
+**MCP annotations**
+
+```json
+{
+  "destructiveHint": false,
+  "openWorldHint": false,
+  "readOnlyHint": true
+}
+```
+
+This tool takes no arguments.
+
+### `lemonade_list_backends`
+
+List Lemonade recipes/backends and their installation/support state. This is the backend-focused view of the canonical /api/v1/system-info data.
+
+**Returns**
+
+Returns a result from lemonade_list_backends, including structured content on success.
+
+**MCP annotations**
+
+```json
+{
+  "destructiveHint": false,
+  "openWorldHint": false,
+  "readOnlyHint": true
+}
+```
+
+This tool takes no arguments.
+
+### `lemonade_install_backend`
+
+Install or update one Lemonade recipe/backend through the same implementation as POST /api/v1/install. The MCP call is synchronous; use lemonade_list_backends first to inspect support and current state.
+
+**Returns**
+
+Returns a result from lemonade_install_backend, including structured content on success.
+
+**MCP annotations**
+
+```json
+{
+  "destructiveHint": true,
+  "openWorldHint": true,
+  "readOnlyHint": false
+}
+```
+
+| Argument | Required | Schema | Description |
+|---|:---:|---|---|
+| `backend` | yes | `{"pattern":"\\S","type":"string"}` | Argument backend for the lemonade_install_backend tool. |
+| `force` | no | `{"type":"boolean"}` | Override an unsupported-state guard when the underlying API permits it. |
+| `recipe` | yes | `{"pattern":"\\S","type":"string"}` | Argument recipe for the lemonade_install_backend tool. |
 
 ### `lemonade_list_models`
 
@@ -473,6 +557,9 @@ tools reuse Lemonade's existing server implementations:
 | Load / unload | `lemonade_load_model`, `lemonade_unload_model` |
 | Pull / delete | `lemonade_pull_model`, `lemonade_delete_model` |
 | Model residency | `lemonade_get_loaded_models` |
+| Health | `lemonade_get_server_health` |
+| Hardware / backends | `lemonade_get_system_info`, `lemonade_list_backends` |
+| Backend installation | `lemonade_install_backend` |
 
 Lifecycle actions can change local model state and consume resources.
 MCP annotations and `confirm: true` for model deletion help clients
