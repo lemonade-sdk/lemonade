@@ -79,5 +79,15 @@ int main() {
     check("omni collection has omni primary capability",
           lemon::ModelManager::model_capability(virtual_omni) == "omni");
 
+    lemon::ModelInfo video;
+    video.type = lemon::ModelType::VIDEO;
+    video.labels = {"video"};
+    check("video model primary capability is video",
+          lemon::ModelManager::model_capability(video) == "video");
+    check("video model advertises video capability",
+          contains(lemon::ModelManager::model_capabilities(video), "video"));
+    check("video model does not advertise image editing",
+          !contains(lemon::ModelManager::model_capabilities(video), "image-edit"));
+
     return failures == 0 ? 0 : 1;
 }

@@ -30,7 +30,7 @@ std::string normalize_capability(std::string value) {
     static const std::set<std::string> kCapabilities = {
         "chat", "router", "omni", "image", "image-edit", "transcription",
         "audio-generation", "tts", "model3d", "embedding", "reranking",
-        "classification",
+        "classification", "video",
     };
     return kCapabilities.count(value) ? value : std::string();
 }
@@ -75,6 +75,7 @@ std::string ModelManager::model_capability(const ModelInfo& info) {
         case ModelType::AUDIO_GENERATION: return "audio-generation";
         case ModelType::CLASSIFICATION: return "classification";
         case ModelType::MESH: return "model3d";
+        case ModelType::VIDEO: return "video";
     }
     return {};
 }
