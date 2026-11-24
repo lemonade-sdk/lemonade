@@ -1,0 +1,149 @@
+{
+  "hardware": {
+    "backends": {
+      "llamacpp/rocm": "b11580"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "Radeon 8060S Graphics (gfx1151)",
+        "type": "amd",
+        "vram_gb": 0.5
+      }
+    ],
+    "lemonade_version": "2026.44.1",
+    "os": "linux",
+    "ram_gb": 124.94
+  },
+  "models": [
+    {
+      "checkpoints": {
+        "main": "ggml-org/gpt-oss-120b-GGUF:gpt-oss-120b-MXFP4.gguf"
+      },
+      "config": {
+        "measurement_runs": 3,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "gpt-oss-120b-mxfp-GGUF",
+      "results": [
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 4127.759315,
+                "mean": 4055.0842739999994,
+                "min": 3922.294765,
+                "p50": 4115.198742,
+                "p95": 4126.5032577
+              },
+              "failed_runs": 0,
+              "input_tokens": 3120,
+              "memory_peak_gb": 62.8,
+              "name": "context-4k",
+              "output_tokens": 20,
+              "pp_tps": 859.5547463361714,
+              "tps": {
+                "max": 47.424950016598736,
+                "mean": 47.08487467981134,
+                "min": 46.52233316846471,
+                "p50": 47.30734085437057,
+                "p95": 47.413189100375924
+              },
+              "ttft_ms": {
+                "max": 3706.482,
+                "mean": 3632.1516666666666,
+                "min": 3502.681,
+                "p50": 3687.292,
+                "p95": 3704.5629999999996
+              },
+              "vram_peak_gb": 59.1543083190918
+            }
+          ]
+        },
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 32768,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "long-context",
+              "duration_ms": {
+                "max": 32146.235476,
+                "mean": 32037.684725,
+                "min": 31899.203118,
+                "p50": 32067.615581,
+                "p95": 32138.3734865
+              },
+              "failed_runs": 0,
+              "input_tokens": 23704,
+              "memory_peak_gb": 63.9,
+              "name": "context-32k",
+              "output_tokens": 20,
+              "pp_tps": 753.1373622335259,
+              "tps": {
+                "max": 39.22442980065732,
+                "mean": 38.961920862784766,
+                "min": 38.77487714486294,
+                "p50": 38.88645564283404,
+                "p95": 39.190632384874995
+              },
+              "ttft_ms": {
+                "max": 31584.863,
+                "mean": 31474.013000000003,
+                "min": 31336.383,
+                "p50": 31500.793,
+                "p95": 31576.456
+              },
+              "vram_peak_gb": 60.16789245605469
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-11-24T18:52:38Z",
+      "accuracy": {
+        "passed": 44,
+        "total": 45,
+        "score": 0.9778,
+        "questions_version": "7806a316d254",
+        "failures": [
+          {
+            "id": "tool-search",
+            "response": "We need to search products with query \"wireless headphones\", max_price 100, in_stock true. Use function.",
+            "cut_off": false
+          }
+        ],
+        "errors": [],
+        "health": {
+          "nondeterministic": [
+            "arith-paren",
+            "py-fizzbuzz"
+          ],
+          "repeat_errors": [],
+          "empty_replies": 0,
+          "cut_off": 0
+        }
+      }
+    }
+  ],
+  "timestamp": "2026-11-24T18:52:38Z",
+  "fork_id": "llamacpp-rocm-stable",
+  "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
+  "fork_repo": "lemonade-sdk/llama.cpp",
+  "fork_version": "b12655",
+  "rocm_version": "10.1.0",
+  "fork_backend": "rocm-stable",
+  "experimental": false,
+  "run_id": "45456406437",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/45456406437",
+  "commit": "7231d95faa5543f7cf1d7ca3f8a3d74ba9585182",
+  "lemonade_version": "v2026.44.1",
+  "runner": "ephemeral-devlab-x2-la03-s01-d02-138667023566"
+}
