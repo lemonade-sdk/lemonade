@@ -2835,12 +2835,13 @@ sys.exit(0)
 
     def test_090_delete_model(self):
         """Test delete command with model name."""
-        run_cli_pull_command_with_retry(["pull", DELETE_TEST_MODEL])
+        pull = run_cli_pull_command_with_retry(["pull", DELETE_TEST_MODEL])
+        self.assertEqual(pull.returncode, 0, f"Pull failed: {pull.stderr}")
         result = run_cli_command(
             ["delete", DELETE_TEST_MODEL],
             timeout=TIMEOUT_DEFAULT,
         )
-        print(f"Delete model exit code: {result.returncode}")
+        self.assertEqual(result.returncode, 0, f"Delete failed: {result.stderr}")
 
     def test_090a_naming_spec_list_shows_canonical_shadowed_rows(self):
         """`list` prints API ids verbatim, so shadowed sources appear under their canonical IDs.
