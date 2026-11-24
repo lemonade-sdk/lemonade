@@ -14,6 +14,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace lemon {
@@ -55,7 +56,7 @@ class ModelIngest : public ArtifactFetchService {
         ModelChangeNotifier* notifier;
         // The facade's options write: its store, its file mutex, and a store patch that
         // may not be opened outside the facade.
-        std::function<void(const ModelInfo&)> save_options;
+        std::function<void(ModelInfo&, bool allow_backend_args)> save_options;
         // Refs and repositories both come from the resolver, never assembled here.
         const ArtifactSourceResolver* resolver = nullptr;
     };
@@ -80,18 +81,18 @@ class ModelIngest : public ArtifactFetchService {
     // the entry and the invalidation are one move, so no reader can see one without the
     // other. A router collection also reconciles the routing-helper working set.
     void register_user_model(const std::string& model_name, const nlohmann::json& model_data,
-                             const std::string& source = "");
+                             const std::string& source, bool allow_backend_args);
     void unregister_user_model(const std::string& model_name);
     void forget_registered_model(const std::string& canonical_model_name);
 
     void register_model(const std::string& model_name, const nlohmann::json& model_data,
-                        bool allow_missing_checkpoint, bool replace_existing);
+                        bool allow_missing_checkpoint, bool replace_existing, bool allow_backend_args);
 
     // Register if needed, then fetch. A `collection.omni` entry resolves its
     // components and fetches each one.
     void pull(const std::string& model_name, const nlohmann::json& model_data,
               bool do_not_upgrade, DownloadProgressCallback progress,
-              const utils::CancelToken& cancel = utils::CancelToken());
+              const utils::CancelToken& cancel, bool allow_backend_args);
 
     // Fetch an already-registered model, serialized per checkpoint repository.
     void fetch_model(const ModelInfo& info, bool do_not_upgrade,
@@ -102,13 +103,19 @@ class ModelIngest : public ArtifactFetchService {
     void populate_from_cached_manifest(ModelInfo& info);  // forwards to the collection unit
 
   private:
+    friend class IngestCollections;
+
+    void register_user_models(
+        const std::vector<std::pair<std::string, nlohmann::json>>& models,
+        const std::string& source, bool allow_backend_args);
+
     // Cycle-detecting form used by the collection fan-out. `visited` holds the
     // collection names entered on the current call chain; re-entering one throws.
     void pull(const std::string& model_name, const nlohmann::json& model_data,
               bool do_not_upgrade, DownloadProgressCallback progress,
               std::set<std::string>& visited, bool register_only,
               bool allow_missing_checkpoint, bool replace_existing,
-              const utils::CancelToken& cancel = utils::CancelToken());
+              const utils::CancelToken& cancel, bool allow_backend_args);
 
     void download_from_registry(const ModelInfo& info, DownloadProgressCallback progress_callback,
                                 const utils::CancelToken& cancel) const;

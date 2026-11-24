@@ -30,7 +30,10 @@ class IngestCollections {
     // itself carries. Returns canonical names in the order given.
     std::vector<std::string> register_components(const nlohmann::json& component_names,
                                                  const nlohmann::json& component_defs,
-                                                 const std::string& registry_source);
+                                                 const std::string& registry_source,
+                                                 bool allow_backend_args,
+                                                 const std::string& parent_name = "",
+                                                 const nlohmann::json& parent_data = nlohmann::json::object());
 
     // Fetches the manifest, then registers what it names.
     std::vector<std::string> resolve_from_manifest(const std::string& repo_id,

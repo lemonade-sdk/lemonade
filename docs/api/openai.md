@@ -2110,7 +2110,7 @@ Per-architecture defaults are chosen by the architecture in the model's GGUF met
 ## `POST /v1/models/{id}/options`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Saves recipe options for a model without loading it. The body is a flat object of the recipe options [`/v1/load`](./lemonade.md#post-v1load) accepts.
+Saves recipe options for a model without loading it. The body is a flat object of the recipe options [`/v1/load`](./lemonade.md#post-v1load) accepts. Sending `*_args` or `merge_args` requires [admin authorization](../guide/configuration/README.md#admin-api-key), including empty or `null` values.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -2209,6 +2209,7 @@ A running model keeps its current options until it is next loaded.
 | `400` |  | The body sets `pinned`, which belongs to `/v1/load` and `/internal/pin` |
 | `400` |  | A field not listed above has the wrong JSON type |
 | `400` |  | `ctx_size` is not a positive whole number or `-1`, or a whole-number option has a fractional value |
+| `403` | `admin_required` | The request changes backend arguments or a collection manifest source without admin authorization |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `500` | `internal_error` | Reading or saving the model's options fails, for example on an unwritable options file |
@@ -2218,7 +2219,7 @@ A running model keeps its current options until it is next loaded.
 ## `DELETE /v1/models/{id}/options`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Resets a model to its defaults by erasing its `recipe_options.json` entry. Defaults from its registry entry and the server's configuration still apply.
+Resets a model to its defaults by erasing its `recipe_options.json` entry. Defaults from its registry entry and the server's configuration still apply. Clearing saved backend arguments requires [admin authorization](../guide/configuration/README.md#admin-api-key).
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -2294,6 +2295,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Status | Code | When |
 |--------|------|------|
+| `403` | `admin_required` | The request changes backend arguments or a collection manifest source without admin authorization |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `500` | `internal_error` | Reading or saving the model's options fails, for example on an unwritable options file |
