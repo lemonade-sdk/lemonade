@@ -13,7 +13,9 @@
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
+#include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <ctime>
 #include <filesystem>
 #include <utility>
@@ -118,6 +120,8 @@ void TheNoiseServer::load(const std::string& model_name,
 
     backend_manager_->install_backend(thenoise::spec()->recipe, backend);
 
+    const auto model_type = get_model_type_from_labels(model_info.labels);
+    const bool is_mesh = model_type == ModelType::MESH;
     std::string dit_path = model_info.resolved_path("main");
     std::string vae_path = model_info.resolved_path("vae");
     std::string text_encoder_path = model_info.resolved_path("text_encoder");
@@ -128,21 +132,27 @@ void TheNoiseServer::load(const std::string& model_name,
     if (!fs::exists(fs::path(dit_path))) {
         throw std::runtime_error("DiT model file does not exist: " + dit_path);
     }
-    // Video adapters may carry the VAE inside the main checkpoint (LTX 2.3).
-    // Preserve the image requirement and never ignore a declared missing file.
-    const bool vae_required = get_model_type_from_labels(model_info.labels) != ModelType::VIDEO ||
+    // Video and mesh adapters may pack components into the main checkpoint.
+    // Never ignore a declared missing component; image models still need both.
+    const bool vae_required = (!is_mesh && model_type != ModelType::VIDEO) ||
                               !model_info.checkpoint("vae").empty();
     if ((vae_required || !vae_path.empty()) &&
         (vae_path.empty() || !fs::exists(path_from_utf8(vae_path)))) {
         throw std::runtime_error("VAE model file not found: " + vae_path);
     }
-    if (text_encoder_path.empty() || !fs::exists(fs::path(text_encoder_path))) {
+    const bool text_encoder_required = !is_mesh || !model_info.checkpoint("text_encoder").empty();
+    if ((text_encoder_required || !text_encoder_path.empty()) &&
+        (text_encoder_path.empty() || !fs::exists(path_from_utf8(text_encoder_path)))) {
         throw std::runtime_error("Text encoder model file not found: " + text_encoder_path);
     }
 
     LOG(DEBUG, "TheNoise") << "Using DiT: " << dit_path << std::endl;
-    LOG(DEBUG, "TheNoise") << "Using VAE: " << vae_path << std::endl;
-    LOG(DEBUG, "TheNoise") << "Using text encoder: " << text_encoder_path << std::endl;
+    if (!vae_path.empty()) {
+        LOG(DEBUG, "TheNoise") << "Using VAE: " << vae_path << std::endl;
+    }
+    if (!text_encoder_path.empty()) {
+        LOG(DEBUG, "TheNoise") << "Using text encoder: " << text_encoder_path << std::endl;
+    }
 
     std::string exe_path = BackendUtils::get_backend_binary_path(*thenoise::spec(), backend);
 
@@ -153,14 +163,11 @@ void TheNoiseServer::load(const std::string& model_name,
 
     LOG(INFO, "TheNoise") << "Starting server on port " << port_ << " (backend: " << backend << ")" << std::endl;
 
-    std::vector<std::string> args = {
-        "serve",
-        "--dit", dit_path,
-        "--text-encoder", text_encoder_path,
-        "--host", "127.0.0.1",
-        "--port", std::to_string(port_)
-    };
-
+    std::vector<std::string> args = {"serve", "--dit", dit_path};
+    if (!text_encoder_path.empty()) {
+        args.insert(args.end(), {"--text-encoder", text_encoder_path});
+    }
+    args.insert(args.end(), {"--host", "127.0.0.1", "--port", std::to_string(port_)});
     if (!vae_path.empty()) args.insert(args.end(), {"--vae", vae_path});
 
     // Optional components are named by role in the catalog. TheNoise decides
@@ -382,6 +389,10 @@ json TheNoiseServer::build_request(const json& request) const {
 }
 
 json TheNoiseServer::image_generations(const json& request) {
+    if (get_model_type() == ModelType::MESH) {
+        return ErrorResponse::from_exception(
+            InvalidRequestException("The loaded TheNoise model is a mesh model, not an image model"));
+    }
     int n = request.value("n", 1);
     if (n < 1) n = 1;
 
@@ -408,6 +419,10 @@ json TheNoiseServer::image_generations(const json& request) {
 }
 
 json TheNoiseServer::image_edits(const json& request) {
+    if (get_model_type() == ModelType::MESH) {
+        return ErrorResponse::from_exception(
+            InvalidRequestException("The loaded TheNoise model is a mesh model, not an image model"));
+    }
     int n = request.value("n", 1);
     if (n < 1) n = 1;
 
@@ -658,6 +673,85 @@ json TheNoiseServer::video_generations(const json& request, std::atomic<bool>* c
                 {"frame_count", frames}, {"fps", fps}, {"duration", static_cast<double>(frames) / fps}};
     } catch (const std::exception& e) {
         return canceled() ? canceled_result(true) : error(std::string("video content failed: ") + e.what());
+    }
+}
+
+void TheNoiseServer::model_3d_generations(const json& request, httplib::DataSink& sink) {
+    auto fail = [&sink](const std::string& message, int status = 502) {
+        const std::string payload = json{{"error", {
+            {"message", message}, {"type", status < 500 ? "invalid_request_error" : "backend_error"},
+            {"status_code", status}}}}.dump();
+        sink.write(payload.data(), payload.size());
+    };
+
+    if (get_model_type() != ModelType::MESH) {
+        fail("The loaded TheNoise model does not support 3D generation", 400);
+        return;
+    }
+
+    // Lemonade accepts data URLs and line-wrapped base64; TheNoise's mesh
+    // endpoint expects strict base64 and rejects unknown request fields.
+    std::string image = request.at("image").get<std::string>();
+    if (image.rfind("data:", 0) == 0) {
+        image = image.substr(image.find(',') + 1);
+    }
+    image.erase(std::remove(image.begin(), image.end(), '\r'), image.end());
+    image.erase(std::remove(image.begin(), image.end(), '\n'), image.end());
+
+    json body = {{"image", std::move(image)}, {"output_format", "glb"}, {"triangles", 0.05}};
+    for (const char* key : {"seed", "octree_resolution", "steps", "triangles"}) {
+        if (request.contains(key)) {
+            body[key] = request.at(key);
+        }
+    }
+    // Do not inherit the image recipe's default steps/CFG for a mesh model.
+    if (!body.contains("steps")) {
+        if (auto steps = recipe_options_.stored_int_option("steps"); steps && *steps > 0) {
+            body["steps"] = *steps;
+        }
+    }
+    if (auto cfg = recipe_options_.stored_number_option("cfg_scale"); cfg && *cfg >= 0.0) {
+        body["guidance_scale"] = *cfg;
+    }
+    if (auto sampler = recipe_options_.string_option("sampler"); sampler && !sampler->empty()) {
+        body["sampler"] = *sampler;
+    }
+
+    BackendRequestScope request_scope(*this, BackendRequestKind::NonStreaming);
+    try {
+        const auto response = utils::HttpClient::post(
+            get_base_url() + "/mesh", body.dump(), {{"Content-Type", "application/json"}},
+            1800, utils::HttpSecurityPolicy::TrustedLoopback, current_request_cancel_context());
+        if (response.status_code < 200 || response.status_code >= 300) {
+            std::string message = "TheNoise mesh generation failed (HTTP " + std::to_string(response.status_code) + ")";
+            const auto content_type = response.headers.find("content-type");
+            if (content_type != response.headers.end() &&
+                content_type->second.rfind("text/plain", 0) == 0 && !response.body.empty()) {
+                message += ": " + response.body.substr(0, 1024);
+            }
+            LOG(ERROR, "TheNoise") << message << std::endl;
+            fail(message, response.status_code >= 400 && response.status_code < 600 ? response.status_code : 502);
+            return;
+        }
+        if (response.body.size() < 12 || response.body.compare(0, 4, "glTF") != 0) {
+            fail("TheNoise mesh generation did not return a GLB file");
+            return;
+        }
+        const auto read_u32 = [&response](size_t offset) {
+            uint32_t value = 0;
+            for (size_t i = 0; i < 4; ++i) {
+                value |= static_cast<uint32_t>(static_cast<unsigned char>(response.body[offset + i])) << (8 * i);
+            }
+            return value;
+        };
+        if (read_u32(4) != 2 || read_u32(8) != response.body.size()) {
+            fail("TheNoise returned an invalid or truncated GLB file");
+            return;
+        }
+        sink.write(response.body.data(), response.body.size());
+    } catch (const std::exception& e) {
+        LOG(ERROR, "TheNoise") << "Mesh generation failed: " << e.what() << std::endl;
+        fail(e.what());
     }
 }
 

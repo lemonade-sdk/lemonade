@@ -21,13 +21,21 @@ const RouteArg kImage{"image", ArgIn::JsonBody, {{"type", "string"}}, true, Supp
                       "Base64-encoded PNG, JPEG, BMP or GIF image, optionally as a `data:` URL."};
 const RouteArg kResolution{"resolution", ArgIn::JsonBody,
                            {{"enum", json::array({512, 1024, 1536, "512", "1024", "1536"})}}, false, Support::Available,
-                           "Cascade resolution: `512`, `1024` or `1536`. Defaults to `512`."};
+                           "TRELLIS cascade resolution: `512`, `1024` or `1536`. Defaults to `512`."};
+const RouteArg kOctreeResolution{"octree_resolution", ArgIn::JsonBody,
+                                 {{"type", "integer"}, {"minimum", 8}, {"maximum", 768}}, false, Support::Available,
+                                 "TheNoise mesh extraction grid resolution (8-768). Hunyuan3D defaults to 384."};
+const RouteArg kTriangles{"triangles", ArgIn::JsonBody,
+                          {{"type", "number"}, {"minimum", 0.001}, {"maximum", 1.0}}, false, Support::Available,
+                          "TheNoise fraction of triangles to retain (0.001-1.0). Defaults to 0.05; use 1.0 for the raw detail level."};
+const RouteArg kMeshSteps{"steps", ArgIn::JsonBody, {{"type", "integer"}, {"minimum", 1}}, false, Support::Available,
+                         "TheNoise mesh denoising steps. Defaults to the model setting."};
 const RouteArg kBgRemoval{"bg_removal", ArgIn::JsonBody, {{"enum", json::array({"threshold", "birefnet"})}},
                           false, Support::Available,
-                          "Background removal mode: `threshold` or `birefnet`. Use `birefnet` for photos with "
+                          "TRELLIS background removal mode: `threshold` or `birefnet`. Use `birefnet` for photos with "
                           "real backgrounds. Defaults to the backend's own."};
 const RouteArg kUv{"uv", ArgIn::JsonBody, {{"enum", json::array({"xatlas", "box"})}}, false, Support::Available,
-                   "UV atlas method. `xatlas` unwraps every face into its own atlas space for the best "
+                   "TRELLIS UV atlas method. `xatlas` unwraps every face into its own atlas space for the best "
                    "texture quality, but slows down on large meshes. `box` is a faster six-plane "
                    "projection that can leave small artifacts in concave regions. Defaults to `xatlas`."};
 const RouteArg kResponseFormat{"response_format", ArgIn::JsonBody, {{"const", "glb"}}, false, Support::Available,
@@ -43,19 +51,20 @@ public:
         s.id = "lemonade.3d_generations";
         s.methods = {"POST"};
         s.paths = {"3d/generations"};
-        s.summary = "Generate a textured 3D mesh from an image";
+        s.summary = "Generate a 3D mesh from an image";
         s.experimental = true;
         s.description =
-            "Generates a textured 3D mesh, as a glTF-binary (`.glb`) file, from an image. It serves "
-            "TRELLIS models such as `TRELLIS-3D` and is a Lemonade extension.";
+            "Generates a glTF-binary (`.glb`) mesh from an image. TRELLIS produces textured meshes; "
+            "TheNoise Hunyuan3D 2.1 produces geometry without textures. This is a Lemonade extension.";
         s.notes = {
             "Reconstruction runs on the GPU (Vulkan, ROCm or CUDA) and takes minutes; higher "
-            "`resolution` values take longer.",
+            "`resolution` (TRELLIS) or `octree_resolution` (TheNoise) values take longer.",
+            "Backend-specific parameters are only used by the corresponding backend.",
             "Errors carry a JSON `error` object.",
         };
         s.args = {
-            model_loading::kModel, kImage, kResolution, kBgRemoval, kUv, inference::kSeed,
-            kResponseFormat
+            model_loading::kModel, kImage, kResolution, kBgRemoval, kUv, kOctreeResolution,
+            kTriangles, kMeshSteps, inference::kSeed, kResponseFormat
         };
 
         RouteResponse response;

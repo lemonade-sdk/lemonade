@@ -9,7 +9,7 @@ Lemonade App treats speech input, speech output, generated audio, and 3D as dist
 | Transcription | `whispercpp`, `moonshine` | audio file or microphone -> text | `/api/v1/audio/transcriptions`, `/v1/realtime` |
 | TTS | `kokoro`, `openmoss` | text -> spoken audio | `/api/v1/audio/speech` |
 | Audio generation | `acestep`, `thinksound`, `openmoss` | prompt -> music or sound effect | `/api/v1/audio/generations` |
-| 3D | `trellis` | image -> GLB, or text -> reference image -> GLB | `/api/v1/3d/generations` |
+| 3D | `trellis`, `thenoise` | image -> GLB, or text -> reference image -> GLB | `/api/v1/3d/generations` |
 
 ## ACE-Step and ThinkSound
 
@@ -31,13 +31,14 @@ The app no longer switches between a voice-design model and a speech model. The 
 
 Audio-generation and OpenMOSS voice settings reset to the model's defaults when you select a different model. The model's options can arrive after you start editing. A setting you have already changed keeps your value, and the settings you have not touched pick up the model's values.
 
-## TRELLIS
+## 3D generation
 
 The 3D composer supports:
 
 - **Image -> 3D:** upload one reference image and reconstruct it directly.
-- **Text -> image -> 3D:** select a downloaded image model; Lemonade App renders a reconstruction-friendly reference image, reloads TRELLIS, then reconstructs the mesh.
-- Cascade resolution `512`, `1024`, or `1536`, background removal, and seed controls.
+- **Text -> image -> 3D:** select a downloaded image model; Lemonade App renders a reconstruction-friendly reference image, reloads the selected 3D model, then reconstructs the mesh.
+- TRELLIS: cascade resolution `512`, `1024`, or `1536`, background removal, and seed controls; generates textured meshes.
+- TheNoise (`Hunyuan3D-2.1`): octree resolution `96`, `192`, `384`, or `768`, triangle retention and seed controls; generates geometry-only meshes. The default is octree `384` with `5%` triangle retention. Choose `100%` to disable simplification. TheNoise 0.17.0 or later is required.
 - Interactive GLB preview and direct GLB download.
 - Local binary STL export for printing-oriented geometry workflows. STL intentionally contains geometry only; materials and textures remain in GLB.
 

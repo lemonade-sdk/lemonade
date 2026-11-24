@@ -12,7 +12,7 @@
 namespace lemon {
 namespace backends {
 
-class TheNoiseServer : public WrappedServer, public IImageServer, public IVideoServer, public IUpscaleServer {
+class TheNoiseServer : public WrappedServer, public IImageServer, public IVideoServer, public IUpscaleServer, public IModel3DServer {
 public:
     static InstallParams get_install_params(const std::string& backend, const std::string& version);
 
@@ -37,6 +37,8 @@ public:
 
     // IVideoServer implementation
     json video_generations(const json& request, std::atomic<bool>* cancel = nullptr) override;
+
+    void model_3d_generations(const json& request, httplib::DataSink& sink) override;
 
     std::string upscale_via_cli(
         const std::string& b64_image,

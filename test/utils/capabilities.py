@@ -366,6 +366,15 @@ CAPABILITIES = {
         },
     },
     "model3d": {
+        "thenoise": {
+            "backends": ["rocm", "cuda"],
+            "supports": {
+                "model_3d_generation": True,
+            },
+            "test_models": {
+                "model3d": "Hunyuan3D-2.1",
+            },
+        },
         "trellis": {
             "backends": ["vulkan", "rocm", "cuda"],
             "supports": {

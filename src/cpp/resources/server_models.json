@@ -2352,6 +2352,22 @@
         ],
         "size": 10.5
     },
+    "Hunyuan3D-2.1": {
+        "checkpoints": {
+            "main": "Comfy-Org/Hunyuan-3D-2.1:hunyuan_3d_v2.1.safetensors"
+        },
+        "recipe": "thenoise",
+        "suggested": true,
+        "labels": [
+            "3d"
+        ],
+        "size": 6.9,
+        "recipe_options": {
+            "steps": 30,
+            "cfg_scale": 5.0,
+            "sampler": "euler"
+        }
+    },
     "TRELLIS-3D": {
         "checkpoint": "ilintar/trellis2-gguf",
         "recipe": "trellis",
