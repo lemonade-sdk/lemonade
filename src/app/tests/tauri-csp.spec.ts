@@ -10,7 +10,7 @@ declare global {
   }
 }
 
-test('Tauri CSP permits app startup but blocks untrusted inline scripts', async ({ page }) => {
+test('simulated Tauri CSP permits renderer startup but blocks untrusted inline scripts in Chromium', async ({ page }) => {
   const config = JSON.parse(readFileSync(join(__dirname, '../src-tauri/tauri.conf.json'), 'utf8'));
   const directives: Record<string, string> = config.app.security.csp;
   expect(directives).toBeTruthy();
@@ -28,7 +28,7 @@ test('Tauri CSP permits app startup but blocks untrusted inline scripts', async 
   await page.route('/', async route => {
     const response = await route.fetch();
     const html = await response.text();
-    // Tauri adds hashes for bundled inline scripts when embedding assets.
+    // This simulates CSP modifications; it does not inspect Tauri's generated policy.
     const hashes = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)]
       .map(match => `'sha256-${createHash('sha256').update(match[1]).digest('base64')}'`);
     const disabled = config.app.security.dangerousDisableAssetCspModification;
