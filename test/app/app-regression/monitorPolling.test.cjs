@@ -88,6 +88,7 @@ function createMonitorHarness({
   const callbacks = [];
   const memoizedValues = [];
   const timers = [];
+  const timeouts = [];
   let stateIndex = 0;
   let refIndex = 0;
   let effectIndex = 0;
@@ -95,6 +96,7 @@ function createMonitorHarness({
   let memoIndex = 0;
   let healthCallCount = 0;
   const healthResponses = sequence(healthValues);
+  const slotsResponses = sequence(slotsValues);
 
   const fakeReact = {
     useState(initial) {
@@ -151,7 +153,24 @@ function createMonitorHarness({
       gpus: [],
     }),
     systemInfo: () => Promise.resolve({}),
-    slots: sequence(slotsValues),
+    slots: (signal) => {
+      const response = slotsResponses();
+      if (!signal) return response;
+      return new Promise((resolve, reject) => {
+        const onAbort = () => reject(new Error('slot request aborted'));
+        signal.addEventListener('abort', onAbort, { once: true });
+        response.then(
+          (value) => {
+            signal.removeEventListener('abort', onAbort);
+            resolve(value);
+          },
+          (error) => {
+            signal.removeEventListener('abort', onAbort);
+            reject(error);
+          },
+        );
+      });
+    },
     onStatusChange: () => () => {},
     connectLogStream: () => ({ close() {} }),
   };
@@ -164,6 +183,8 @@ function createMonitorHarness({
   const originalModuleLoad = Module._load;
   const originalSetInterval = global.setInterval;
   const originalClearInterval = global.clearInterval;
+  const originalSetTimeout = global.setTimeout;
+  const originalClearTimeout = global.clearTimeout;
 
   require.extensions['.ts'] = function loadTypeScript(module, filename) {
     const source = fs.readFileSync(filename, 'utf8');
@@ -190,6 +211,14 @@ function createMonitorHarness({
   };
   global.clearInterval = (timer) => {
     if (timer) timer.active = false;
+  };
+  global.setTimeout = (callback, delay) => {
+    const timeout = { callback, delay, active: true };
+    timeouts.push(timeout);
+    return timeout;
+  };
+  global.clearTimeout = (timeout) => {
+    if (timeout) timeout.active = false;
   };
 
   delete require.cache[hookPath];
@@ -233,6 +262,12 @@ function createMonitorHarness({
       assert.ok(timer, 'Monitor should register its two-second poll');
       return timer.callback();
     },
+    expireSlotTimeout() {
+      const timeout = timeouts.find((timer) => timer.active && timer.delay === 2000);
+      assert.ok(timeout, 'Monitor should bound slot telemetry requests');
+      timeout.active = false;
+      timeout.callback();
+    },
     data() { return render(); },
     pollingActive() { return Boolean(timerFor(2000)); },
     get healthCallCount() { return healthCallCount; },
@@ -240,6 +275,8 @@ function createMonitorHarness({
       for (const effect of effectRecords) effect?.cleanup?.();
       global.setInterval = originalSetInterval;
       global.clearInterval = originalClearInterval;
+      global.setTimeout = originalSetTimeout;
+      global.clearTimeout = originalClearTimeout;
       delete require.cache[hookPath];
     },
   };
@@ -259,6 +296,31 @@ const tests = [
         older.resolve(stats(2));
         await oldPoll;
         assert.equal(monitor.data().stats.request_count_total, 3);
+      } finally { monitor.dispose(); }
+    },
+  },
+  {
+    name: 'Monitor slot timeout allows the poll to commit primary telemetry',
+    async run() {
+      const delayedSlots = deferred();
+      const updatedHealth = { ...health('llamacpp'), version: 'updated' };
+      const monitor = createMonitorHarness({
+        healthValues: [health('llamacpp'), updatedHealth],
+        statsValues: [stats(1), stats(2)],
+        slotsValues: [[], delayedSlots.promise],
+      });
+      try {
+        await monitor.mount();
+        const poll = monitor.poll();
+        await flush();
+        assert.equal(monitor.data().stats.request_count_total, 1);
+        monitor.expireSlotTimeout();
+        await poll;
+        const data = monitor.data();
+        assert.equal(data.stats.request_count_total, 2);
+        assert.equal(data.health.version, 'updated');
+        assert.equal(data.slotsUnsupported, true);
+        assert.match(data.slotStatus, /slot request aborted/);
       } finally { monitor.dispose(); }
     },
   },

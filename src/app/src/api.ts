@@ -2130,8 +2130,8 @@ class LemonadeAPI {
     return this._json<SystemStatsData>('/api/v1/system-stats');
   }
 
-  async slots(): Promise<SlotData[]> {
-    const data = await this._json<unknown>('/api/v1/slots');
+  async slots(signal?: AbortSignal): Promise<SlotData[]> {
+    const data = await this._json<unknown>('/api/v1/slots', { signal });
     if (Array.isArray(data)) return data as SlotData[];
     if (isObject(data) && Array.isArray(data.slots)) return data.slots as SlotData[];
     return [];

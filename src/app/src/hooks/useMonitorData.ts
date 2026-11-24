@@ -280,8 +280,10 @@ export function useMonitorData(isActive = true): MonitorData {
         nextSlotStatus = 'Load a llama.cpp or vLLM chat model to see slot telemetry.';
       }
       if (supportsSlots) {
+        const slotsAbortController = new AbortController();
+        const slotsTimeout = setTimeout(() => slotsAbortController.abort(), POLL_INTERVAL);
         try {
-          const response = await api.slots();
+          const response = await api.slots(slotsAbortController.signal);
           slotData = Array.isArray(response) ? response : [];
           nextSlotsUnsupported = false;
           if (slotData.length === 0) {
@@ -291,6 +293,8 @@ export function useMonitorData(isActive = true): MonitorData {
           slotData = [];
           nextSlotsUnsupported = true;
           nextSlotStatus = `Slot telemetry unavailable: ${friendlyErrorMessage(err)}`;
+        } finally {
+          clearTimeout(slotsTimeout);
         }
       }
       if (pollGeneration < lastAppliedPollGenerationRef.current) return;
