@@ -203,6 +203,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/xdg-runtime"
           chmod 700 "$RUNNER_TEMP/xdg-runtime"
           export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
+          SNAP_DIR="$(mktemp -d "$RUNNER_TEMP/bench-snapshots.XXXXXX")"
           LEMONADE="$(pwd)/build/lemonade"
 
           pick_free_port() {
@@ -240,8 +241,8 @@ jobs:
           }
 
           purge_fresh_results() {
-            find "ci/results/$FORK_ID" -name 'run-*.json' 2>/dev/null | sort > /tmp/post-bench-files || true
-            comm -13 /tmp/pre-bench-files /tmp/post-bench-files | xargs -r rm --
+            find "ci/results/$FORK_ID" -name 'run-*.json' 2>/dev/null | sort > "$SNAP_DIR/post-bench-files" || true
+            comm -13 "$SNAP_DIR/pre-bench-files" "$SNAP_DIR/post-bench-files" | xargs -r rm --
           }
 
           bench_one_fork() {
@@ -319,7 +320,7 @@ jobs:
               stop_lemond; return 1
             fi
 
-            find "ci/results/$FORK_ID" -name 'run-*.json' 2>/dev/null | sort > /tmp/pre-bench-files || true
+            find "ci/results/$FORK_ID" -name 'run-*.json' 2>/dev/null | sort > "$SNAP_DIR/pre-bench-files" || true
             LEMONADE_EXE="$LEMONADE" python3 .github/scripts/validate_backend_bench.py \
               --forks        src/cpp/resources/benchmark_forks.json \
               --output       ci/results \
@@ -341,7 +342,7 @@ jobs:
               mkdir -p "ci/results/$FORK_ID"
               mv ci/results/regression_report.json "ci/results/$FORK_ID/regression_report.json"
             fi
-            fresh_files=$(comm -13 /tmp/pre-bench-files <(find "ci/results/$FORK_ID" -name 'run-*.json' 2>/dev/null | sort) | xargs -r grep -l '"tps"' 2>/dev/null || true)
+            fresh_files=$(comm -13 "$SNAP_DIR/pre-bench-files" <(find "ci/results/$FORK_ID" -name 'run-*.json' 2>/dev/null | sort) | xargs -r grep -l '"tps"' 2>/dev/null || true)
             fresh=$(printf '%s\n' "$fresh_files" | grep -c . || true)
             missing=()
             IFS=',' read -ra expected <<< "$BENCH_MODELS"

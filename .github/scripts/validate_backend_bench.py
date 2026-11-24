@@ -782,11 +782,14 @@ def _accuracy_messages(q: dict, suite: dict) -> list[dict]:
     return msgs + [{"role": "user", "content": prompt}]
 
 
+def _load_suite() -> tuple[dict, str]:
+    raw = ACCURACY_FILE.read_bytes()
+    return json.loads(raw), hashlib.sha256(raw).hexdigest()[:12]
+
+
 def run_accuracy(base_url: str, fork: dict, model: str) -> dict | None:
     """Ask the fixed accuracy suite on this fork's backend; deterministic, thinking off."""
-    raw = ACCURACY_FILE.read_bytes()
-    suite = json.loads(raw)
-    version = hashlib.sha256(raw).hexdigest()[:12]
+    suite, version = _load_suite()
     defaults = suite.get("defaults", {})
     by_ctx: dict[int, list[dict]] = {}
     for q in suite["questions"]:
@@ -921,7 +924,7 @@ def run_accuracy(base_url: str, fork: dict, model: str) -> dict | None:
 
 
 def grade_pending_code(root: Path) -> None:
-    suite = json.loads(ACCURACY_FILE.read_text())
+    suite, version = _load_suite()
     tests = {
         q["id"]: q["grade"]["tests"]
         for q in suite["questions"]
@@ -936,6 +939,14 @@ def grade_pending_code(root: Path) -> None:
         for me in data.get("models") or []:
             acc = me.get("accuracy")
             if not acc or not acc.get("pending_code"):
+                continue
+            if acc.get("questions_version") != version:
+                # Answers from an older suite stay pending (shown as unavailable)
+                # rather than being graded against tests they were never asked.
+                print(
+                    f"{f}: {me.get('model')} left ungraded: suite "
+                    f"{acc.get('questions_version')} != current {version}"
+                )
                 continue
             for item in acc.pop("pending_code"):
                 try:
@@ -1178,6 +1189,9 @@ def main() -> int:
             except Exception as e:
                 print(f"  [ERROR] {fork_id}: {e} (skipping this fork)")
                 failed.append(fork_id)
+                # A binary left from an earlier job would otherwise be benched
+                # by --use-installed as if this download had succeeded.
+                shutil.rmtree(binaries_dir / fork_id, ignore_errors=True)
         if len(failed) == len(forks):
             return 1
         print(f"Fork binaries ready; failed: {failed or 'none'}")
