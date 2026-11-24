@@ -28,7 +28,11 @@ function wavBytes(): Buffer {
   return header;
 }
 
-async function mockOpenMossServer(page: Page, loadedModel: string) {
+async function mockOpenMossServer(page: Page, loadedModel: string, { holdModelOptions = false } = {}) {
+  let releaseModelOptions = () => { };
+  const modelOptionsReleased = holdModelOptions
+    ? new Promise<void>(resolve => { releaseModelOptions = resolve; })
+    : Promise.resolve();
   const speechRequests: Record<string, unknown>[] = [];
   const generationRequests: Record<string, unknown>[] = [];
   const loadRequests: string[] = [];
@@ -57,9 +61,10 @@ async function mockOpenMossServer(page: Page, loadedModel: string) {
       },
     },
   }));
-  await page.route(/\/api\/v1\/models(?:\/[^?]*)?(?:\?.*)?$/, route => {
+  await page.route(/\/api\/v1\/models(?:\/[^?]*)?(?:\?.*)?$/, async route => {
     const optionsMatch = new URL(route.request().url()).pathname.match(/\/api\/v1\/models\/([^/]+)\/options$/);
     if (optionsMatch) {
+      await modelOptionsReleased;
       const name = decodeURIComponent(optionsMatch[1]);
       return route.fulfill({
         json: { model_name: name, recipe: 'openmoss', saved: {}, effective: { model_name: name }, defaults: { model_name: name } },
@@ -86,7 +91,14 @@ async function mockOpenMossServer(page: Page, loadedModel: string) {
     return route.fulfill({ status: 200, contentType: 'audio/wav', body: wavBytes() });
   });
 
-  return { speechRequests, generationRequests, loadRequests };
+  return { speechRequests, generationRequests, loadRequests, releaseModelOptions };
+}
+
+async function releaseModelOptionsAndSettle(page: Page, release: () => void) {
+  const loaded = page.waitForResponse(/\/api\/v1\/models\/[^/]+\/options$/);
+  release();
+  await loaded;
+  await page.waitForTimeout(250);
 }
 
 test.describe('OpenMOSS composer', () => {
@@ -162,6 +174,50 @@ test.describe('OpenMOSS composer', () => {
     expect(request.model).toBe(VOICEGEN_MODEL);
     expect(request.voice).toBe('an excited young narrator');
     expect(request).not.toHaveProperty('voice_design_description');
+  });
+
+  test('voice settings entered before the model options load survive the load', async ({ page }) => {
+    const server = await mockOpenMossServer(page, SPEECH_MODEL, { holdModelOptions: true });
+    await page.goto('/');
+
+    const settings = page.locator('.composer__openmoss-settings');
+    await settings.locator('select').selectOption('describe');
+    await settings.getByRole('textbox').fill('a gravelly old voice');
+    await settings.locator('.composer__openmoss-params > summary').click();
+    await settings.getByRole('spinbutton', { name: 'Audio top-k' }).fill('40');
+
+    await releaseModelOptionsAndSettle(page, server.releaseModelOptions);
+    await expect(settings.locator('select')).toHaveValue('describe');
+
+    await page.locator('.composer__input').fill('Still here after the options loaded.');
+    await page.locator('.composer__send').click();
+    await expect(page.locator('.message--assistant').last()).toContainText('Designed a voice from your description');
+
+    expect(server.speechRequests).toHaveLength(1);
+    const [request] = server.speechRequests;
+    expect(request.voice_design_description).toBe('a gravelly old voice');
+    expect(request.audio_top_k).toBe(40);
+  });
+
+  test('sound-effect settings entered before the model options load survive the load', async ({ page }) => {
+    const server = await mockOpenMossServer(page, SFX_MODEL, { holdModelOptions: true });
+    await page.goto('/');
+
+    const settings = page.locator('.composer__audio-generation-settings');
+    await settings.getByRole('spinbutton', { name: 'Steps' }).fill('30');
+    await settings.getByRole('textbox', { name: /Negative prompt/ }).fill('music, speech');
+
+    await releaseModelOptionsAndSettle(page, server.releaseModelOptions);
+    await expect(settings.getByRole('spinbutton', { name: 'Steps' })).toHaveValue('30');
+
+    await page.locator('.composer__input').fill('rain on a tin roof');
+    await page.locator('.composer__send').click();
+    await expect(page.locator('.message--assistant').last()).toContainText('Generated a sound effect from your prompt.');
+
+    expect(server.generationRequests).toHaveLength(1);
+    const [request] = server.generationRequests;
+    expect(request.steps).toBe(30);
+    expect(request.negative_prompt).toBe('music, speech');
   });
 
   test('MOSS-SoundEffect starts from engine defaults and draws a real seed', async ({ page }) => {

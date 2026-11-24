@@ -29,6 +29,8 @@ The app no longer switches between a voice-design model and a speech model. The 
 
 `MOSS-SoundEffect` is an audio-generation model. On top of duration, steps, CFG, and seed, it has sigma-shift and negative-prompt controls. The registry declares no defaults for it, so the composer starts from the engine's own values (100 steps, CFG 4.0, sigma shift 5.0) instead of the generic sound-effect numbers. Recipe options still take precedence when a model declares them. The seed is unsigned and `0` is a real seed, so a blank or `-1` seed draws a random 32-bit value; otherwise every generation would render the same clip.
 
+Audio-generation and OpenMOSS voice settings reset to the model's defaults when you select a different model. Values you change while the model's options are still loading are kept.
+
 ## TRELLIS
 
 The 3D composer supports:
