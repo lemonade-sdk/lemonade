@@ -60,8 +60,8 @@
         }
       },
       "gufo-org/gufo": {
-        "v0.35.0": {
-          "gufo-v0.35.0-windows-x86_64.zip": "sha256:32c76bc1b1c6fda10b6786489fa454b42ec06ef19b1a374100ac95203a6dbbb5"
+        "v0.36.0": {
+          "gufo-v0.36.0-windows-x86_64.zip": "sha256:52ac553e83950d5e1c83096f07288344dee0b871ed0894f6a2fd63b415ed5b48"
         }
       }
     }
@@ -73,8 +73,8 @@
     "cuda": "b12625",
     "metal": "b12633",
     "cpu": "b12633",
-    "nathanw": "vulkan-radv-performance@sha256:41018261e61b7e32fb38e4985ba569d0837804e727dcc62689c2fb1d73ec8f15",
-    "halobox": "rocm-10.0-strix-llama@sha256:015fddafc28bfdb1653a99905010e83a9327f072206cb1f882f1f9f922069f48"
+    "nathanw": "vulkan-radv-performance@sha256:4cb3f2ecd8340b8a5928d3917969d256ea55e4a7346cd25deb2b470126c9ae0e",
+    "halobox": "rocm-10.0-strix-llama@sha256:a8d329920f1375352d0e7167ee17cbebe89257be5a51bed77a591077581a7ea1"
   },
   "llamacpp-hrx": {
     "hrx": "hrx-b129"
@@ -100,13 +100,13 @@
     "rocm": "rocm-10.0-rocmfpx@sha256:4df326e907a469f4acc6091fa7fb68fb275c2d5a7136bacd8e47e7339a5c49f7"
   },
   "halogen": {
-    "rocm": "0.19.1@sha256:7ab5c3dfd77acb2387603f1807069cac3494e678f413c0670745ba2df74c0f0e"
+    "rocm": "0.20.7@sha256:773073448dc9ff4a8c6b6c278802e254fd5f1546764e27531aeb3b77cb13482e"
   },
   "gufo": {
-    "rocm": "0.35.0@sha256:99e9b5471b7a9b007c686c2aa795afaf966744d64e753cb009c89541f9e9c2b6"
+    "rocm": "0.36.0@sha256:69a858b088658040ec9b81e7a0f32d663f775e90f78894943aea0ec7a4bf7d52"
   },
   "ds4": {
-    "rocm": "rocm-10.0@sha256:e14ad3edb88c9c2e80b1c1464ef9307bcc56c935f31c4df9fa8e980974f68c47"
+    "rocm": "rocm-10.0@sha256:686650eed951f80d861905642b3d1d4347b44c0369aa2de5d1db1033bb72813f"
   },
   "therock": {
     "version": "10.1.0",
