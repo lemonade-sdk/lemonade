@@ -330,13 +330,21 @@ void ModelIngest::download_from_registry(const ModelInfo& info,
         if (repo_cache != cache_root / dir_name) {
             // Falling back to the managed cache would silently move the model off
             // the disk its owner chose for it, so an unwritable copy fails instead.
-            if (const std::error_code ec = utils::probe_directory_writable(repo_cache)) {
+            const auto refuse = [&](const std::string& reason) {
                 throw std::runtime_error(
                     "Cannot update '" + info.model_name + "' in place: its files are in " +
                     path_to_utf8(repo_cache) + " (extra_models_dir), which the Lemonade "
-                    "server cannot write to (" + ec.message() + "). Grant the server write "
+                    "server cannot write to (" + reason + "). Grant the server write "
                     "access to that directory, or delete the model there and pull it again "
                     "to download it into the models directory.");
+            };
+            try {
+                ensure_create_directories(repo_cache);
+            } catch (const std::exception& e) {
+                refuse(e.what());
+            }
+            if (const std::error_code ec = utils::probe_directory_writable(repo_cache)) {
+                refuse(ec.message());
             }
             LOG(INFO, "ModelManager") << "Updating " << repo_id << " in place in extra_models_dir: "
                                       << path_to_utf8(repo_cache) << std::endl;
@@ -403,10 +411,19 @@ void ModelIngest::download_from_registry(const ModelInfo& info,
                 }
             }
 
-            const auto current_metadata = registry_files::fetch_file_metadata_for_ref(
-                repo_id, current_ref, comparison_files, headers, nullptr);
-            const auto previous_metadata = registry_files::fetch_file_metadata_for_ref(
-                repo_id, previous_ref, comparison_files, headers, nullptr);
+            std::map<std::string, registry_files::HfFileMetadata> current_metadata;
+            std::map<std::string, registry_files::HfFileMetadata> previous_metadata;
+            try {
+                current_metadata = registry_files::fetch_file_metadata_for_ref(
+                    repo_id, current_ref, comparison_files, headers, nullptr);
+                previous_metadata = registry_files::fetch_file_metadata_for_ref(
+                    repo_id, previous_ref, comparison_files, headers, nullptr);
+            } catch (const std::exception& e) {
+                LOG(DEBUG, "ModelManager")
+                    << "Could not compare " << repo_id << " at " << previous_ref
+                    << " with " << current_ref << ", re-downloading: " << e.what() << std::endl;
+                continue;
+            }
             const fs::path previous_snapshot =
                 repo_cache_paths.at(repo_id) / "snapshots" / previous_ref;
             if (registry_files::can_reuse_previous_hf_snapshot(

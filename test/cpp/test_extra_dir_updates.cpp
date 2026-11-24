@@ -27,6 +27,7 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#include <aclapi.h>
 #else
 #include <sys/stat.h>
 #include <unistd.h>
@@ -255,24 +256,60 @@ class WriteDenied {
   public:
     explicit WriteDenied(fs::path dir) : dir_(std::move(dir)) {
 #ifdef _WIN32
-        ok_ = run("icacls \"" + dir_.string() + "\" /deny *S-1-1-0:(OI)(CI)(WD,AD) >nul 2>&1");
+        PACL original = nullptr;
+        if (GetNamedSecurityInfoW(dir_.c_str(), SE_FILE_OBJECT, DACL_SECURITY_INFORMATION,
+                                  nullptr, nullptr, &original, nullptr,
+                                  &original_descriptor_) != ERROR_SUCCESS) {
+            return;
+        }
+        original_dacl_ = original;
+        SID_IDENTIFIER_AUTHORITY world = SECURITY_WORLD_SID_AUTHORITY;
+        if (!AllocateAndInitializeSid(&world, 1, SECURITY_WORLD_RID, 0, 0, 0, 0, 0, 0, 0,
+                                      &everyone_)) {
+            return;
+        }
+        EXPLICIT_ACCESSW deny{};
+        deny.grfAccessPermissions = FILE_ADD_FILE | FILE_ADD_SUBDIRECTORY;
+        deny.grfAccessMode = DENY_ACCESS;
+        deny.grfInheritance = SUB_CONTAINERS_AND_OBJECTS_INHERIT;
+        deny.Trustee.TrusteeForm = TRUSTEE_IS_SID;
+        deny.Trustee.TrusteeType = TRUSTEE_IS_WELL_KNOWN_GROUP;
+        deny.Trustee.ptstrName = static_cast<LPWSTR>(everyone_);
+        PACL denied = nullptr;
+        if (SetEntriesInAclW(1, &deny, original_dacl_, &denied) != ERROR_SUCCESS) return;
+        ok_ = SetNamedSecurityInfoW(const_cast<LPWSTR>(dir_.c_str()), SE_FILE_OBJECT,
+                                    DACL_SECURITY_INFORMATION, nullptr, nullptr, denied,
+                                    nullptr) == ERROR_SUCCESS;
+        LocalFree(denied);
 #else
-        ok_ = ::chmod(dir_.c_str(), 0555) == 0 && ::geteuid() != 0;
+        ok_ = ::geteuid() != 0 && ::chmod(dir_.c_str(), 0555) == 0;
 #endif
     }
     ~WriteDenied() {
 #ifdef _WIN32
-        run("icacls \"" + dir_.string() + "\" /remove:d *S-1-1-0 >nul 2>&1");
+        if (ok_) {
+            SetNamedSecurityInfoW(const_cast<LPWSTR>(dir_.c_str()), SE_FILE_OBJECT,
+                                  DACL_SECURITY_INFORMATION, nullptr, nullptr, original_dacl_,
+                                  nullptr);
+        }
+        if (everyone_ != nullptr) FreeSid(everyone_);
+        if (original_descriptor_ != nullptr) LocalFree(original_descriptor_);
 #else
         ::chmod(dir_.c_str(), 0755);
 #endif
     }
+    WriteDenied(const WriteDenied&) = delete;
+    WriteDenied& operator=(const WriteDenied&) = delete;
     bool ok() const { return ok_; }
 
   private:
-    static bool run(const std::string& command) { return std::system(command.c_str()) == 0; }
     fs::path dir_;
     bool ok_ = false;
+#ifdef _WIN32
+    PSECURITY_DESCRIPTOR original_descriptor_ = nullptr;
+    PACL original_dacl_ = nullptr;
+    PSID everyone_ = nullptr;
+#endif
 };
 
 // ---------------------------------------------------------------------------
@@ -438,12 +475,8 @@ void test_a_model_on_no_disk_is_pulled_into_the_managed_cache() {
           "a first pull writes nothing to extra_models_dir");
 }
 
-void test_an_auxiliary_repository_stays_beside_its_extra_copy() {
+void test_an_auxiliary_revision_change_lands_beside_its_extra_copy() {
     Fixture fx = make_fixture("extra_multi");
-    // The auxiliary snapshot stays put: a moved one makes the pull ask the HF tree
-    // API for metadata, which no stub answers. The pull still writes refs and
-    // provenance into the auxiliary repository, so its directory choice is tested.
-    fx.remote.snapshot_by_repo["vendor/proj"] = "proj-1";
     const fs::path main_repo =
         make_hf_repo(fx.extra, "vendor/repo", "snap-1", "model.gguf", gguf("old"));
     const fs::path proj_repo =
@@ -452,12 +485,14 @@ void test_an_auxiliary_repository_stays_beside_its_extra_copy() {
     check(mm->get_model_info("user.Extra-Multi").downloaded,
           "a two-repository model is adopted from extra_models_dir");
 
+    // Both repositories moved. The registry cannot be asked whether the auxiliary
+    // bytes changed, so the pull re-downloads them rather than failing.
     check_synced(*mm, "Extra-Multi", "the two-repository update succeeds");
     check(read_file(main_repo / "snapshots" / "snap-2" / "model.gguf") == gguf("new-main"),
           "the main repository updates in extra_models_dir");
-    check(read_file(proj_repo / "snapshots" / "proj-1" / "proj.gguf") == gguf("old-proj") &&
-              read_file(proj_repo / "refs" / "main") == "proj-1",
-          "the unchanged auxiliary repository keeps its extra copy");
+    check(read_file(proj_repo / "snapshots" / "proj-2" / "proj.gguf") == gguf("new-proj") &&
+              read_file(proj_repo / "refs" / "main") == "proj-2",
+          "the auxiliary repository updates in extra_models_dir");
     check(fs::exists(proj_repo / ".lemonade_registry.json"),
           "the auxiliary provenance is recorded beside its extra copy");
     check(!fs::exists(fx.managed / repo_dir_name("vendor/repo")) &&
@@ -466,8 +501,76 @@ void test_an_auxiliary_repository_stays_beside_its_extra_copy() {
     const auto info = mm->get_model_info("user.Extra-Multi");
     check(info.downloaded &&
               same_file(info.resolved_path("main"), main_repo / "snapshots" / "snap-2" / "model.gguf") &&
-              same_file(info.resolved_path("mmproj"), proj_repo / "snapshots" / "proj-1" / "proj.gguf"),
-          "both checkpoints resolve to their extra copies after the update");
+              same_file(info.resolved_path("mmproj"), proj_repo / "snapshots" / "proj-2" / "proj.gguf"),
+          "both checkpoints resolve to their updated extra copies");
+}
+
+// Older downloads kept an auxiliary file inside the main repository, so its own
+// repository directory does not exist in extra_models_dir yet.
+fs::path make_legacy_multi(const Fixture& fx) {
+    const fs::path main_repo =
+        make_hf_repo(fx.extra, "vendor/repo", "snap-1", "model.gguf", gguf("old"));
+    write_file(main_repo / "snapshots" / "snap-1" / "proj.gguf", gguf("old-proj"));
+    return main_repo;
+}
+
+void test_a_legacy_auxiliary_file_updates_into_its_own_extra_repository() {
+    Fixture fx = make_fixture("extra_legacy");
+    const fs::path main_repo = make_legacy_multi(fx);
+    const fs::path proj_repo = fx.extra / repo_dir_name("vendor/proj");
+    auto mm = make_manager(fx, path_to_utf8(fx.extra));
+    const auto before = mm->get_model_info("user.Extra-Multi");
+    check(before.downloaded &&
+              same_file(before.resolved_path("mmproj"), main_repo / "snapshots" / "snap-1" / "proj.gguf"),
+          "a legacy auxiliary file is adopted from the main extra repository");
+    check(!fs::exists(proj_repo), "the auxiliary repository has no extra directory yet");
+
+    check_synced(*mm, "Extra-Multi", "the legacy-layout update succeeds");
+    check(read_file(proj_repo / "snapshots" / "proj-2" / "proj.gguf") == gguf("new-proj") &&
+              read_file(proj_repo / "refs" / "main") == "proj-2",
+          "the auxiliary update creates its own repository in extra_models_dir");
+    check(read_file(main_repo / "snapshots" / "snap-2" / "model.gguf") == gguf("new-main"),
+          "the main repository updates in extra_models_dir");
+    check(!fs::exists(fx.managed / repo_dir_name("vendor/repo")) &&
+              !fs::exists(fx.managed / repo_dir_name("vendor/proj")),
+          "neither repository is written to the managed cache");
+    check(!has_probe_leftovers(proj_repo), "the write probe leaves nothing behind");
+    const auto after = mm->get_model_info("user.Extra-Multi");
+    check(after.downloaded &&
+              same_file(after.resolved_path("mmproj"), proj_repo / "snapshots" / "proj-2" / "proj.gguf"),
+          "the auxiliary checkpoint resolves to its new repository");
+}
+
+void test_a_legacy_auxiliary_directory_that_cannot_be_created_fails() {
+    Fixture fx = make_fixture("extra_legacy_readonly");
+    const fs::path main_repo = make_legacy_multi(fx);
+    auto mm = make_manager(fx, path_to_utf8(fx.extra));
+
+    json result;
+    {
+        WriteDenied deny(fx.extra);
+        if (!deny.ok()) {
+            std::printf("[SKIP] cannot deny writes here (running as root)\n");
+            return;
+        }
+        result = sync(*mm, "user.Extra-Multi");
+    }
+
+    std::string why;
+    check(sync_failed(result, "Extra-Multi", &why),
+          "an extra root that refuses a new repository fails the update");
+    std::printf("       reason: %s\n", why.c_str());
+    check(why.find("extra_models_dir") != std::string::npos,
+          "the failure names extra_models_dir");
+    check(!fs::exists(fx.extra / repo_dir_name("vendor/proj")),
+          "no auxiliary repository is created");
+    check(!fs::exists(fx.managed / repo_dir_name("vendor/repo")) &&
+              !fs::exists(fx.managed / repo_dir_name("vendor/proj")),
+          "nothing is written to the managed cache");
+    const auto info = mm->get_model_info("user.Extra-Multi");
+    check(info.downloaded &&
+              same_file(info.resolved_path("mmproj"), main_repo / "snapshots" / "snap-1" / "proj.gguf"),
+          "the model keeps resolving to its legacy extra copy");
 }
 
 void test_an_unusual_extra_path_is_handled() {
@@ -511,7 +614,9 @@ int main() {
         {"managed-wins", test_a_managed_copy_still_wins},
         {"extra-parent", test_an_extra_root_containing_the_managed_cache_is_not_misread},
         {"fresh", test_a_model_on_no_disk_is_pulled_into_the_managed_cache},
-        {"multi-repo", test_an_auxiliary_repository_stays_beside_its_extra_copy},
+        {"multi-repo", test_an_auxiliary_revision_change_lands_beside_its_extra_copy},
+        {"legacy-aux", test_a_legacy_auxiliary_file_updates_into_its_own_extra_repository},
+        {"legacy-aux-readonly", test_a_legacy_auxiliary_directory_that_cannot_be_created_fails},
         {"unusual-path", test_an_unusual_extra_path_is_handled},
     };
     for (const auto& [name, run] : cases) {
