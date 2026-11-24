@@ -28,7 +28,6 @@ test('simulated Tauri CSP permits renderer startup but blocks untrusted inline s
   await page.route('/', async route => {
     const response = await route.fetch();
     const html = await response.text();
-    // This simulates CSP modifications; it does not inspect Tauri's generated policy.
     const hashes = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)]
       .map(match => `'sha256-${createHash('sha256').update(match[1]).digest('base64')}'`);
     const disabled = config.app.security.dangerousDisableAssetCspModification;
