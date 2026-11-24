@@ -2181,6 +2181,51 @@
             "fps": 16
         }
     },
+    "Wan2.2-TI2V-5B-Turbo-INT8-TheNoise": {
+        "checkpoints": {
+            "main": "thenoise-ai/diffusion-models:fastwan2.2_ti2v-5b_int8_convrot.safetensors",
+            "text_encoder": "thenoise-ai/diffusion-models:umt5_xxl_int8_convrot.safetensors",
+            "vae": "Comfy-Org/Wan-2.2:split_files/vae/wan2.2_vae.safetensors"
+        },
+        "recipe": "thenoise",
+        "suggested": true,
+        "labels": [
+            "video"
+        ],
+        "recipe_options": {
+            "steps": 4,
+            "cfg_scale": 1.0,
+            "width": 1280,
+            "height": 704,
+            "sampler": "unipc",
+            "flow_shift": 5.0,
+            "video_frames": 33,
+            "fps": 24
+        }
+    },
+    "Wan2.2-T2V-A14B-Turbo-INT8-TheNoise": {
+        "checkpoints": {
+            "main": "thenoise-ai/diffusion-models:wan2.2_t2v_high_noise_14B_4step_int8_convrot.safetensors",
+            "dit_low": "thenoise-ai/diffusion-models:wan2.2_t2v_low_noise_14B_4step_int8_convrot.safetensors",
+            "text_encoder": "thenoise-ai/diffusion-models:umt5_xxl_int8_convrot.safetensors",
+            "vae": "Comfy-Org/Wan-2.2:split_files/vae/wan_2.1_vae.safetensors"
+        },
+        "recipe": "thenoise",
+        "suggested": true,
+        "labels": [
+            "video"
+        ],
+        "recipe_options": {
+            "steps": 4,
+            "cfg_scale": 1.0,
+            "width": 832,
+            "height": 480,
+            "sampler": "euler",
+            "flow_shift": 5.0,
+            "video_frames": 33,
+            "fps": 16
+        }
+    },
     "LTX-2.3-22B-Distilled-INT8-TheNoise": {
         "checkpoints": {
             "main": "milo01/ComfyUI-Native-INT8_ConvRot:checkpoints/ltx-2.3-22b-distilled-1.1-int8-ConvRot.safetensors",
@@ -2517,7 +2562,8 @@
         "recipe": "thenoise",
         "suggested": true,
         "labels": [
-            "image"
+            "image",
+            "edit"
         ],
         "size": 35,
         "recipe_options": {
@@ -2536,7 +2582,8 @@
         },
         "labels": [
             "custom",
-            "image"
+            "image",
+            "edit"
         ],
         "recipe": "thenoise",
         "suggested": true,
@@ -2558,7 +2605,8 @@
         },
         "labels": [
             "custom",
-            "image"
+            "image",
+            "edit"
         ],
         "recipe": "thenoise",
         "suggested": true,

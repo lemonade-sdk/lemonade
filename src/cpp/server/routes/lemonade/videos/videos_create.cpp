@@ -25,11 +25,11 @@ const RouteArg kVideoFrames{"video_frames", ArgIn::JsonBody,
                             {{"type", "integer"}, {"minimum", 1}, {"maximum", video_store::kMaxVideoFrames}}, false,
                             Support::Available,
                             "Number of frames to generate. Defaults to the model's `video_frames` recipe "
-                            "option, else the backend default (`33` for stable-diffusion.cpp)."};
+                            "option, else the backend default."};
 const RouteArg kFps{"fps", ArgIn::JsonBody, {{"type", "integer"}, {"minimum", 1}, {"maximum", video_store::kMaxFps}},
                     false, Support::Available,
                     "Frames per second of the returned clip. Defaults to the model's `fps` recipe option, "
-                    "else the backend default (`16` for stable-diffusion.cpp)."};
+                    "else the backend default."};
 const RouteArg kDuration{"duration", ArgIn::JsonBody,
                          {{"type", "number"}, {"minimum", 0}, {"maximum", video_store::kMaxDuration}}, false,
                          Support::Available,
