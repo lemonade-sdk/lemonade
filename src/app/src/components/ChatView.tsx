@@ -999,6 +999,14 @@ const ChatView: React.FC<ChatViewProps> = ({
   const [imageSettings, setImageSettings] = useState<ImageGenerationSettings>(DEFAULT_IMAGE_SETTINGS);
   const [audioGenerationSettings, setAudioGenerationSettings] = useState<AudioGenerationSettings>(DEFAULT_AUDIO_GENERATION_SETTINGS);
   const [videoSettings, setVideoSettings] = useState<VideoSettings>(DEFAULT_VIDEO_SETTINGS);
+  const videoSettingsEditedRef = useRef<{ model: string | null; fields: Set<keyof VideoSettings> }>({
+    model: null,
+    fields: new Set(),
+  });
+  const editVideoSetting = useCallback((patch: Partial<VideoSettings>) => {
+    for (const key of Object.keys(patch) as Array<keyof VideoSettings>) videoSettingsEditedRef.current.fields.add(key);
+    setVideoSettings(prev => ({ ...prev, ...patch }));
+  }, []);
   const [videoJobStatus, setVideoJobStatus] = useState<Record<string, string>>({});
   const videoAbortRef = useRef<Map<string, AbortController>>(new Map());
   const [openMossSettings, setOpenMossSettings] = useState<OpenMossSettings>(DEFAULT_OPENMOSS_SETTINGS);
@@ -1497,17 +1505,30 @@ const ChatView: React.FC<ChatViewProps> = ({
 
   useEffect(() => {
     if (currentCapability !== 'video') return;
+    // The model's options can arrive after the user has edited a field, and
+    // those edits win until another model is picked.
+    const edited = videoSettingsEditedRef.current;
+    if (edited.model !== currentModel) {
+      edited.model = currentModel;
+      edited.fields.clear();
+    }
     const recipeOptions = currentModelRecipeOptions || {};
     const positive = (value: unknown, fallback: number) => (
       typeof value === 'number' && value > 0 ? value : fallback
     );
-    setVideoSettings(prev => ({
-      ...prev,
+    const seeded: Pick<VideoSettings, 'frames' | 'width' | 'height' | 'steps'> = {
       frames: positive(recipeOptions.video_frames, DEFAULT_VIDEO_SETTINGS.frames),
       width: positive(recipeOptions.width, DEFAULT_VIDEO_SETTINGS.width),
       height: positive(recipeOptions.height, DEFAULT_VIDEO_SETTINGS.height),
       steps: positive(recipeOptions.steps, DEFAULT_VIDEO_SETTINGS.steps),
-    }));
+    };
+    setVideoSettings(prev => {
+      const next = { ...prev };
+      for (const key of Object.keys(seeded) as Array<keyof typeof seeded>) {
+        if (!edited.fields.has(key)) next[key] = seeded[key];
+      }
+      return next;
+    });
   }, [currentModel, currentCapability, currentModelRecipeOptions]);
 
   useEffect(() => {
@@ -4766,7 +4787,7 @@ ${index}`;
                 min={1}
                 max={241}
                 value={videoSettings.frames}
-                onChange={e => setVideoSettings(prev => ({ ...prev, frames: Math.max(1, Math.min(241, parseInt(e.target.value, 10) || 1)) }))}
+                onChange={e => editVideoSetting({ frames: Math.max(1, Math.min(241, parseInt(e.target.value, 10) || 1)) })}
                 disabled={isBusy}
               />
             </label>
@@ -4778,7 +4799,7 @@ ${index}`;
                 max={2048}
                 step={16}
                 value={videoSettings.width}
-                onChange={e => setVideoSettings(prev => ({ ...prev, width: Math.max(64, Math.min(2048, parseInt(e.target.value, 10) || 64)) }))}
+                onChange={e => editVideoSetting({ width: Math.max(64, Math.min(2048, parseInt(e.target.value, 10) || 64)) })}
                 disabled={isBusy}
               />
             </label>
@@ -4790,7 +4811,7 @@ ${index}`;
                 max={2048}
                 step={16}
                 value={videoSettings.height}
-                onChange={e => setVideoSettings(prev => ({ ...prev, height: Math.max(64, Math.min(2048, parseInt(e.target.value, 10) || 64)) }))}
+                onChange={e => editVideoSetting({ height: Math.max(64, Math.min(2048, parseInt(e.target.value, 10) || 64)) })}
                 disabled={isBusy}
               />
             </label>
@@ -4801,7 +4822,7 @@ ${index}`;
                 min={1}
                 max={200}
                 value={videoSettings.steps}
-                onChange={e => setVideoSettings(prev => ({ ...prev, steps: Math.max(1, Math.min(200, parseInt(e.target.value, 10) || 1)) }))}
+                onChange={e => editVideoSetting({ steps: Math.max(1, Math.min(200, parseInt(e.target.value, 10) || 1)) })}
                 disabled={isBusy}
               />
             </label>
@@ -4812,7 +4833,7 @@ ${index}`;
                 min={-1}
                 value={videoSettings.seed}
                 placeholder="-1"
-                onChange={e => setVideoSettings(prev => ({ ...prev, seed: seedFromInput(e.target.value) }))}
+                onChange={e => editVideoSetting({ seed: seedFromInput(e.target.value) })}
                 disabled={isBusy}
               />
             </label>
