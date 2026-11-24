@@ -1,4 +1,6 @@
 #include <algorithm>
+#include <cstdint>
+#include <limits>
 #include <map>
 #include <optional>
 #include <string>
@@ -35,6 +37,19 @@ const RouteArg kTurns{"turns", ArgIn::JsonBody, {{"type", "integer"}, {"minimum"
 const RouteArg kMetadata{"metadata", ArgIn::JsonBody,
                          {{"type", "object"}, {"additionalProperties", {{"type", "string"}}}}, false, Support::Available,
                          "String-valued metadata pairs matched by `metadata` conditions."};
+
+// The integer check also admits integral floats such as 1e20, and casting one at or
+// above 2^64 to an integer is undefined, so a float saturates instead.
+std::size_t simulated_turns(const json& value) {
+    if (value.is_number_float()) {
+        const double turns = value.get<double>();
+        if (turns >= static_cast<double>(std::numeric_limits<std::uint64_t>::max())) {
+            return std::numeric_limits<std::size_t>::max();
+        }
+        return static_cast<std::size_t>(turns);
+    }
+    return static_cast<std::size_t>(value.get<std::uint64_t>());
+}
 
 class RoutingValidateRoute : public ApiRoute {
 public:
@@ -174,7 +189,7 @@ public:
         // simulates that request, so an explicit 0 counts as 1 instead of giving a
         // 0-turn result no real request can produce.
         const std::size_t turns =
-            static_cast<std::size_t>(std::max<long long>(1, req.value(kTurns, 1LL)));
+            req.has(kTurns) ? std::max<std::size_t>(1, simulated_turns(req.arg(kTurns))) : 1;
 
         std::map<std::string, std::string> metadata;
         if (req.has(kMetadata)) {

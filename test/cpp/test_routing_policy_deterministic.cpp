@@ -149,6 +149,8 @@ void test_turns() {
     check("min_turns below threshold", !eval_leaf("min_turns", 4, req));
     check("max_turns inclusive upper boundary", eval_leaf("max_turns", 3, req));
     check("max_turns above threshold", !eval_leaf("max_turns", 2, req));
+    check("max_turns above LLONG_MAX is not read as negative",
+          eval_leaf("max_turns", json::parse("9223372036854775808"), req));
 }
 
 void test_total_chars() {

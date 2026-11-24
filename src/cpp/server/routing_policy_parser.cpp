@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <set>
 #include <stdexcept>
 #include <utility>
@@ -318,7 +319,10 @@ void validate_leaf(const json& leaf,
                            "min_turns", "max_turns"}) {
         if (leaf.contains(op)) {
             ++condition_count;
-            if (!leaf.at(op).is_number_integer() || leaf.at(op).get<long long>() < 0) {
+            const json& bound = leaf.at(op);
+            const bool non_negative = bound.is_number_unsigned() ||
+                                      (bound.is_number_integer() && bound.get<long long>() >= 0);
+            if (!non_negative) {
                 throw std::invalid_argument(path + "." + op +
                                             " must be a non-negative integer");
             }
@@ -329,7 +333,7 @@ void validate_leaf(const json& leaf,
     // which parse min > max without complaint and just never match — changing
     // that now would reject an already-shipped (if pathological) policy.
     if (leaf.contains("min_turns") && leaf.contains("max_turns") &&
-        leaf.at("min_turns").get<long long>() > leaf.at("max_turns").get<long long>()) {
+        leaf.at("min_turns").get<std::uint64_t>() > leaf.at("max_turns").get<std::uint64_t>()) {
         throw std::invalid_argument(path + " has min_turns greater than max_turns");
     }
     for (const char* op : {"has_tools", "has_images"}) {

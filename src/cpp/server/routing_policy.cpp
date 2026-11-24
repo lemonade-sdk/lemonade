@@ -7,6 +7,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <locale>
 #include <mutex>
 #include <regex>
@@ -1557,23 +1558,25 @@ ConditionPtr build_keywords(const json& arr, bool require_all, const char* op) {
     return std::make_shared<KeywordsCondition>(std::move(keywords), require_all);
 }
 
-ConditionPtr build_chars(const json& value, CharsCondition::Bound bound,
-                         CharsCondition::Source source, const char* op) {
-    if (!value.is_number_integer() || value.get<long long>() < 0) {
+// Parsed JSON stores non-negative integers as unsigned, and one above LLONG_MAX
+// would wrap negative as long long, so bounds are read as unsigned.
+std::size_t non_negative_bound(const json& value, const char* op) {
+    const bool non_negative = value.is_number_unsigned() ||
+                              (value.is_number_integer() && value.get<long long>() >= 0);
+    if (!non_negative) {
         throw std::invalid_argument(std::string(op) +
                                     " requires a non-negative integer");
     }
-    return std::make_shared<CharsCondition>(
-        static_cast<std::size_t>(value.get<long long>()), bound, source);
+    return static_cast<std::size_t>(value.get<std::uint64_t>());
+}
+
+ConditionPtr build_chars(const json& value, CharsCondition::Bound bound,
+                         CharsCondition::Source source, const char* op) {
+    return std::make_shared<CharsCondition>(non_negative_bound(value, op), bound, source);
 }
 
 ConditionPtr build_turns(const json& value, TurnCountCondition::Bound bound, const char* op) {
-    if (!value.is_number_integer() || value.get<long long>() < 0) {
-        throw std::invalid_argument(std::string(op) +
-                                    " requires a non-negative integer");
-    }
-    return std::make_shared<TurnCountCondition>(
-        static_cast<std::size_t>(value.get<long long>()), bound);
+    return std::make_shared<TurnCountCondition>(non_negative_bound(value, op), bound);
 }
 
 ConditionPtr build_bool_feature(const json& value, BoolFeatureCondition::Feature feature,

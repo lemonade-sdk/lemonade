@@ -199,6 +199,17 @@ static void test_validation_errors_are_clear() {
     check("negative min_turns rejected at the parser/registration path",
           throws_with(negative_turns, "must be a non-negative integer"));
 
+    json huge_turns = fixture("l1_keywords.json");
+    huge_turns["routing"]["rules"][1]["match"] =
+        json::parse(R"({"min_turns": 3, "max_turns": 9223372036854775808})");
+    bool huge_turns_parse = true;
+    try {
+        lemon::parse_route_policy_collection(huge_turns);
+    } catch (...) {
+        huge_turns_parse = false;
+    }
+    check("max_turns above LLONG_MAX parses", huge_turns_parse);
+
     json bad_turn_band = fixture("l1_keywords.json");
     bad_turn_band["routing"]["rules"][1]["match"] =
         json{{"min_turns", 5}, {"max_turns", 1}};

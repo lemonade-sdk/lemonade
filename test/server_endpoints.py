@@ -5059,6 +5059,44 @@ class EndpointTests(ServerTestBase):
         )
         print("[OK] /routing/validate matched a deterministic keyword rule")
 
+    def test_021zsa_routing_validate_applies_turns(self):
+        """The turns argument reaches min_turns: 1 turn falls through, 3 turns
+        match, and a count above LLONG_MAX, or a float above 2^64, is not
+        wrapped down to 1."""
+        policy = {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+            "routing": {
+                "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+                "default_model": "Qwen3-8B-GGUF",
+                "rules": [
+                    {
+                        "id": "deep-to-big",
+                        "match": {"min_turns": 3},
+                        "route_to": "vllm.qwen3-32b",
+                    }
+                ],
+            },
+        }
+        for turns, expected_rule in (
+            (1, ""),
+            (3, "deep-to-big"),
+            (9223372036854775808, "deep-to-big"),
+            (1e20, "deep-to-big"),
+        ):
+            with self.subTest(turns=turns):
+                response = requests.post(
+                    f"{self.base_url}/routing/validate",
+                    json={"policy": policy, "prompt": "hello", "turns": turns},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertEqual(
+                    response.json()["decision"]["matched_rule"], expected_rule
+                )
+        print("[OK] /routing/validate applies turns to min_turns")
+
     def test_021zt_routing_validate_default_fallthrough(self):
         """A prompt matching no rule falls through to the declared default_model."""
         policy = {
