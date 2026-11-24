@@ -9,6 +9,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <utility>
 
 namespace lemon {
@@ -78,10 +79,17 @@ private:
     json classify_with_rule_head(const json& request);
 
     std::shared_ptr<const llamacpp::RuleHead> rule_head_;
-    // {special tokens around an empty input, tokens in the elision marker}: fixed
-    // for a loaded model, so counted once by the first rule-head request.
+    struct RuleHeadCounts {
+        size_t specials = 0;  // special tokens around an empty input
+        size_t lead = 0;      // how many of them come before the input
+        size_t elision = 0;   // tokens in the elision marker
+        bool one_call = false;  // the special tokens wrap any input the same way
+    };
+    // Fixed for a loaded model, so counted once by the first rule-head request.
+    // Clients repeat their label sets, so the tokens of a label block are kept too.
     std::mutex rule_head_counts_mutex_;
-    std::optional<std::pair<size_t, size_t>> rule_head_counts_;
+    std::optional<RuleHeadCounts> rule_head_counts_;
+    std::unordered_map<std::string, json> rule_head_label_tokens_;
     bool decision_model_ = false;
     std::string decision_type_;
     int64_t decision_max_head_tokens_ = 0;

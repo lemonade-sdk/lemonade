@@ -64,6 +64,42 @@ def _post(payload, timeout=TIMEOUT_DEFAULT):
     )
 
 
+def _call_tool(name, arguments, request_id=100, timeout=TIMEOUT_DEFAULT):
+    """Call one MCP tool and return the decoded tool result."""
+    response = _post(
+        {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "method": "tools/call",
+            "params": {"name": name, "arguments": arguments},
+        },
+        timeout=timeout,
+    )
+    response.raise_for_status()
+    return response.json()["result"]
+
+
+MCP_HUB_EXPECTED_TOOLS = {
+    "lemonade_list_models",
+    "lemonade_get_model_info",
+    "lemonade_load_model",
+    "lemonade_unload_model",
+    "lemonade_get_loaded_models",
+    "lemonade_get_server_health",
+    "lemonade_pull_model",
+    "lemonade_delete_model",
+    "lemonade_get_system_info",
+    "lemonade_list_backends",
+    "lemonade_install_backend",
+    "lemonade_generate_image",
+    "lemonade_generate_audio",
+    "lemonade_text_to_speech",
+    "lemonade_transcribe_audio",
+    "lemonade_chat",
+    "lemonade_omni",
+}
+
+
 class McpGatewayTests(ServerTestBase):
     """Tests for POST /mcp."""
 
@@ -245,8 +281,13 @@ class McpGatewayTests(ServerTestBase):
             "lemonade_generate_image",
             "lemonade_omni",
             "lemonade_docs",
+            "lemonade_web_search",
         }
         self.assertTrue(expected.issubset(names), f"missing tools: {expected - names}")
+        self.assertTrue(
+            MCP_HUB_EXPECTED_TOOLS.issubset(names),
+            f"missing MCP hub tools: {MCP_HUB_EXPECTED_TOOLS - names}",
+        )
         for tool in tools:
             self.assertIn("description", tool)
             self.assertIsInstance(tool["description"], str)
@@ -286,6 +327,20 @@ class McpGatewayTests(ServerTestBase):
         self.assertEqual(required, {"messages"})
         self.assertIn("model", omni["inputSchema"]["properties"])
         self.assertIn("output_dir", omni["inputSchema"]["properties"])
+        web = next(t for t in tools if t["name"] == "lemonade_web_search")
+        self.assertEqual(web["inputSchema"]["required"], ["query"])
+        self.assertEqual(
+            web["annotations"],
+            {
+                "readOnlyHint": True,
+                "destructiveHint": False,
+                "openWorldHint": True,
+            },
+        )
+        self.assertEqual(web["inputSchema"]["properties"]["max_results"]["minimum"], 1)
+        self.assertEqual(
+            web["inputSchema"]["properties"]["search_type"]["enum"], ["web", "news"]
+        )
 
     # ---------------------------------------------------------------------
     # tools/call error paths
@@ -452,6 +507,31 @@ class McpGatewayTests(ServerTestBase):
         self.assertNotIn("$.model", message)
         self.assertIn("$.n", message)
         self.assertIn("value must be >= 1", message)
+
+    def test_021d_web_search_rejects_invalid_args_without_network(self):
+        """Invalid calls must fail before any external request is attempted."""
+        for arguments in (
+            {},
+            {"query": ""},
+            {"query": "  "},
+            {"query": "x" * 257},
+            {"query": 123},
+            {"query": "test", "max_results": 6},
+            {"query": "test", "max_results": "five"},
+            {"query": "test", "search_type": "images"},
+            {"query": "test", "search_type": 42},
+        ):
+            response = _post(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 54,
+                    "method": "tools/call",
+                    "params": {"name": "lemonade_web_search", "arguments": arguments},
+                }
+            )
+            self.assertEqual(response.status_code, 200)
+            body = response.json()
+            self.assertTrue(body["result"]["isError"], msg=str(arguments))
 
     def test_022_omni_rejects_non_collection_model(self):
         """
@@ -645,6 +725,240 @@ class McpGatewayTests(ServerTestBase):
             text,
             msg=f"error still refers to the unresolved alias: {text}",
         )
+
+    def test_024_get_model_info_tool(self):
+        """Named model detail is available through MCP without a duplicate listing tool."""
+        result = _call_tool(
+            "lemonade_get_model_info",
+            {"model_name": ENDPOINT_TEST_MODEL},
+            request_id=24,
+        )
+        self.assertFalse(result["isError"], msg=str(result))
+        self.assertEqual(result["structuredContent"]["model_name"], ENDPOINT_TEST_MODEL)
+        self.assertIn("recipe", result["structuredContent"])
+
+    def test_025_unload_requires_explicit_model_name(self):
+        """Missing model_name must never fall through to REST's unload-all behavior."""
+        base = f"http://localhost:{PORT}/api/v1"
+        load = requests.post(
+            f"{base}/load",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            headers=_auth_headers(),
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(load.status_code, 200, load.text)
+
+        result = _call_tool("lemonade_unload_model", {}, request_id=25)
+        self.assertTrue(result["isError"], msg=str(result))
+
+        health = requests.get(
+            f"{base}/health", headers=_auth_headers(), timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(health.status_code, 200, health.text)
+        loaded = {item["model_name"] for item in health.json()["all_models_loaded"]}
+        self.assertIn(ENDPOINT_TEST_MODEL, loaded)
+
+    def test_026_load_and_unload_tools(self):
+        """Explicit MCP load/unload round-trips through the existing server handlers."""
+        loaded = _call_tool(
+            "lemonade_load_model",
+            {"model_name": ENDPOINT_TEST_MODEL, "ctx_size": 4096.0},
+            request_id=26,
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertFalse(loaded["isError"], msg=str(loaded))
+        self.assertEqual(loaded["structuredContent"]["status"], "success")
+
+        unloaded = _call_tool(
+            "lemonade_unload_model", {"model_name": ENDPOINT_TEST_MODEL}, request_id=27
+        )
+        self.assertFalse(unloaded["isError"], msg=str(unloaded))
+        self.assertEqual(unloaded["structuredContent"]["status"], "success")
+
+    def test_026a_load_ctx_size_rejects_invalid_numbers(self):
+        """Fractional and overflowing context sizes are rejected without a load."""
+        for size in (4096.5, float(2**63)):
+            with self.subTest(size=size):
+                result = _call_tool(
+                    "lemonade_load_model",
+                    {"model_name": ENDPOINT_TEST_MODEL, "ctx_size": size},
+                    request_id=261,
+                )
+                self.assertTrue(result["isError"], msg=str(result))
+
+    def test_026b_options_ctx_size_rejects_invalid_numbers(self):
+        """Nested ctx_size must reject fractional and overflowing values too."""
+        for size in (4096.5, float(2**63)):
+            with self.subTest(size=size):
+                result = _call_tool(
+                    "lemonade_load_model",
+                    {"model_name": ENDPOINT_TEST_MODEL, "options": {"ctx_size": size}},
+                    request_id=262,
+                )
+                self.assertTrue(result["isError"], msg=str(result))
+                self.assertIn("ctx_size", result["content"][0]["text"])
+
+    def test_027_pull_existing_model_tool(self):
+        """Pull reuses /pull; the already-cached endpoint model makes this deterministic."""
+        result = _call_tool(
+            "lemonade_pull_model",
+            {"model_name": ENDPOINT_TEST_MODEL, "do_not_upgrade": True},
+            request_id=28,
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertFalse(result["isError"], msg=str(result))
+
+    def test_028_delete_requires_confirmation(self):
+        """Delete is exact and requires confirm=true before calling the REST handler."""
+        canonical_name = f"user.McpDelete-{uuid.uuid4().hex[:8]}"
+        base = f"http://localhost:{PORT}/api/v1"
+        try:
+            register = requests.post(
+                f"{base}/pull",
+                json={
+                    "model_name": canonical_name,
+                    "recipe": "collection.omni",
+                    "components": [ENDPOINT_TEST_MODEL],
+                },
+                headers=_auth_headers(),
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(register.status_code, 200, register.text)
+
+            refused = _call_tool(
+                "lemonade_delete_model",
+                {"model_name": canonical_name, "confirm": False},
+                request_id=29,
+            )
+            self.assertTrue(refused["isError"], msg=str(refused))
+
+            still_there = _call_tool(
+                "lemonade_get_model_info", {"model_name": canonical_name}, request_id=30
+            )
+            self.assertFalse(still_there["isError"], msg=str(still_there))
+
+            deleted = _call_tool(
+                "lemonade_delete_model",
+                {"model_name": canonical_name, "confirm": True},
+                request_id=31,
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertFalse(deleted["isError"], msg=str(deleted))
+        finally:
+            try:
+                requests.post(
+                    f"{base}/delete",
+                    json={"model_name": canonical_name},
+                    headers=_auth_headers(),
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+
+    def test_012_all_advertised_tools_have_dispatch(self):
+        """Every tools/list entry must resolve to a real tools/call dispatch."""
+        listed = _post({"jsonrpc": "2.0", "id": 120, "method": "tools/list"}).json()[
+            "result"
+        ]["tools"]
+        listed_names = {tool["name"] for tool in listed}
+        self.assertTrue(
+            MCP_HUB_EXPECTED_TOOLS.issubset(listed_names),
+            msg=(
+                "Missing expected MCP tools: "
+                f"{sorted(MCP_HUB_EXPECTED_TOOLS - listed_names)}"
+            ),
+        )
+        by_name = {tool["name"]: tool for tool in listed}
+        install_props = by_name["lemonade_install_backend"]["inputSchema"]["properties"]
+        for name in ("recipe", "backend"):
+            self.assertEqual(install_props[name]["pattern"], r"\S")
+        expected_annotations = {
+            "lemonade_list_models": {
+                "readOnlyHint": True,
+                "destructiveHint": False,
+                "openWorldHint": False,
+            },
+            "lemonade_get_model_info": {
+                "readOnlyHint": True,
+                "destructiveHint": False,
+                "openWorldHint": False,
+            },
+            "lemonade_load_model": {
+                "readOnlyHint": False,
+                "destructiveHint": False,
+                "openWorldHint": True,
+            },
+            "lemonade_unload_model": {
+                "readOnlyHint": False,
+                "destructiveHint": False,
+                "openWorldHint": False,
+            },
+            "lemonade_get_loaded_models": {
+                "readOnlyHint": True,
+                "destructiveHint": False,
+                "openWorldHint": False,
+            },
+            "lemonade_get_server_health": {
+                "readOnlyHint": True,
+                "destructiveHint": False,
+                "openWorldHint": False,
+            },
+            "lemonade_pull_model": {
+                "readOnlyHint": False,
+                "destructiveHint": False,
+                "openWorldHint": True,
+            },
+            "lemonade_delete_model": {
+                "readOnlyHint": False,
+                "destructiveHint": True,
+                "openWorldHint": False,
+            },
+            "lemonade_get_system_info": {
+                "readOnlyHint": True,
+                "destructiveHint": False,
+                "openWorldHint": False,
+            },
+            "lemonade_list_backends": {
+                "readOnlyHint": True,
+                "destructiveHint": False,
+                "openWorldHint": False,
+            },
+            "lemonade_install_backend": {
+                "readOnlyHint": False,
+                "destructiveHint": True,
+                "openWorldHint": True,
+            },
+        }
+        for name, expected in expected_annotations.items():
+            annotations = by_name[name].get("annotations", {})
+            for key, value in expected.items():
+                self.assertEqual(
+                    annotations.get(key),
+                    value,
+                    msg=f"{name} annotation {key}: {annotations}",
+                )
+
+        # McpTool pairs every advertised descriptor with its handler.
+        # Probe server-owned adapters with schema-valid arguments which fail
+        # before any load, pull, install, delete or media generation.
+        safe_probes = {
+            "lemonade_get_model_info": {"model_name": ""},
+            "lemonade_load_model": {"model_name": ""},
+            "lemonade_unload_model": {"model_name": ""},
+            "lemonade_pull_model": {"model_name": ""},
+            "lemonade_delete_model": {"model_name": "", "confirm": True},
+            "lemonade_install_backend": {"recipe": "", "backend": ""},
+            "lemonade_generate_audio": {"prompt": "", "model": "nonexistent"},
+            "lemonade_text_to_speech": {"input": "", "model": "nonexistent"},
+        }
+        for index, (name, arguments) in enumerate(safe_probes.items(), start=121):
+            self.assertIn(name, listed_names)
+            result = _call_tool(name, arguments, request_id=index)
+            text = json.dumps(result)
+            self.assertTrue(result["isError"], msg=name)
+            self.assertNotIn("Unknown tool:", text, msg=name)
+            self.assertNotIn("Unknown Lemonade server tool:", text, msg=name)
+            self.assertNotIn("Invalid arguments for MCP tool", text, msg=name)
 
 
 if __name__ == "__main__":

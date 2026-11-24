@@ -6,6 +6,7 @@
 
 #include "local_backend.h"
 #include "lemon/backend_manager.h"
+#include "lemon/backends/backend_source.h"
 #include "lemon/cloud_provider_registry.h"
 #include "lemon/model_manager.h"
 #include "lemon/server/api_route.h"
@@ -147,7 +148,7 @@ public:
             "resets a custom auth header or the `allow_insecure_http` opt-in.",
         };
         s.args = {
-            backend_routes::kRecipe, backend_routes::kBackend, common::kStream, kForce,
+            backend_routes::kRecipe, backend_routes::kBackend, common::kStream, kForce, backend_routes::kSource,
             kProvider, kBaseUrl, kApiKey, backend_routes::kAllowInsecureHttp,
             kAuthHeaderName, kAuthHeaderPrefix, kWireFormat, downloads::kSubscribe
         };
@@ -221,6 +222,7 @@ public:
             bool stream = req.value(common::kStream, false);
             bool subscribe = req.value(downloads::kSubscribe, true);
             bool force = req.value(kForce, false);
+            backend_source::ScopedOverride source_scope(req.value(backend_routes::kSource, ""));
 
             LOG(INFO, "Server") << "Installing backend: " << recipe << ":" << backend << std::endl;
 
@@ -266,13 +268,13 @@ public:
             BackendManager* backend_manager = ctx_.backend_manager;
             ModelManager* model_manager = ctx_.model_manager;
             if (stream) {
-                DownloadManager::Operation operation =
+                DownloadManager::Operation operation = backend_source::carry_to_worker(
                     [backend_manager, model_manager, recipe, backend, force](
                         DownloadProgressCallback progress_cb, utils::CancelToken) {
                         backend_manager->install_backend(recipe, backend, force, progress_cb);
                         SystemInfoCache::invalidate_recipes();
                         model_manager->invalidate_models_cache();
-                    };
+                    });
 
                 if (!subscribe) {
                     const std::string name = recipe + ":" +

@@ -132,6 +132,7 @@ std::string ContainerProcess::start(const ServerCommand& command) {
     spec.image = image_;
     spec.devices = policy_.devices;
     spec.cap_add = policy_.cap_add;
+    spec.user = policy_.user;
 
     // Each model file is mounted on its own under /mnt/models, so the
     // container sees exactly what the command names.

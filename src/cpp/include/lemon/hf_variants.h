@@ -55,6 +55,10 @@ std::string llamacpp_gguf_incompatibility(
     const nlohmann::json& repository_metadata,
     const std::string& registry_source);
 
+// True when `manifest` has the shape of an exported Lemonade Omni collection:
+// recipe "collection.omni", a non-empty `components` array and a `models` array.
+bool is_omni_collection_manifest(const nlohmann::json& manifest);
+
 // Build the JSON response body for GET /api/v{0,1}/pull/variants.
 //
 // Queries the selected registry, runs `enumerate_gguf_variants`,

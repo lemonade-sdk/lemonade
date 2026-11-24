@@ -126,7 +126,7 @@ public:
                             return true;
                         };
 
-                        model_manager->download_model(name, json::object(), false, progress_cb);
+                        model_manager->download_model(name, json::object(), false, progress_cb, utils::CancelToken(), /*allow_backend_args=*/true);
 
                         std::string success = json({{"status", "success"}}).dump() + "\n";
                         sink.write(success.c_str(), success.size());
@@ -143,7 +143,7 @@ public:
                     sink.done();
                 }, "application/x-ndjson");
             } else {
-                ctx_.model_manager->download_model(name, json::object());
+                ctx_.model_manager->download_model(name, json::object(), false, nullptr, utils::CancelToken(), /*allow_backend_args=*/true);
                 json response = {{"status", "success"}};
                 res.set_content(response.dump(), "application/json");
             }

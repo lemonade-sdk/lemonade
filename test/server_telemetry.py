@@ -17,6 +17,7 @@ import json
 import os
 import sys
 import time
+import uuid
 import http.server
 import threading
 import socket
@@ -1705,6 +1706,168 @@ class MultiSemanticTests(TelemetryTestBase):
         )
 
 
+class RoutingTelemetryTests(TelemetryTestBase):
+    """llm.route.* attributes on spans of requests sent to a collection.router."""
+
+    _pull_base_model = True
+
+    def setUp(self):
+        super().setUp()
+        self._registered = []
+
+    def tearDown(self):
+        for name in self._registered:
+            try:
+                self._auth_post(
+                    f"http://localhost:{PORT}/api/v1/delete", {"model_name": name}
+                )
+            except Exception:
+                pass
+        super().tearDown()
+
+    def _register_router(self, routing, components, models=None):
+        name = f"user.RouteSpan-{uuid.uuid4().hex[:8]}"
+        payload = {
+            "model_name": name,
+            "version": "1",
+            "recipe": "collection.router",
+            "components": components,
+            "routing": routing,
+        }
+        if models:
+            payload["models"] = models
+        self._registered.append(name)
+        res = self._auth_post(
+            f"http://localhost:{PORT}/api/v1/pull",
+            payload,
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        return name, res
+
+    def _route_attrs(self, attrs):
+        return {k: v for k, v in attrs.items() if k.startswith("llm.route.")}
+
+    def _wait_for_chat_span(self):
+        span_received = self._wait_for_span(span_name="chat.completions", timeout=15)
+        self.assertIsNotNone(span_received, "chat.completions span was not received")
+        return self._extract_span(span_received)
+
+    def test_001_routed_span_carries_decision_and_later_spans_do_not(self):
+        """A routed request's span has the decision, nested estimated_cost is
+        flattened without overriding the decision's own keys, and unrouted
+        requests served afterwards carry no llm.route.* attribute."""
+        name, res = self._register_router(
+            {
+                "candidates": [ENDPOINT_TEST_MODEL],
+                "default_model": ENDPOINT_TEST_MODEL,
+                "rules": [
+                    {
+                        "id": "code-rule",
+                        "match": {"keywords_any": ["code"]},
+                        "route_to": ENDPOINT_TEST_MODEL,
+                        "outputs": {
+                            "estimated_cost": {
+                                "cost_tier": "low",
+                                "cost_input_per_million": 0.15,
+                                "to": "spoofed",
+                                "breakdown": {"input": 1},
+                            }
+                        },
+                    }
+                ],
+            },
+            [ENDPOINT_TEST_MODEL],
+        )
+        self.assertEqual(res.status_code, 200, res.text)
+        self._enable_telemetry()
+
+        # One keep-alive connection is served by one httplib worker, so every
+        # request below reuses the thread that held the previous decision.
+        session = requests.Session()
+        self.addCleanup(session.close)
+
+        def chat(content, model, stream=False):
+            res = session.post(
+                f"http://localhost:{PORT}/api/v1/chat/completions",
+                json={
+                    "model": model,
+                    "messages": [{"role": "user", "content": content}],
+                    "max_tokens": 4,
+                    "stream": stream,
+                },
+                headers=_auth_headers(),
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(res.status_code, 200, res.text)
+            _, attrs = self._wait_for_chat_span()
+            return self._route_attrs(attrs)
+
+        route = chat("Write code.", name[5:])
+        self.assertEqual(route["llm.route.collection"]["stringValue"], name[5:])
+        self.assertEqual(route["llm.route.to"]["stringValue"], ENDPOINT_TEST_MODEL)
+        self.assertEqual(route["llm.route.matched_rule"]["stringValue"], "code-rule")
+        self.assertEqual(route["llm.route.default_used"], {"boolValue": False})
+        self.assertEqual(route["llm.route.cost_tier"]["stringValue"], "low")
+        self.assertEqual(route["llm.route.cost_input_per_million"]["doubleValue"], 0.15)
+        self.assertNotIn("llm.route.breakdown", route)
+
+        self.assertEqual(chat("Say hi.", ENDPOINT_TEST_MODEL), {})
+
+        route = chat("Write code.", name[5:], stream=True)
+        self.assertEqual(route["llm.route.to"]["stringValue"], ENDPOINT_TEST_MODEL)
+        self.assertEqual(route["llm.route.cost_tier"]["stringValue"], "low")
+
+        self.assertEqual(chat("Say hi.", ENDPOINT_TEST_MODEL, stream=True), {})
+
+    def test_002_routed_load_failure_span_carries_decision(self):
+        """When the routed candidate fails to load, the error span still names
+        the collection and the candidate it picked."""
+        broken = "user.RouteSpanBroken"
+        # Pull registers the collection and its inline component, then fails
+        # to download the missing repository; the registration is what this
+        # test needs, so the pull's own error is expected.
+        name, _ = self._register_router(
+            {
+                "candidates": [broken, ENDPOINT_TEST_MODEL],
+                "default_model": ENDPOINT_TEST_MODEL,
+                "rules": [
+                    {
+                        "id": "to-broken",
+                        "match": {"keywords_any": ["broken"]},
+                        "route_to": broken,
+                    }
+                ],
+            },
+            [ENDPOINT_TEST_MODEL, broken],
+            models=[
+                {
+                    "model_name": broken,
+                    "recipe": "llamacpp",
+                    "checkpoint": "lemonade-sdk/does-not-exist-route-span-GGUF:Q4_0.gguf",
+                }
+            ],
+        )
+        self._registered.append(broken)
+        self._enable_telemetry()
+
+        res = self._auth_post(
+            f"http://localhost:{PORT}/api/v1/chat/completions",
+            {
+                "model": name[5:],
+                "messages": [{"role": "user", "content": "broken"}],
+                "max_tokens": 4,
+            },
+        )
+        self.assertNotEqual(res.status_code, 200, res.text)
+
+        span, attrs = self._wait_for_chat_span()
+        self.assertEqual(span["status"]["code"], 2)
+        route = self._route_attrs(attrs)
+        self.assertEqual(route["llm.route.collection"]["stringValue"], name[5:])
+        self.assertEqual(route["llm.route.to"]["stringValue"], broken)
+        self.assertEqual(route["llm.route.matched_rule"]["stringValue"], "to-broken")
+
+
 if __name__ == "__main__":
     run_server_tests(
         [
@@ -1716,6 +1879,7 @@ if __name__ == "__main__":
             ModelTypeTests,
             ReliabilityTests,
             MultiSemanticTests,
+            RoutingTelemetryTests,
         ],
         description="TELEMETRY INTEGRATION TESTS",
     )

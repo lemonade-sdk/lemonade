@@ -2,6 +2,7 @@
 
 #include "lemon/jobs/job_expr.h"
 #include "lemon/jobs/job_graph.h"
+#include "lemon/jobs/job_media_limits.h"
 #include "lemon/utils/path_utils.h"
 
 #include <lemon/utils/aixlog.hpp>
@@ -11,9 +12,11 @@
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <map>
 
 namespace fs = std::filesystem;
 
@@ -23,6 +26,8 @@ namespace jobs {
 namespace {
 
 constexpr size_t kMaxJobs = 50;
+// Keeps an interrupted job's record apart from one a client interrupted.
+constexpr const char* kStoppedError = "server stopped while the job was active";
 
 std::string iso_now() {
     const auto now = std::chrono::system_clock::now();
@@ -88,9 +93,16 @@ JobManager::JobManager(std::string cache_dir, std::string config_dir, OpRegistry
 }
 
 JobManager::~JobManager() {
+    shutdown();
+}
+
+void JobManager::shutdown() {
+    std::lock_guard<std::mutex> shutdown_lock(shutdown_mutex_);
     {
         std::lock_guard<std::mutex> lock(mutex_);
         stop_ = true;
+        // Jobs still queued stay queued on disk, and the next start recovers them.
+        queue_.clear();
         for (auto& kv : controls_) {
             kv.second->interrupt_requested.store(true);
             kv.second->cancel.store(true);
@@ -125,6 +137,7 @@ void JobManager::load_from_disk() {
             }
             if (job.status == JobStatus::Running || job.status == JobStatus::Queued) {
                 job.status = JobStatus::Interrupted;
+                job.stopped_at = iso_now();
                 job.error = "server restarted while the job was active";
                 if (StepRecord* s = find_step(job, job.cursor))
                     if (s->status == StepStatus::Running) s->status = StepStatus::Pending;
@@ -204,6 +217,8 @@ std::string JobManager::create(const std::string& name, std::vector<StepRecord> 
     if (!err.empty()) throw JobError(400, err);
 
     std::lock_guard<std::mutex> lock(mutex_);
+    // The worker is gone or going, so a job created now would only run after a restart.
+    if (stop_) throw JobError(503, "the server is shutting down");
 
     size_t live = 0;
     bool evictable = false;
@@ -279,11 +294,11 @@ json JobManager::list() const {
     return out;
 }
 
-std::optional<json> JobManager::get(const std::string& id) const {
+std::optional<Job> JobManager::get(const std::string& id) const {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = jobs_.find(id);
     if (it == jobs_.end() || it->second.deleted) return std::nullopt;
-    return it->second.to_json();
+    return it->second;
 }
 
 bool JobManager::pause(const std::string& id) {
@@ -293,6 +308,7 @@ bool JobManager::pause(const std::string& id) {
     if (it->second.status == JobStatus::Queued) {
         queue_.erase(std::remove(queue_.begin(), queue_.end(), id), queue_.end());
         it->second.status = JobStatus::Paused;
+        it->second.stopped_at = iso_now();
         persist_locked();
         LOG(INFO, "Jobs") << "paused queued job " << id << std::endl;
         return true;
@@ -311,6 +327,7 @@ bool JobManager::interrupt(const std::string& id) {
     if (it->second.status == JobStatus::Queued) {
         queue_.erase(std::remove(queue_.begin(), queue_.end(), id), queue_.end());
         it->second.status = JobStatus::Interrupted;
+        it->second.stopped_at = iso_now();
         persist_locked();
         LOG(INFO, "Jobs") << "interrupted queued job " << id << std::endl;
         return true;
@@ -325,6 +342,8 @@ bool JobManager::interrupt(const std::string& id) {
 
 bool JobManager::resume(const std::string& id) {
     std::lock_guard<std::mutex> lock(mutex_);
+    // Resuming would clear the flags shutdown() set and hand the worker more to run.
+    if (stop_) throw JobError(503, "the server is shutting down");
     auto it = jobs_.find(id);
     if (it == jobs_.end() || it->second.deleted) return false;
     if (it->second.status != JobStatus::Paused && it->second.status != JobStatus::Interrupted)
@@ -335,6 +354,7 @@ bool JobManager::resume(const std::string& id) {
     ctrl->cancel.store(false);
     it->second.status = JobStatus::Queued;
     it->second.error.clear();
+    it->second.stopped_at.clear();
     enqueue_locked(id);
     persist_locked();
     cv_.notify_all();
@@ -479,6 +499,8 @@ void JobManager::worker_main() {
             auto it = jobs_.find(id);
             if (it != jobs_.end()) {
                 it->second.status = JobStatus::Interrupted;
+                it->second.stopped_at = iso_now();
+                if (stop_) it->second.error = kStoppedError;
                 persist_locked();
             }
             LOG(INFO, "Jobs") << "job " << id
@@ -522,6 +544,8 @@ void JobManager::execute(const std::string& id, const std::shared_ptr<Control>& 
     while (true) {
         json params;
         json context_snapshot;
+        json extracts;
+        std::string op;
         const OpHandler* handler = nullptr;
         std::string step_id;
 
@@ -534,6 +558,8 @@ void JobManager::execute(const std::string& id, const std::shared_ptr<Control>& 
             if (ctrl->interrupt_requested.load()) {
                 if (StepRecord* s = find_step(job, job.cursor)) s->status = StepStatus::Pending;
                 job.status = JobStatus::Interrupted;
+                job.stopped_at = iso_now();
+                if (stop_) job.error = kStoppedError;
                 persist_locked();
                 LOG(INFO, "Jobs") << "job " << id << " interrupted at step '" << job.cursor << "'"
                                   << std::endl;
@@ -541,6 +567,7 @@ void JobManager::execute(const std::string& id, const std::shared_ptr<Control>& 
             }
             if (ctrl->pause_requested.load()) {
                 job.status = JobStatus::Paused;
+                job.stopped_at = iso_now();
                 persist_locked();
                 LOG(INFO, "Jobs") << "job " << id << " paused before step '" << job.cursor << "'"
                                   << std::endl;
@@ -611,7 +638,10 @@ void JobManager::execute(const std::string& id, const std::shared_ptr<Control>& 
 
             s->status = StepStatus::Running;
             step_id = s->id;
+            extracts = s->extract;
+            op = s->op;
             context_snapshot = job.context;
+            context_snapshot[kJobIdContextKey] = id;
             ctrl->cancel.store(false);
             persist_locked();
             LOG(DEBUG, "Jobs") << "job " << id << " running step '" << s->id << "' (op " << s->op
@@ -631,6 +661,36 @@ void JobManager::execute(const std::string& id, const std::shared_ptr<Control>& 
         const auto ms =
             std::chrono::duration_cast<std::chrono::milliseconds>(clock::now() - t0).count();
 
+        json resolved_extracts = json::object();
+        std::map<std::string, std::exception_ptr> extract_errors;
+        std::optional<MediaStoreBudget> budget;
+        if (ok) {
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                const auto it = jobs_.find(id);
+                if (it == jobs_.end()) return;
+                budget.emplace(it->second, output, step_id);
+            }
+            const bool media = media_result_bytes(output) != 0;
+            for (auto extract = extracts.begin(); extract != extracts.end(); ++extract) {
+                if (media && budget->bytes > kMaxJobMediaStoreBytes) break;
+                try {
+                    json value = expr_detail::resolve_ref_path(
+                        extract.value().get<std::string>(), output);
+                    budget->resolve_extract(extract.key(), value, media);
+                    if (budget->bytes > kMaxJobMediaStoreBytes) break;
+                    resolved_extracts[extract.key()] = std::move(value);
+                } catch (const std::exception&) {
+                    extract_errors[extract.key()] = std::current_exception();
+                }
+            }
+            if (budget->bytes > kMaxJobMediaStoreBytes) {
+                ok = false;
+                run_error = op + " output would exceed the per-job media store limit of " +
+                            std::to_string(kMaxJobMediaStoreBytes) + " bytes";
+            }
+        }
+
         {
             std::lock_guard<std::mutex> lock(mutex_);
             auto it = jobs_.find(id);
@@ -644,6 +704,8 @@ void JobManager::execute(const std::string& id, const std::shared_ptr<Control>& 
                 s->status = StepStatus::Pending;
                 s->error.clear();
                 job.status = JobStatus::Interrupted;
+                job.stopped_at = iso_now();
+                if (stop_) job.error = kStoppedError;
                 persist_locked();
                 LOG(INFO, "Jobs") << "job " << id << " interrupted during step '" << step_id << "'"
                                   << std::endl;
@@ -654,9 +716,12 @@ void JobManager::execute(const std::string& id, const std::shared_ptr<Control>& 
                 s->output = output;
                 job.context[s->id] = output;
                 try {
-                    for (auto it2 = s->extract.begin(); it2 != s->extract.end(); ++it2)
-                        job.context[it2.key()] =
-                            expr_detail::resolve_ref_path(it2.value().get<std::string>(), output);
+                    for (auto it2 = s->extract.begin(); it2 != s->extract.end(); ++it2) {
+                        const auto error = extract_errors.find(it2.key());
+                        if (error != extract_errors.end()) std::rethrow_exception(error->second);
+                        job.context[it2.key()] = std::move(resolved_extracts.at(it2.key()));
+                    }
+                    job.media_extract_bytes = std::move(budget->extracts);
                     const std::string next = next_after_success(job, *s);
                     s->status = StepStatus::Completed;
                     job.cursor = next;

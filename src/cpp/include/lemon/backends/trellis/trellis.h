@@ -17,6 +17,8 @@ inline const BackendDescriptor descriptor = {
     /*uses_ctx_size*/   false,
     /*dynamic_models*/  false,
     /*options*/ {
+        {"trellis_device", "--trellis-device", "", "DEVICES",
+         "GPU to use: ROCm0, CUDA1, ... or a GPU's uuid or pci_bus_id from system-info; auto selects automatically", "3D Generation Options"},
         {"trellis_backend", "--trellis", "", "BACKEND",
          "Trellis backend to use", "3D Generation Options"},
         {"trellis_args", "--trellis-args", "", "ARGS",
@@ -51,6 +53,10 @@ inline const BackendDescriptor descriptor = {
     /*arg_variants*/    {},
     /*bin_variants*/    {"vulkan", "rocm", "cuda", "cuda12"},
     /*config_extra*/    nlohmann::json::object(),
+    /*streams_model_from_storage*/ false,
+    /*containers*/      {},
+    /*mode_capability_requirements*/ {},
+    /*common_gpu_visibility*/ true,
 };
 
 }  // namespace trellis
