@@ -257,6 +257,61 @@ nlohmann::json call_mcp_server_capability(ServerContext& ctx,
             return call_json_handler(body, "/api/v1/unload");
         }
 
+        if (tool_name == "lemonade_pull_model") {
+            validate_mcp_model_arguments(
+                arguments,
+                {"model_name", "checkpoint", "recipe", "source", "do_not_upgrade"});
+            nlohmann::json body = {
+                {"model_name", required_mcp_model_string(arguments, "model_name")},
+                {"stream", false},
+            };
+            for (const char* key : std::vector<const char*>{"checkpoint", "recipe", "source"}) {
+                if (!arguments.contains(key)) continue;
+                if (!arguments[key].is_string()) {
+                    throw std::invalid_argument(std::string(key) + " must be a string");
+                }
+                body[key] = arguments[key];
+            }
+            if (arguments.contains("do_not_upgrade")) {
+                if (!arguments["do_not_upgrade"].is_boolean()) {
+                    throw std::invalid_argument("do_not_upgrade must be a boolean");
+                }
+                body["do_not_upgrade"] = arguments["do_not_upgrade"];
+            }
+            return call_json_handler(body, "/api/v1/pull");
+        }
+
+        if (tool_name == "lemonade_delete_model") {
+            validate_mcp_model_arguments(arguments, {"model_name", "confirm"});
+            const std::string requested = required_mcp_model_string(arguments, "model_name");
+            if (!arguments.contains("confirm") || !arguments["confirm"].is_boolean() ||
+                !arguments["confirm"].get<bool>()) {
+                return mcp_model_tool_result({
+                    {"error", "Deletion requires confirm=true"},
+                    {"model_name", requested},
+                    {"required", "confirm=true"},
+                }, true);
+            }
+
+            if (!ctx.model_manager->model_exists(requested)) {
+                return mcp_model_tool_result({
+                    {"error", "Model not found: " + requested},
+                    {"model_name", requested},
+                }, true);
+            }
+            return call_json_handler(
+                nlohmann::json{{"model_name", requested}}, "/api/v1/delete");
+        }
+
+        if (tool_name == "lemonade_get_loaded_models") {
+            validate_mcp_model_arguments(arguments, {});
+            nlohmann::json models = ctx.router->get_all_loaded_models();
+            return mcp_model_tool_result({
+                {"models", models},
+                {"count", models.size()},
+            }, false);
+        }
+
         return mcp_model_tool_result({{"error", "Unknown Lemonade server tool: " + tool_name}}, true);
     } catch (const std::exception& e) {
         return mcp_model_tool_result({{"error", e.what()}}, true);

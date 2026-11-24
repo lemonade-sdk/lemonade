@@ -84,6 +84,9 @@ MCP_HUB_EXPECTED_TOOLS = {
     "lemonade_get_model_info",
     "lemonade_load_model",
     "lemonade_unload_model",
+    "lemonade_get_loaded_models",
+    "lemonade_pull_model",
+    "lemonade_delete_model",
     "lemonade_generate_image",
     "lemonade_transcribe_audio",
     "lemonade_chat",
@@ -789,6 +792,63 @@ class McpGatewayTests(ServerTestBase):
                 self.assertTrue(result["isError"], msg=str(result))
                 self.assertIn("ctx_size", result["content"][0]["text"])
 
+    def test_027_pull_existing_model_tool(self):
+        """Pull reuses /pull; the already-cached endpoint model makes this deterministic."""
+        result = _call_tool(
+            "lemonade_pull_model",
+            {"model_name": ENDPOINT_TEST_MODEL, "do_not_upgrade": True},
+            request_id=28,
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertFalse(result["isError"], msg=str(result))
+
+    def test_028_delete_requires_confirmation(self):
+        """Delete is exact and requires confirm=true before calling the REST handler."""
+        canonical_name = f"user.McpDelete-{uuid.uuid4().hex[:8]}"
+        base = f"http://localhost:{PORT}/api/v1"
+        try:
+            register = requests.post(
+                f"{base}/pull",
+                json={
+                    "model_name": canonical_name,
+                    "recipe": "collection.omni",
+                    "components": [ENDPOINT_TEST_MODEL],
+                },
+                headers=_auth_headers(),
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(register.status_code, 200, register.text)
+
+            refused = _call_tool(
+                "lemonade_delete_model",
+                {"model_name": canonical_name, "confirm": False},
+                request_id=29,
+            )
+            self.assertTrue(refused["isError"], msg=str(refused))
+
+            still_there = _call_tool(
+                "lemonade_get_model_info", {"model_name": canonical_name}, request_id=30
+            )
+            self.assertFalse(still_there["isError"], msg=str(still_there))
+
+            deleted = _call_tool(
+                "lemonade_delete_model",
+                {"model_name": canonical_name, "confirm": True},
+                request_id=31,
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertFalse(deleted["isError"], msg=str(deleted))
+        finally:
+            try:
+                requests.post(
+                    f"{base}/delete",
+                    json={"model_name": canonical_name},
+                    headers=_auth_headers(),
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+
     def test_012_all_advertised_tools_have_dispatch(self):
         """Every tools/list entry must resolve to a real tools/call dispatch."""
         listed = _post({"jsonrpc": "2.0", "id": 120, "method": "tools/list"}).json()[
@@ -824,6 +884,21 @@ class McpGatewayTests(ServerTestBase):
                 "destructiveHint": False,
                 "openWorldHint": False,
             },
+            "lemonade_get_loaded_models": {
+                "readOnlyHint": True,
+                "destructiveHint": False,
+                "openWorldHint": False,
+            },
+            "lemonade_pull_model": {
+                "readOnlyHint": False,
+                "destructiveHint": False,
+                "openWorldHint": True,
+            },
+            "lemonade_delete_model": {
+                "readOnlyHint": False,
+                "destructiveHint": True,
+                "openWorldHint": False,
+            },
         }
         for name, expected in expected_annotations.items():
             annotations = by_name[name].get("annotations", {})
@@ -841,6 +916,8 @@ class McpGatewayTests(ServerTestBase):
             "lemonade_get_model_info": {"model_name": ""},
             "lemonade_load_model": {"model_name": ""},
             "lemonade_unload_model": {"model_name": ""},
+            "lemonade_pull_model": {"model_name": ""},
+            "lemonade_delete_model": {"model_name": "", "confirm": True},
         }
         for index, (name, arguments) in enumerate(safe_probes.items(), start=121):
             self.assertIn(name, listed_names)
