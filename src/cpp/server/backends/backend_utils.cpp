@@ -4,6 +4,7 @@
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
 #include "lemon/backends/backend_registry.h"  // spec_for() — descriptor->install spec, no server includes
+#include "lemon/backends/backend_source.h"
 #include "lemon/models/download_progress.h"
 
 #include "lemon/utils/archive_platform.h"
@@ -78,7 +79,8 @@ namespace lemon::backends {
         return hash_string_from_json(*current);
     }
 
-    static std::string lookup_expected_asset_hash(const std::string& recipe,
+    static std::string lookup_expected_asset_hash(const std::string& source,
+                                                  const std::string& recipe,
                                                   const std::string& backend,
                                                   const std::string& version,
                                                   const std::string& repo,
@@ -87,7 +89,13 @@ namespace lemon::backends {
             const std::string config_path = utils::get_resource_path("resources/backend_versions.json");
             const json config = utils::JsonUtils::load_from_file(config_path);
 
-            const std::vector<std::vector<std::string>> candidate_paths = {
+            std::vector<std::vector<std::string>> candidate_paths;
+            if (backend_source::is_modelscope(source)) {
+                // Generated for every mirrored file; GitHub downloads ignore it.
+                candidate_paths.push_back({"checksums", "modelscope", "github", repo, version, filename});
+                candidate_paths.push_back({"checksums", "modelscope", "therock", version, filename});
+            }
+            candidate_paths.insert(candidate_paths.end(), {
                 {"checksums", "github", repo, version, filename},
                 {"checksums", repo, version, filename},
                 {"checksums", recipe, backend, version, filename},
@@ -98,7 +106,7 @@ namespace lemon::backends {
                 {"artifact_hashes", recipe, backend, version, filename},
                 {"artifact_hashes", recipe, version, filename},
                 {"artifact_hashes", filename}
-            };
+            });
 
             for (const auto& path : candidate_paths) {
                 // Skip repo-keyed shapes when no repo is available (e.g. TheRock).
@@ -174,6 +182,32 @@ namespace lemon::backends {
         return p == pattern.size();
     }
 
+    std::string BackendUtils::effective_backend_source() {
+        if (!backend_source::request_override.empty()) {
+            return backend_source::request_override;
+        }
+        if (auto* cfg = RuntimeConfig::global()) {
+            return cfg->backend_source();
+        }
+        return backend_source::kGitHub;
+    }
+
+    static std::string modelscope_endpoint() {
+        return utils::get_environment_variable_utf8("MODELSCOPE_ENDPOINT");
+    }
+
+    // The mirror has no copy of AMD's wheel index, so "auto" installs the tarball.
+    std::string BackendUtils::effective_rocm_install_method() {
+        std::string method = "auto";
+        if (auto* cfg = RuntimeConfig::global()) {
+            method = cfg->rocm_install_method();
+        }
+        if (method == "auto" && backend_source::is_modelscope(BackendUtils::effective_backend_source())) {
+            return "tarball";
+        }
+        return method;
+    }
+
     // Resolve a '*' wildcard in a release asset filename to the concrete asset
     // name published for `tag`. Some upstreams embed a component that changes
     // on every build (e.g. the macOS runner version in sd-cpp's Darwin asset:
@@ -187,6 +221,43 @@ namespace lemon::backends {
                                               const BackendSpec& spec) {
         if (pattern.find('*') == std::string::npos) {
             return pattern;
+        }
+
+        const std::string source = BackendUtils::effective_backend_source();
+        if (backend_source::is_modelscope(source)) {
+            // The mirror's assets.json lists the release, so no GitHub API call.
+            const std::string manifest_url =
+                backend_source::release_manifest_url(modelscope_endpoint(), repo, tag);
+            LOG(DEBUG, spec.log_name()) << "Resolving asset wildcard '" << pattern
+                << "' for " << repo << "@" << tag << " via " << manifest_url << std::endl;
+            utils::HttpResponse manifest_resp =
+                utils::HttpClient::get(manifest_url);
+            if (manifest_resp.status_code != 200) {
+                throw std::runtime_error(
+                    "ModelScope mirror returned HTTP " + std::to_string(manifest_resp.status_code) +
+                    " for the file list of " + repo + "@" + tag +
+                    ". The mirror only carries the versions Lemonade pins.");
+            }
+            json manifest;
+            try {
+                manifest = json::parse(manifest_resp.body);
+            } catch (const std::exception& e) {
+                throw std::runtime_error("Failed to parse the ModelScope file list for " + repo +
+                                         "@" + tag + ": " + e.what());
+            }
+            if (manifest.contains("files") && manifest["files"].is_array()) {
+                for (const auto& f : manifest["files"]) {
+                    if (f.contains("name") && f["name"].is_string() &&
+                        wildcard_match(pattern, f["name"].get<std::string>())) {
+                        const std::string name = f["name"].get<std::string>();
+                        LOG(INFO, spec.log_name()) << "Resolved asset wildcard '"
+                            << pattern << "' to '" << name << "'" << std::endl;
+                        return name;
+                    }
+                }
+            }
+            throw std::runtime_error("No mirrored asset matching '" + pattern + "' found for " +
+                                     repo + "@" + tag);
         }
 
         const std::string url = "https://api.github.com/repos/" + repo +
@@ -707,8 +778,15 @@ namespace lemon::backends {
                 }
             } zip_guard{zip_path};
 
-            const std::string base_download_url = "https://github.com/" + repo + "/releases/download/" +
-                                                  expected_version + "/";
+            const std::string source = BackendUtils::effective_backend_source();
+            const std::string endpoint = modelscope_endpoint();
+            auto asset_url = [&](const std::string& name) {
+                return backend_source::release_asset_url(source, endpoint, repo, expected_version, name);
+            };
+            if (backend_source::is_modelscope(source)) {
+                LOG(INFO, spec.log_name()) << "Downloading " << repo << "@" << expected_version
+                                           << " from the ModelScope mirror" << std::endl;
+            }
 
             // Decide single-file vs. split-archive without hitting the GitHub
             // Releases API (which is rate-limited to 60 req/hr per IP, and
@@ -731,7 +809,7 @@ namespace lemon::backends {
             bool is_split = false;
             std::vector<std::string> part_assets;
             if (spec.supports_split_archive) {
-                const std::string partcount_url = base_download_url + base + ".partcount";
+                const std::string partcount_url = asset_url(base + ".partcount");
                 auto resp = utils::HttpClient::get(partcount_url);
                 if (resp.status_code == 200) {
                     int total_parts = 0;
@@ -769,7 +847,7 @@ namespace lemon::backends {
                 // 404 = no manifest = single-file release; fall through.
             }
             if (!is_split) {
-                std::string url = base_download_url + filename;
+                std::string url = asset_url(filename);
                 LOG(DEBUG, spec.log_name()) << "Downloading from: " << url << std::endl;
 
                 utils::ProgressCallback http_progress_cb;
@@ -790,8 +868,9 @@ namespace lemon::backends {
                 }
 
                 utils::DownloadOptions archive_download_opts;
-                archive_download_opts.expected_hash = lookup_expected_asset_hash(
-                    spec.recipe, backend, expected_version, repo, filename);
+                archive_download_opts.expected_hash = backend_source::require_pinned_hash(
+                    source, lookup_expected_asset_hash(source, spec.recipe, backend, expected_version, repo, filename),
+                    repo + "@" + expected_version + "/" + filename);
                 archive_download_opts.resume_partial = false;
 
                 auto download_result = utils::HttpClient::download_file(
@@ -814,7 +893,7 @@ namespace lemon::backends {
                 const int total_parts = static_cast<int>(part_assets.size());
                 for (const auto& part_filename : part_assets) {
                     ++part_index;
-                    std::string part_url = base_download_url + part_filename;
+                    std::string part_url = asset_url(part_filename);
                     std::string part_path = zip_path + ".part" + std::to_string(part_index - 1);
 
                     LOG(DEBUG, spec.log_name()) << "Downloading part "
@@ -847,8 +926,10 @@ namespace lemon::backends {
                     }
 
                     utils::DownloadOptions part_download_opts;
-                    part_download_opts.expected_hash = lookup_expected_asset_hash(
-                        spec.recipe, backend, expected_version, repo, part_filename);
+                    part_download_opts.expected_hash = backend_source::require_pinned_hash(
+                        source,
+                        lookup_expected_asset_hash(source, spec.recipe, backend, expected_version, repo, part_filename),
+                        repo + "@" + expected_version + "/" + part_filename);
                     part_download_opts.resume_partial = false;
 
                     auto part_result = utils::HttpClient::download_file(
@@ -1687,10 +1768,7 @@ namespace lemon::backends {
         //   tarball - TheRock tarball only (no Python/pip)
         // method.txt records "wheel" or "tarball" at install time; when methods
         // disagree (e.g. user switched knobs), backend_manager triggers reinstall.
-        std::string method = "auto";
-        if (auto* cfg = RuntimeConfig::global()) {
-            method = cfg->rocm_install_method();
-        }
+        const std::string method = effective_rocm_install_method();
 
         reset_therock_wheels_cancelled();
 
@@ -2129,7 +2207,8 @@ namespace lemon::backends {
         std::string platform = "linux";
 #endif
         std::string filename = "therock-dist-" + platform + "-" + url_variant + "-" + version + ".tar.gz";
-        std::string url = "https://stable.repo.amd.com/rocm/core/tarball/" + filename;
+        const std::string source = BackendUtils::effective_backend_source();
+        std::string url = backend_source::therock_tarball_url(source, modelscope_endpoint(), version, filename);
 
         fs::path cache_dir = get_backend_download_cache_dir();
         std::string tarball_path = (cache_dir / filename).string();
@@ -2155,12 +2234,10 @@ namespace lemon::backends {
             http_progress_cb = utils::create_throttled_progress_callback();
         }
 
-        // TheRock asset verification stays metadata-driven. Once upstream publishes
-        // per-asset checksums, backend_versions.json can provide them without
-        // changing download code. Until then this remains an optional lookup.
+        // AMD publishes no checksums; checksums.modelscope.therock was hashed when pinning.
         utils::DownloadOptions therock_download_opts;
-        therock_download_opts.expected_hash = lookup_expected_asset_hash(
-            "therock", arch, version, "", filename);
+        therock_download_opts.expected_hash = backend_source::require_pinned_hash(
+            source, lookup_expected_asset_hash(source, "therock", arch, version, "", filename), filename);
 
         auto download_result = utils::HttpClient::download_file(
             url,

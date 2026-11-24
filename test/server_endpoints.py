@@ -8199,6 +8199,149 @@ class EndpointTests(ServerTestBase):
         self.assertEqual(response.status_code, 400)
         print("[OK] /install returns 400 for missing 'backend' parameter")
 
+    MIRROR_PATH = (
+        "/api/v1/datasets/lemonade-sdk/backends/repo?Revision=master&FilePath="
+    )
+
+    def _dry_run(self, recipe, backend, source):
+        response = requests.post(
+            f"{self.base_url}/install/dry-run",
+            json={"recipe": recipe, "backend": backend, "source": source},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()
+
+    def test_028a_backend_source_dry_run_urls(self):
+        """A request's backend source picks GitHub or the ModelScope mirror URL."""
+        from urllib.parse import quote
+
+        mirror = self._dry_run("onnxruntime", "cpu", "modelscope")
+        path = f"github/{mirror['repo']}/{mirror['version']}/{mirror['filename']}"
+        # The host follows MODELSCOPE_ENDPOINT, so only the dataset path is fixed.
+        self.assertTrue(
+            mirror["url"].endswith(self.MIRROR_PATH + quote(path, safe="")),
+            mirror["url"],
+        )
+
+        github = self._dry_run("onnxruntime", "cpu", "github")
+        self.assertEqual(
+            github["url"],
+            f"https://github.com/{github['repo']}/releases/download/"
+            f"{github['version']}/{github['filename']}",
+        )
+        print("[OK] dry-run URL follows the request's backend source")
+
+    def test_028b_backend_source_rejects_unknown(self):
+        """Only github and modelscope are accepted as a request's backend source."""
+        for path, body in (
+            ("install", {"recipe": "onnxruntime", "backend": "cpu", "source": "x"}),
+            (
+                "install/dry-run",
+                {"recipe": "onnxruntime", "backend": "cpu", "source": "x"},
+            ),
+            ("load", {"model_name": ENDPOINT_TEST_MODEL, "backend_source": "x"}),
+        ):
+            response = requests.post(
+                f"{self.base_url}/{path}", json=body, timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(response.status_code, 400, f"{path}: {response.text}")
+        print("[OK] unknown backend sources are rejected with 400")
+
+    def test_028c_install_from_modelscope_mirror(self):
+        """A backend installs from the ModelScope mirror, verified by its pinned SHA-256."""
+        import sys
+
+        if not sys.platform.startswith(("linux", "win32")):
+            self.skipTest("ort-server is only mirrored for Linux and Windows here")
+        recipe, backend = "onnxruntime", "cpu"
+        url = self._dry_run(recipe, backend, "modelscope")["url"]
+        try:
+            with requests.get(url, stream=True, timeout=30) as probe:
+                if probe.status_code == 404:
+                    self.skipTest("the mirror does not have this pin yet")
+        except requests.RequestException as e:
+            self.skipTest(f"ModelScope is not reachable from this runner: {e}")
+
+        uninstall = requests.post(
+            f"{self.base_url}/uninstall",
+            json={"recipe": recipe, "backend": backend},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        # An installed copy would make the install succeed without downloading.
+        self.assertEqual(uninstall.status_code, 200, uninstall.text)
+        try:
+            response = requests.post(
+                f"{self.base_url}/install",
+                json={
+                    "recipe": recipe,
+                    "backend": backend,
+                    "source": "modelscope",
+                    "stream": False,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            # Unpinned or mismatched files are refused, so success proves the hash.
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(response.json()["status"], "success")
+        finally:
+            requests.post(
+                f"{self.base_url}/uninstall",
+                json={"recipe": recipe, "backend": backend},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+        print("[OK] onnxruntime:cpu installed from the ModelScope mirror")
+
+    def test_028d_modelscope_backend_then_inference(self):
+        """Install a llamacpp backend from ModelScope, then run real inference.
+
+        Tests the full path: backend downloaded and hash-verified from the mirror,
+        model loaded, chat completion returns a non-empty response.
+        Skips if ModelScope is unreachable or the backend pin is not mirrored yet.
+        """
+        import sys
+
+        backend = "metal" if sys.platform == "darwin" else "cpu"
+
+        url = self._dry_run("llamacpp", backend, "modelscope")["url"]
+        try:
+            with requests.get(url, stream=True, timeout=30) as probe:
+                if probe.status_code == 404:
+                    self.skipTest(f"llamacpp:{backend} not mirrored yet")
+        except requests.RequestException as e:
+            self.skipTest(f"ModelScope not reachable: {e}")
+
+        uninstall = requests.post(
+            f"{self.base_url}/uninstall",
+            json={"recipe": "llamacpp", "backend": backend},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(uninstall.status_code, 200, uninstall.text)
+
+        load = requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": ENDPOINT_TEST_MODEL, "backend_source": "modelscope"},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(load.status_code, 200, load.text)
+
+        from openai import OpenAI
+
+        client = OpenAI(base_url=f"http://localhost:{PORT}/api/v1", api_key="x")
+        response = client.chat.completions.create(
+            model=ENDPOINT_TEST_MODEL,
+            messages=[{"role": "user", "content": "Say hello."}],
+            max_tokens=16,
+        )
+        self.assertTrue(
+            response.choices[0].message.content.strip(),
+            "Expected a non-empty response",
+        )
+        print(
+            f"[OK] llamacpp:{backend} from ModelScope mirror ran inference: "
+            f"{response.choices[0].message.content.strip()[:60]!r}"
+        )
+
     def test_029_system_info_release_url(self):
         """Test that system-info includes release_url for backends."""
         response = requests.get(f"{self.base_url}/system-info", timeout=TIMEOUT_DEFAULT)

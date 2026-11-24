@@ -49,6 +49,7 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
   "auto_evict": false,
   "auto_evict_threshold_pct": 0.9,
   "auto_update_models": false,
+  "backend_source": "github",
   "broadcast": true,
   "cloud_providers": [],
   "config_version": 2,
@@ -230,6 +231,7 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
 | `models_dir` | string | "auto" | Directory for cached model files. `"auto"` follows `HF_HUB_CACHE` / `HF_HOME` / platform default |
 | `ctx_size` | int | -1 | Default context size for LLM models. Use `-1` for auto-resolution: the server computes the largest context that fits in available device memory using GGUF architecture metadata. Use a positive integer to set an explicit size. |
 | `default_model_source` | string | "huggingface" | Remote registry policy for checkpoints without a source. Accepts `huggingface`, `modelscope`, or `auto`. |
+| `backend_source` | string | "github" | Where backend binaries are downloaded from: `github` (GitHub Releases) or `modelscope` (the [`lemonade-sdk/backends`](https://modelscope.cn/datasets/lemonade-sdk/backends) mirror on ModelScope, for networks that cannot reach GitHub reliably). See [Downloading backends from ModelScope](#downloading-backends-from-modelscope). |
 | `download_rate_limit` | string | "" | Caps model/backend download speed. Byte rate with curl-style suffixes: `512`, `100K`, `10M`, etc. Use `""` for unlimited download speed. A non-empty value also serializes concurrent transfers. |
 | `offline` | bool | false | Skip model downloads |
 | `auto_check_model_updates` | bool | true | Check downloaded Hugging Face-backed models for updates during server startup. Set to `false` to check only with `lemonade check-updates` or `POST /v1/models/check-updates`. Manual downloads and updates remain enabled. |
@@ -244,6 +246,23 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
 Run `lemonade config set default_model_source=auto` to check both registry APIs in the background at startup or when entering auto mode. The check also runs when leaving offline mode with `auto` active. Hugging Face is preferred. If its API fails and ModelScope's API responds, source-less pulls use ModelScope. A source-less pull waits for a check if the source is still unknown. If neither probe succeeds, the next source-less pull checks again. The selected registry must host the requested checkpoint and variant.
 
 Explicit `--source`, a `source`/`registry_source` field, and provider URLs take precedence. Custom models keep their recorded registry. FLM manages its own storage and follows the current policy for each pull or upgrade without an explicit source.
+
+### Downloading backends from ModelScope
+
+Where GitHub is slow or unreachable, such as in mainland China, set `backend_source` to `modelscope` to download backends and the ROCm runtime from the [`lemonade-sdk/backends`](https://modelscope.cn/datasets/lemonade-sdk/backends) dataset instead of GitHub Releases. It mirrors the files `backend_versions.json` pins, with the same names. Pair it with `default_model_source` so models come from ModelScope too:
+
+```bash
+lemonade config set backend_source=modelscope
+lemonade config set default_model_source=modelscope
+```
+
+`LEMONADE_BACKEND_SOURCE` sets it for the process. For one request, pass `--source` to `lemonade backends install` (`"source"` on `POST /v1/install`), or `--backend-source` to `lemonade load` and `lemonade run` (`"backend_source"` on `POST /v1/load`). With `modelscope`:
+
+- Each file must match the SHA-256 pinned for it in `checksums.modelscope`; a file without one is refused. GitHub downloads do not use these hashes.
+- Only pinned versions are mirrored. With a `*_bin` of `latest`, the installed version is reused; with none installed, the install fails.
+- `thinksound`, `acestep`, `trellis`, `openmoss` and datacenter GPU builds are not mirrored; install them with `--source github`. Container backends pull from their own registries.
+- `rocm_install_method=auto` installs the TheRock tarball, since the mirror has no pip wheel index. A runtime already installed from wheels keeps working.
+- `MODELSCOPE_ENDPOINT` moves the API, as for model pulls. No token is sent: the dataset is public.
 
 Both `models_dir` and `extra_models_dir` can be changed at runtime through [`POST /internal/set`](../../api/internal.md#post-internalset). Existing `extra_models_dir` paths are preflighted as directories and must be enumerable by the `lemond` process. Nonexistent paths are accepted so the directory watcher can observe them if they are created later.
 

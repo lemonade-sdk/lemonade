@@ -1729,7 +1729,8 @@ DownloadResult HttpClient::download_file(const std::string& url,
 
 bool HttpClient::is_reachable(const std::string& url,
                               int timeout_seconds,
-                              HttpSecurityPolicy policy) {
+                              HttpSecurityPolicy policy,
+                              bool accept_redirect) {
     CURL* curl = curl_easy_init();
     if (!curl) {
         return false;
@@ -1759,6 +1760,9 @@ bool HttpClient::is_reachable(const std::string& url,
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
     curl_easy_cleanup(curl);
 
+    if (accept_redirect && response_code >= 300 && response_code < 400) {
+        return true;
+    }
     return response_code == 200;
 }
 
