@@ -56,9 +56,12 @@ CostInfo resolve_model_cost_info(const ModelInfo& info);
 
 // The cost_of behind make_router_cost_services(): results are cached across
 // calls and dropped whenever `generation` moves, so a price changed through
-// /pull is seen on the next request.
-CostServices make_cached_cost_services(std::function<std::uint64_t()> generation,
-                                       std::function<CostInfo(const std::string& candidate)> resolve);
+// /pull is seen on the next request. `resolve` returns std::nullopt for a name
+// that is not a registered model; that answer is not cached, since
+// /v1/routing/validate accepts any candidate name.
+CostServices make_cached_cost_services(
+    std::function<std::uint64_t()> generation,
+    std::function<std::optional<CostInfo>(const std::string& candidate)> resolve);
 
 CostServices make_router_cost_services(Router& router);
 
