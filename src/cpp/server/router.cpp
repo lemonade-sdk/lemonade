@@ -19,6 +19,8 @@
 #include "lemon/auto_tune.h"
 #include "telemetry.h"
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <iostream>
 #include <lemon/model_manager.h>
@@ -36,6 +38,23 @@
 namespace lemon {
 
 namespace {
+
+// Waits like cv.wait(lock, ready), but in short slices when there is a cancel flag, so
+// a canceled caller stops waiting instead of blocking until another client's load
+// finishes. Returns false when canceled; the load being waited on is not affected.
+template <class Ready>
+bool wait_unless_canceled(std::condition_variable& cv, std::unique_lock<std::mutex>& lock,
+                          Ready ready, std::atomic<bool>* cancel) {
+    if (!cancel) {
+        cv.wait(lock, ready);
+        return true;
+    }
+    while (!ready()) {
+        if (cancel->load()) return false;
+        cv.wait_for(lock, std::chrono::milliseconds(25));
+    }
+    return true;
+}
 
 // RAII: holds a suspend-inhibitor refcount for the duration of one inference,
 // but only when the feature is enabled in config. Released on scope exit so all
@@ -96,6 +115,16 @@ void observe_stream_content(LiveThroughput::Request& live, const json& event) {
         if (event.contains("delta") && event["delta"].is_string())
             live.observe(event["delta"].get_ref<const std::string&>());
     }
+}
+
+// sd-server serves both images and videos, so the IImageServer cast alone lets
+// a video model through. Returns an error to send back, or null to go ahead.
+json reject_video_model(const WrappedServer* server) {
+    if (server->get_model_type() != ModelType::VIDEO) {
+        return nullptr;
+    }
+    return ErrorResponse::from_exception(InvalidRequestException(
+        "model '" + server->get_model_name() + "' is a video model, not an image model"));
 }
 
 } // namespace
@@ -400,23 +429,26 @@ void Router::transition_server_residency_locked(
 
 bool Router::ensure_loaded_model_residency(
     const std::string& model_name,
-    LoadPurpose load_purpose) {
+    LoadPurpose load_purpose,
+    std::atomic<bool>* cancel) {
     return ensure_loaded_model_residency_canonical(
-        resolve_model_name(model_name), load_purpose);
+        resolve_model_name(model_name), load_purpose, cancel);
 }
 
 bool Router::ensure_loaded_model_residency_canonical(
     const std::string& canonical_model_name,
-    LoadPurpose load_purpose) {
+    LoadPurpose load_purpose,
+    std::atomic<bool>* cancel) {
     const ResidencyClass requested_residency_class =
         residency_class_for_load_purpose(load_purpose);
 
     std::unique_lock<std::mutex> lock(load_mutex_);
-    load_cv_.wait(lock, [&] {
+    const bool ready = wait_unless_canceled(load_cv_, lock, [&] {
         return !is_loading_ &&
                (!exclusive_active_ ||
                 exclusive_owner_ == std::this_thread::get_id());
-    });
+    }, cancel);
+    if (!ready) throw std::runtime_error("load cancelled");
 
     prune_unavailable_servers_locked();
 
@@ -873,10 +905,11 @@ void Router::load_model(const std::string& model_name,
     // LOAD SERIALIZATION STRATEGY (from spec: point #2 in Additional Considerations)
     std::unique_lock<std::mutex> lock(load_mutex_);
 
-    load_cv_.wait(lock, [&] {
+    const bool ready = wait_unless_canceled(load_cv_, lock, [&] {
         return !is_loading_
                && (!exclusive_active_ || exclusive_owner_ == std::this_thread::get_id());
-    });
+    }, cancel_flag);
+    if (!ready) throw std::runtime_error("load cancelled");
 
     is_loading_ = true;
 
@@ -2425,6 +2458,10 @@ json Router::image_generations(const json& request, std::atomic<bool>* cancel) {
         cancel_scope.emplace(utils::RequestCancelToken{cancel});
     }
     return execute_inference(request, [&](WrappedServer* server) {
+        json rejected = reject_video_model(server);
+        if (!rejected.is_null()) {
+            return rejected;
+        }
         auto image_server = dynamic_cast<IImageServer*>(server);
         if (!image_server) {
             return ErrorResponse::from_exception(
@@ -2435,12 +2472,32 @@ json Router::image_generations(const json& request, std::atomic<bool>* cancel) {
     });
 }
 
+json Router::video_generations(const json& request, std::atomic<bool>* cancel) {
+    return execute_inference(request, [&](WrappedServer* server) {
+        if (server->get_model_type() != ModelType::VIDEO) {
+            return ErrorResponse::from_exception(InvalidRequestException(
+                "model '" + server->get_model_name() + "' is not a video model"));
+        }
+        auto video_server = dynamic_cast<IVideoServer*>(server);
+        if (!video_server) {
+            return ErrorResponse::from_exception(
+                UnsupportedOperationException("Video generation", device_type_to_string(server->get_device_type()))
+            );
+        }
+        return video_server->video_generations(request, cancel);
+    });
+}
+
 json Router::image_edits(const json& request, std::atomic<bool>* cancel) {
     std::optional<WrappedServer::RequestCancelScope> cancel_scope;
     if (cancel) {
         cancel_scope.emplace(utils::RequestCancelToken{cancel});
     }
     return execute_inference(request, [&](WrappedServer* server) {
+        json rejected = reject_video_model(server);
+        if (!rejected.is_null()) {
+            return rejected;
+        }
         auto image_server = dynamic_cast<IImageServer*>(server);
         if (!image_server) {
             return ErrorResponse::from_exception(
@@ -2457,6 +2514,10 @@ json Router::image_variations(const json& request, std::atomic<bool>* cancel) {
         cancel_scope.emplace(utils::RequestCancelToken{cancel});
     }
     return execute_inference(request, [&](WrappedServer* server) {
+        json rejected = reject_video_model(server);
+        if (!rejected.is_null()) {
+            return rejected;
+        }
         auto image_server = dynamic_cast<IImageServer*>(server);
         if (!image_server) {
             return ErrorResponse::from_exception(

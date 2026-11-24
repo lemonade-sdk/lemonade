@@ -736,14 +736,16 @@ backends::DownloadPolicy ModelManager::download_policy(const ModelInfo& info) co
     return artifacts_->download_policy(info);
 }
 
-void ModelManager::download_registered_model(const ModelInfo& info, bool do_not_upgrade, DownloadProgressCallback progress_callback) {
+void ModelManager::download_registered_model(const ModelInfo& info, bool do_not_upgrade,
+                                             DownloadProgressCallback progress_callback,
+                                             const utils::CancelToken& cancel) {
     if (config_.automatic_model_source && config_.automatic_model_source() &&
         download_policy(info) == backends::DownloadPolicy::Repository) {
         ingest_->pull(info.model_name, json::object(), do_not_upgrade, progress_callback,
-                      utils::CancelToken(), /*allow_backend_args=*/true);
+                      cancel, /*allow_backend_args=*/true);
         return;
     }
-    ingest_->fetch_model(info, do_not_upgrade, progress_callback);
+    ingest_->fetch_model(info, do_not_upgrade, progress_callback, cancel);
 }
 
 void ModelManager::register_model(const std::string& model_name,
