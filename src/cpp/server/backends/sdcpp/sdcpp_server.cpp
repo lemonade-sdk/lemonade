@@ -665,7 +665,7 @@ json SDServer::image_generations(const json& request) {
                   << sd_request.dump(2) << std::endl;
 
     // Image generation can take 20+ minutes for large models; avoid timeout.
-    return forward_request("/v1/images/generations", sd_request, 0);
+    return forward_request("/v1/images/generations", sd_request, HttpClient::kNoTimeout);
 }
 
 json SDServer::video_generations(const json& request, std::atomic<bool>* cancel) {
@@ -953,7 +953,7 @@ json SDServer::image_edits(const json& request) {
                   << " size=" << size
                   << std::endl;
 
-    return forward_multipart_request("/v1/images/edits", fields, 0);
+    return forward_multipart_request("/v1/images/edits", fields, HttpClient::kNoTimeout);
 }
 
 json SDServer::image_variations(const json& request) {
@@ -985,7 +985,7 @@ json SDServer::image_variations(const json& request) {
                   << " size=" << size
                   << std::endl;
 
-    return forward_multipart_request("/v1/images/edits", fields, 0);
+    return forward_multipart_request("/v1/images/edits", fields, HttpClient::kNoTimeout);
 }
 
 std::string SDServer::upscale_via_cli(
