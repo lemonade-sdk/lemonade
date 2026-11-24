@@ -133,8 +133,10 @@ jobs:
           GROUP: ${{ matrix.group }}
         run: |
           set -euo pipefail
+          # A release is uploaded once its checksums are on main, so the mirror
+          # never offers a file the current build would refuse.
           args=(--repo lemonade-sdk/backends --set "$MIRROR_SET" --group "$GROUP"
-                --workdir "$RUNNER_TEMP/msmirror")
+                --workdir "$RUNNER_TEMP/msmirror" --checksummed-only)
           if [[ "$EVENT" == workflow_run ]]; then
             [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "bad head_sha"; exit 1; }
             args+=(--lemonade-ref "$RELEASE_SHA" --lemonade-release newest)

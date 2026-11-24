@@ -101,6 +101,22 @@ class PinsTest(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 m.build_plan([versions], "trial", False, "none")
 
+    def test_checksummed_only_waits_for_checksums(self):
+        hashed = m.Item("small", "github/lemonade-sdk/ort-server/0.4.0", "src")
+        hashed.files.append({"name": "a.zip", "size": 1, "sha256": "", "url": "u"})
+        unhashed = m.Item("small", "github/o/r/v9", "src")
+        unhashed.files.append({"name": "b.zip", "size": 1, "sha256": "", "url": "u"})
+        installers = m.Item("small", f"github/{m.LEMONADE_REPO}/v1", "src")
+        installers.files.append(
+            {"name": "lemonade.msi", "size": 1, "sha256": "", "url": "u"}
+        )
+        rock = m.Item("therock", "therock/10.2.0", "src")
+        rock.files.append({"name": "t.tar.gz", "size": 1, "sha256": "", "url": "u"})
+        kept = m.checksummed_only([hashed, unhashed, installers, rock], [VERSIONS])
+        self.assertEqual(
+            [i.folder for i in kept], [hashed.folder, installers.folder, rock.folder]
+        )
+
     def test_new_container_backends_are_skipped(self):
         versions = {"aim": {"rocm": "2026.11.0@sha256:" + "0" * 64}}
         self.assertEqual(m.pinned_releases(versions, None, True), {})

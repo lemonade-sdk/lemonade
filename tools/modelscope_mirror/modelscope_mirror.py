@@ -377,6 +377,27 @@ def build_plan(
     return items
 
 
+def checksummed_only(items: list[Item], all_versions: list[dict]) -> list[Item]:
+    """Drop GitHub releases that no versions file has checksums for yet.
+
+    lemond refuses those releases from ModelScope until their checksums merge, so
+    uploading them first only opens a window where the mirror has a file the
+    build will not install. Lemonade's own installers and TheRock are kept.
+    """
+    kept = []
+    for item in items:
+        if item.folder.startswith("github/") and not item.folder.startswith(
+            f"github/{LEMONADE_REPO}/"
+        ):
+            if not any(
+                pinned_sha256(all_versions, item.folder, f["name"]) for f in item.files
+            ):
+                log(f"  waiting for checksums before mirroring: {item.folder}")
+                continue
+        kept.append(item)
+    return kept
+
+
 def generated_checksums(versions: dict) -> dict:
     """checksums.modelscope: the hashes --write-checksums maintains."""
     return versions.get("checksums", {}).get("modelscope", {})
@@ -658,6 +679,11 @@ def main() -> int:
         help="upload nothing; fail if any planned file is missing from ModelScope",
     )
     ap.add_argument(
+        "--checksummed-only",
+        action="store_true",
+        help="skip GitHub releases that have no checksums.modelscope entry yet",
+    )
+    ap.add_argument(
         "--write-checksums",
         action="store_true",
         help="rewrite the checksums section of --versions-file to match its pins",
@@ -696,6 +722,8 @@ def main() -> int:
     items = build_plan(
         all_versions, args.set, args.include_pwilkin, args.lemonade_release, args.group
     )
+    if args.checksummed_only:
+        items = checksummed_only(items, all_versions)
     if args.group:
         items = [i for i in items if i.group == args.group]
         if not items:
