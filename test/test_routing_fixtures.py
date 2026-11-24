@@ -162,6 +162,22 @@ class RoutingFixtureSchemaTest(unittest.TestCase):
         ]
         self.assertTrue(list(validator.iter_errors(base)))
 
+    def test_candidates_are_unbounded_without_cost(self):
+        """Only cost lookups are capped; other policies keep any number of
+        candidates, as the parser does."""
+        validator = jsonschema.Draft202012Validator(self.route_policy_schema)
+        names = [f"candidate-{index}" for index in range(65)]
+        policy = {
+            "version": "1",
+            "recipe": "collection.router",
+            "routing": {
+                "candidates": names,
+                "default_model": names[0],
+                "router": {"type": "llm", "model": "m", "prompt": "p"},
+            },
+        }
+        self.assertEqual(list(validator.iter_errors(policy)), [])
+
     def test_on_truncation_only_on_model_backed_types(self):
         """The parser refuses on_truncation outside classifier and zero_shot;
         the schema must refuse the same documents."""

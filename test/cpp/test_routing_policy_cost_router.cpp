@@ -463,9 +463,9 @@ static void test_desugar_rejects_unknown_router_type() {
     check("desugar: an unknown routing.router.type is rejected", threw);
 }
 
-// /v1/routing/validate parses routing.candidates with an identity resolver —
-// no registered-model count bounds it there — so the cap is enforced in the
-// parser itself, not only as documentation in the schema's maxItems.
+// /v1/routing/validate parses routing.candidates with an identity resolver, so
+// no registered-model count bounds a cost_select list there: the cap on the
+// cost labels cost_select builds from the candidates is enforced in the parser.
 static void test_candidates_cap_enforced() {
     json collection = l0b_collection();
     std::vector<std::string> many;
@@ -478,6 +478,29 @@ static void test_candidates_cap_enforced() {
     bool threw = false;
     try { parse_l0b(collection); } catch (const std::invalid_argument&) { threw = true; }
     check("cost_select: routing.candidates over the cap (65) is rejected", threw);
+}
+
+// The cap bounds cost lookups only, so a saved policy that never looks up a
+// price keeps any number of candidates.
+static void test_candidates_cap_spares_other_policies() {
+    json collection = l0b_collection();
+    std::vector<std::string> many;
+    for (int i = 0; i < 65; ++i) {
+        many.push_back("Candidate-" + std::to_string(i));
+    }
+    std::vector<std::string> components = many;
+    components.push_back("Router-LLM");
+    collection["components"] = components;
+    collection["routing"]["candidates"] = many;
+    collection["routing"]["default_model"] = many[0];
+    collection["routing"]["router"] = json{
+        {"type", "llm"},
+        {"model", "Router-LLM"},
+        {"prompt", "Pick the best model."},
+    };
+    bool threw = false;
+    try { parse_l0b(collection); } catch (const std::invalid_argument&) { threw = true; }
+    check("llm router: 65 candidates are accepted", !threw);
 }
 
 static void test_explicit_cost_labels_must_be_unique_candidates() {
@@ -576,6 +599,7 @@ int main() {
     test_desugar_rejects_model_or_prompt();
     test_desugar_rejects_unknown_router_type();
     test_candidates_cap_enforced();
+    test_candidates_cap_spares_other_policies();
     test_explicit_cost_labels_must_be_unique_candidates();
     test_e2e_routes_to_cheapest_and_reports_its_own_cost();
     test_e2e_no_data_falls_open_to_default_model();

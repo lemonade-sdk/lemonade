@@ -160,13 +160,11 @@ void require_declared(const std::string& resolved,
     }
 }
 
-// Cap on routing.candidates. Enforced here rather than only in the schema
-// (schema, maxItems) because /v1/routing/validate calls this parser directly
-// with an identity component resolver — no registered-model count bounds it
-// there — and each candidate costs one cost_of()/registry lookup per
-// evaluate() for a cost_select policy, so an unbounded list is a cheap way
-// to drive many registry misses per request. Far above any real policy.
-constexpr std::size_t kMaxCandidates = 64;
+// Cap on a cost classifier's labels, which cost_select fills from
+// routing.candidates. Each label costs one cost_of() lookup per evaluate(), and
+// /v1/routing/validate accepts any name, so the list is bounded here as well as
+// in the schema. Other policies keep any number of candidates.
+constexpr std::size_t kMaxCostLabels = 64;
 
 std::vector<std::string> parse_candidates(const json& routing,
                                           const std::set<std::string>& declared,
@@ -174,10 +172,6 @@ std::vector<std::string> parse_candidates(const json& routing,
     const json& value = required_field(routing, "candidates", "routing");
     if (!value.is_array() || value.empty()) {
         throw std::invalid_argument("routing.candidates must be a non-empty array");
-    }
-    if (value.size() > kMaxCandidates) {
-        throw std::invalid_argument("routing.candidates must not exceed " +
-                                    std::to_string(kMaxCandidates) + " entries");
     }
     std::vector<std::string> candidates;
     std::set<std::string> seen;
@@ -419,9 +413,9 @@ json parse_classifier_configs(const json& routing,
             if (!labels.is_array()) {
                 throw std::invalid_argument(path + ".labels must be an array");
             }
-            if (labels.size() > kMaxCandidates) {
+            if (labels.size() > kMaxCostLabels) {
                 throw std::invalid_argument(path + ".labels must not exceed " +
-                                            std::to_string(kMaxCandidates) + " entries");
+                                            std::to_string(kMaxCostLabels) + " entries");
             }
             std::set<std::string> resolved_labels;
             for (std::size_t label_index = 0; label_index < labels.size(); ++label_index) {
