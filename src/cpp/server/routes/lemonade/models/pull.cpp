@@ -232,7 +232,10 @@ public:
             // The registry is resolved once, up front, so download, cache layout and
             // later refresh agree on it.
             try {
-                lemon::apply_default_pull_source(req.body, ctx_.config->default_model_source());
+                lemon::apply_default_pull_source(req.body, [this] {
+                    return remote_registry_source_name(
+                        ctx_.model_manager->download_source_for(ModelInfo{}));
+                });
             } catch (const std::invalid_argument& e) {
                 write_plain_error(res, kInvalidSource, e.what());
                 return;

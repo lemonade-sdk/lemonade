@@ -24,6 +24,7 @@ struct CatalogSetDeps {
     // Row policy shared by every JSON registry document; each catalog applies
     // what distinguishes it.
     RegistryRowRules registry_rows;
+    std::function<void(ModelInfo&)> resolve_builtin_source;
     std::function<RegistryDocuments::Pin()> pin_registries;
     std::function<std::vector<ModelInfo>(const CatalogAccumulator&)> scan_extra_models;
 

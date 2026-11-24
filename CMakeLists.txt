@@ -224,6 +224,7 @@ set(LEMON_BACKENDS
     # "<recipe>|<stem>"
     "llamacpp|llamacpp"
     "llamacpp-hrx|hrx"
+    "loom|loom"
     "whispercpp|whispercpp"
     "moonshine|moonshine"
     "kokoro|kokoro"
@@ -2819,6 +2820,15 @@ if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_hrx_contr
     target_compile_definitions(test_hrx_contract PRIVATE
         HRX_TEST_CATALOG_PATH="${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/server_models.json")
     add_cpp_ci_test(HrxContractTest CI ON COMMAND test_hrx_contract)
+endif()
+
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_loom_contract.cpp")
+    add_executable(test_loom_contract test/cpp/test_loom_contract.cpp)
+    target_link_libraries(test_loom_contract PRIVATE lemonade-server-core)
+    target_compile_definitions(test_loom_contract PRIVATE
+        LOOM_TEST_CATALOG_PATH="${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/server_models.json"
+        LOOM_TEST_BACKEND_VERSIONS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backend_versions.json")
+    add_cpp_ci_test(LoomContractTest CI ON COMMAND test_loom_contract)
 endif()
 
 # Job engine pure core: the `when`/`branch` expression evaluator + reference

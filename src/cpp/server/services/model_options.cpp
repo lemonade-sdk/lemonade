@@ -7,6 +7,7 @@
 #include <lemon/utils/aixlog.hpp>
 
 #include "lemon/auto_tune.h"
+#include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/llamacpp/llamacpp_rulehead.h"
 #include "lemon/backends/llamacpp/llamacpp_systemone.h"
 #include "lemon/model_manager.h"
@@ -91,10 +92,16 @@ void respond_with_model_options(ServerContext& ctx, const std::string& id,
         effective_json["model_name"] = model_id;
         defaults_json["model_name"] = model_id;
 
-        const int64_t auto_ctx = resolve_auto_ctx_size(effective, info);
-        const json effective_ctx = effective.get_option("ctx_size");
-        int64_t resolved_ctx = auto_ctx != -2 ? auto_ctx
-            : (effective_ctx.is_number() ? effective_ctx.get<int64_t>() : -1);
+        const auto* desc = backends::descriptor_for(info.recipe);
+        int64_t resolved_ctx = -1;
+        if (desc != nullptr && !desc->uses_ctx_size) {
+            resolved_ctx = info.max_context_window > 0 ? info.max_context_window : -1;
+        } else {
+            const int64_t auto_ctx = resolve_auto_ctx_size(effective, info);
+            const json effective_ctx = effective.get_option("ctx_size");
+            resolved_ctx = auto_ctx != -2 ? auto_ctx
+                : (effective_ctx.is_number() ? effective_ctx.get<int64_t>() : -1);
+        }
         // LlamaCppServer::load caps it there; the Router cannot, because the
         // stored options must keep matching later requests or every load reloads.
         if (is_encoder_decision_model(info)) {

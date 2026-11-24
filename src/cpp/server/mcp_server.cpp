@@ -219,10 +219,12 @@ std::string unique_token() {
 
 }  // namespace
 
-McpServer::McpServer(Router* router, ModelManager* model_manager, EnsureLoadedFn ensure_loaded)
+McpServer::McpServer(Router* router, ModelManager* model_manager,
+                     EnsureLoadedFn ensure_loaded, ServerToolFn server_tool)
     : router_(router),
       model_manager_(model_manager),
-      ensure_loaded_(std::move(ensure_loaded)) {
+      ensure_loaded_(std::move(ensure_loaded)),
+      server_tool_(std::move(server_tool)) {
     tools_ = build_tools();
 }
 
@@ -1124,8 +1126,136 @@ json McpServer::tool_list_models(const json& arguments) {
 std::vector<McpTool> McpServer::build_tools() {
     return {
         McpTool(
+            []() -> json {
+                json descriptor = json{
+                            {"name", "lemonade_get_model_info"},
+                            {"annotations", {
+                                {"readOnlyHint", true},
+                                {"destructiveHint", false},
+                                {"openWorldHint", false},
+                            }},
+                            {"description",
+                             "Get the server's detailed record for one exact model ID returned "
+                             "by lemonade_list_models. Returns the same model metadata used by "
+                             "the REST model APIs, including recipe, download state, components, "
+                             "recipe options, and Router metadata when present."},
+                            {"inputSchema", {
+                                {"type", "object"},
+                                {"required", json::array({"model_name"})},
+                                {"additionalProperties", false},
+                                {"properties", {
+                                    {"model_name", {{"type", "string"},
+                                                    {"description", "Exact model ID from lemonade_list_models."}}},
+                                }},
+                            }},
+                        };
+                descriptor["_meta"]["lemonade/result"]["description"] =
+                    "Returns a result from lemonade_get_model_info, including structured content on success.";
+                for (auto& item : descriptor["inputSchema"]["properties"].items()) {
+                    auto& property = item.value();
+                    if (property.is_object() && !property.contains("description")) {
+                        property["description"] = "Argument " + item.key() +
+                            " for the " + descriptor["name"].get<std::string>() + " tool.";
+                    }
+                }
+                return descriptor;
+            }(),
+            [this](const json& arguments) {
+                return server_tool_("lemonade_get_model_info", arguments);
+            }),
+        McpTool(
+            []() -> json {
+                json descriptor = json{
+                            {"name", "lemonade_load_model"},
+                            {"annotations", {
+                                {"readOnlyHint", false},
+                                {"destructiveHint", false},
+                                {"openWorldHint", true},
+                            }},
+                            {"description",
+                             "Explicitly load a Lemonade model using the same implementation as "
+                             "POST /v1/load. The model_name must be exact. A known registry model "
+                             "that is not local may be downloaded by the existing load path. "
+                             "collection.router models are virtual and are acknowledged without "
+                             "starting a Router backend process. `options` contains ephemeral "
+                             "recipe-specific load options such as llamacpp_backend or "
+                             "llamacpp_device; they are not persisted by this MCP tool."},
+                            {"inputSchema", {
+                                {"type", "object"},
+                                {"required", json::array({"model_name"})},
+                                {"additionalProperties", false},
+                                {"properties", {
+                                    {"model_name", {{"type", "string"},
+                                                    {"description", "Exact model ID from lemonade_list_models."}}},
+                                    {"ctx_size", {{"type", "integer"},
+                                                  {"description", "Optional context size. Use -1 for automatic sizing."}}},
+                                    {"pinned", {{"type", "boolean"},
+                                                {"description", "Optional residency pin state for this load."}}},
+                                    {"options", {{"type", "object"},
+                                                 {"additionalProperties", true},
+                                                 {"description", "Optional recipe-specific load options. Applied only to this load; model/model_name/save_options/pinned are not allowed here."}}},
+                                }},
+                            }},
+                        };
+                descriptor["_meta"]["lemonade/result"]["description"] =
+                    "Returns a result from lemonade_load_model, including structured content on success.";
+                for (auto& item : descriptor["inputSchema"]["properties"].items()) {
+                    auto& property = item.value();
+                    if (property.is_object() && !property.contains("description")) {
+                        property["description"] = "Argument " + item.key() +
+                            " for the " + descriptor["name"].get<std::string>() + " tool.";
+                    }
+                }
+                return descriptor;
+            }(),
+            [this](const json& arguments) {
+                return server_tool_("lemonade_load_model", arguments);
+            }),
+        McpTool(
+            []() -> json {
+                json descriptor = json{
+                            {"name", "lemonade_unload_model"},
+                            {"annotations", {
+                                {"readOnlyHint", false},
+                                {"destructiveHint", false},
+                                {"openWorldHint", false},
+                            }},
+                            {"description",
+                             "Unload exactly one named model using the same implementation as "
+                             "POST /v1/unload. model_name is mandatory: this MCP tool never "
+                             "exposes the REST endpoint's empty-name unload-all behavior."},
+                            {"inputSchema", {
+                                {"type", "object"},
+                                {"required", json::array({"model_name"})},
+                                {"additionalProperties", false},
+                                {"properties", {
+                                    {"model_name", {{"type", "string"},
+                                                    {"description", "Exact model ID to unload."}}},
+                                }},
+                            }},
+                        };
+                descriptor["_meta"]["lemonade/result"]["description"] =
+                    "Returns a result from lemonade_unload_model, including structured content on success.";
+                for (auto& item : descriptor["inputSchema"]["properties"].items()) {
+                    auto& property = item.value();
+                    if (property.is_object() && !property.contains("description")) {
+                        property["description"] = "Argument " + item.key() +
+                            " for the " + descriptor["name"].get<std::string>() + " tool.";
+                    }
+                }
+                return descriptor;
+            }(),
+            [this](const json& arguments) {
+                return server_tool_("lemonade_unload_model", arguments);
+            }),
+        McpTool(
             json{
                 {"name", "lemonade_list_models"},
+                {"annotations", {
+                    {"readOnlyHint", true},
+                    {"destructiveHint", false},
+                    {"openWorldHint", false},
+                }},
                 {"description",
                  "List models known to the Lemonade server. ALWAYS call this "
                  "first if you don't already know the exact model name to use "

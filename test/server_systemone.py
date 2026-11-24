@@ -322,8 +322,11 @@ class SystemOneTests(ServerTestBase):
                 ],
             },
         }
+        # See _pull_model_streaming in utils/server_base.py for do_not_upgrade.
         response = requests.post(
-            f"http://localhost:{PORT}/api/v1/pull", json=policy, timeout=1800
+            f"http://localhost:{PORT}/api/v1/pull",
+            json={**policy, "do_not_upgrade": True},
+            timeout=1800,
         )
         self.assertEqual(response.status_code, 200, f"register failed: {response.text}")
         try:
@@ -590,8 +593,11 @@ class SystemOneTests(ServerTestBase):
                 ],
             },
         }
+        # See _pull_model_streaming in utils/server_base.py for do_not_upgrade.
         response = requests.post(
-            f"http://localhost:{PORT}/api/v1/pull", json=policy, timeout=1800
+            f"http://localhost:{PORT}/api/v1/pull",
+            json={**policy, "do_not_upgrade": True},
+            timeout=1800,
         )
         self.assertEqual(response.status_code, 200, f"register failed: {response.text}")
         try:
