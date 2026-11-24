@@ -2,6 +2,8 @@
 #include <lemon/models/json_catalog.h>
 
 #include <lemon/backends/backend_descriptor_registry.h>
+#include <lemon/backends/backend_ops.h>
+#include <lemon/backends/backend_registry.h>
 #include <lemon/canonical_id.h>
 #include <lemon/models/registry_types.h>
 #include <lemon/utils/aixlog.hpp>
@@ -157,15 +159,6 @@ std::optional<ModelInfo> parse_registry_row(const std::string& key, const json& 
         info.auto_update = row["auto_update"].get<bool>();
     }
 
-    // A repo pointer means the cached manifest holds the components, not this row.
-    if (is_model_collection_recipe(info.recipe) &&
-        (info.components.empty() || !info.checkpoint().empty())) {
-        info.components.clear();
-        if (rules.populate_components) {
-            rules.populate_components(info);
-        }
-    }
-
     if (row.contains("labels") && row["labels"].is_array()) {
         for (const auto& label : row["labels"]) {
             info.labels.push_back(label.get<std::string>());
@@ -178,6 +171,25 @@ std::optional<ModelInfo> parse_registry_row(const std::string& key, const json& 
         if (!illegal.empty()) {
             LOG(ERROR, "ModelManager") << "Skipping " << illegal << std::endl;
             return std::nullopt;
+        }
+    }
+    backends::ops_for(info.recipe)->add_implied_checkpoints(info);
+
+    if (rules.resolve_source) {
+        try {
+            rules.resolve_source(info);
+        } catch (const std::exception& e) {
+            LOG(ERROR, "ModelManager")
+                << "  EXCEPTION selecting a source for '" << info.model_name << "': " << e.what()
+                << std::endl;
+        }
+    }
+    // A repo pointer means the cached manifest holds the components, not this row.
+    if (is_model_collection_recipe(info.recipe) &&
+        (info.components.empty() || !info.checkpoint().empty())) {
+        info.components.clear();
+        if (rules.populate_components) {
+            rules.populate_components(info);
         }
     }
 

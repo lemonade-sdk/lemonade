@@ -322,8 +322,11 @@ class SystemOneTests(ServerTestBase):
                 ],
             },
         }
+        # See _pull_model_streaming in utils/server_base.py for do_not_upgrade.
         response = requests.post(
-            f"http://localhost:{PORT}/api/v1/pull", json=policy, timeout=1800
+            f"http://localhost:{PORT}/api/v1/pull",
+            json={**policy, "do_not_upgrade": True},
+            timeout=1800,
         )
         self.assertEqual(response.status_code, 200, f"register failed: {response.text}")
         try:
@@ -541,9 +544,9 @@ class SystemOneTests(ServerTestBase):
                 "The answer must list the options in the order they were asked",
             )
             scores.append(probabilities)
-        # Re-sorted options would make the two requests identical. Julia-1 is
-        # deterministic and scores options by position; an order-invariant model
-        # gives equal scores and fails this check.
+        # Re-sorted options would make the two requests identical. The decision
+        # model is deterministic and scores options by position; an
+        # order-invariant model gives equal scores and fails this check.
         self.assertNotEqual(scores[0], scores[1])
         print(f"[OK] option order: {scores[0]} vs {scores[1]}")
 
@@ -590,8 +593,11 @@ class SystemOneTests(ServerTestBase):
                 ],
             },
         }
+        # See _pull_model_streaming in utils/server_base.py for do_not_upgrade.
         response = requests.post(
-            f"http://localhost:{PORT}/api/v1/pull", json=policy, timeout=1800
+            f"http://localhost:{PORT}/api/v1/pull",
+            json={**policy, "do_not_upgrade": True},
+            timeout=1800,
         )
         self.assertEqual(response.status_code, 200, f"register failed: {response.text}")
         try:

@@ -1,12 +1,14 @@
 #pragma once
 
 #include <map>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 #include <nlohmann/json.hpp>
 #include "lemon/model_types.h"
 #include "lemon/recipe_backend_def.h"
+#include "lemon/utils/container_manager.h"
 
 namespace lemon {
 
@@ -44,6 +46,10 @@ struct ContainerPolicy {
     std::string image;
     std::vector<std::string> devices;   // device nodes the container can open, e.g. "/dev/dri"
     std::vector<std::string> cap_add;   // capabilities given back after --cap-drop=all
+    std::optional<utils::ContainerUser> user;  // nullopt when the image runs as root
+    // Repositories the image was published under before, whose images an
+    // older install may still hold.
+    std::vector<std::string> former_images;
 };
 
 // What one backend is and where it comes from, shown to people choosing among
@@ -150,10 +156,15 @@ struct BackendDescriptor {
     // The backends in `support` that run from an OCI image, keyed by backend name.
     std::map<std::string, ContainerPolicy> containers;
 
-    // {mode, capability}: a mode from supported_modes this backend serves only
-    // for models that also carry the capability label, and the only mode such a
-    // model may deploy in. Registration refuses the mode without the label.
-    std::vector<std::pair<std::string, std::string>> mode_capability_requirements;
+    // {mode, capabilities}: a mode from supported_modes this backend serves only
+    // for models that also carry one of the capability labels, and the only mode
+    // such a model may deploy in. Registration refuses the mode without one.
+    std::vector<std::pair<std::string, std::vector<std::string>>> mode_capability_requirements;
+
+    // The common subprocess launcher applies *_device selection via the
+    // CUDA/ROCm/Vulkan visibility environment for this native GGML recipe.
+    // Engines with native selection (llama.cpp, sd.cpp) keep their own path.
+    bool common_gpu_visibility = false;
 
     const ContainerPolicy* container_for(const std::string& backend) const {
         auto it = containers.find(backend);

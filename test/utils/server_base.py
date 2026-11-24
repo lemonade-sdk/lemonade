@@ -101,7 +101,7 @@ def parse_args(additional_args=None, modality=None):
     parser.add_argument(
         "--backend",
         type=str,
-        help="Backend for the wrapped server (vulkan, rocm, cpu, hybrid, npu, etc.)",
+        help="Backend for the wrapped server (vulkan, rocm, cpu, npu, etc.)",
     )
 
     # Use parse_known_args to ignore unittest arguments
@@ -287,10 +287,15 @@ def _pull_model_streaming(model_name, port):
     Large models (10+ GB) exceed any fixed read timeout on the synchronous
     /pull; the progress events keep the connection alive so the timeout only
     applies between events, not to the whole download.
+
+    do_not_upgrade reuses a model that is already downloaded, as the CLI does by
+    default. Without it an FLM model is pulled with `flm pull --force`, which
+    re-downloads every file from Hugging Face on each call.
     """
     with requests.post(
         f"http://localhost:{port}/api/v1/pull",
-        json={"model_name": model_name, "stream": True},
+        json={"model_name": model_name, "stream": True, "do_not_upgrade": True},
+        headers=_auth_headers(),
         stream=True,
         timeout=TIMEOUT_MODEL_OPERATION,
     ) as response:

@@ -54,6 +54,16 @@ int main() {
               "modelscope reflected in snapshot");
     }
 
+    {
+        RuntimeConfig config(json::object());
+        config.set(json{{"default_model_source", "auto"}});
+        check(config.default_model_source() == "auto" &&
+                  config.snapshot()["default_model_source"] == "auto",
+              "auto is accepted and round-trips as the configured policy");
+        check(!lemon::is_remote_registry_source("auto"),
+              "auto is a policy and cannot be persisted as a registry");
+    }
+
     // Unknown registry names are rejected.
     {
         RuntimeConfig config(json{{"default_model_source", "huggingface"}});
@@ -96,13 +106,65 @@ int main() {
               "registry checkpoint is left untouched");
     }
 
+    // A rooted path is a file, not owner/repo, so it never gets a registry: on
+    // Linux every local path has a '/' and no ':', the shape of a repo id.
+    {
+        json posix = {{"model_name", "user.M"}, {"recipe", "llamacpp"},
+                      {"checkpoint", "/models/router-f16.gguf"}};
+        apply_default_pull_source(posix, "modelscope");
+        json unc = {{"model_name", "user.M"}, {"recipe", "llamacpp"},
+                    {"checkpoint", R"(\\server\models\router-f16.gguf)"}};
+        apply_default_pull_source(unc, "modelscope");
+        check(!posix.contains("source") && !unc.contains("source"),
+              "a rooted local path inherits no registry source");
+        check(!lemon::checkpoint_looks_like_repo_id("/models/router-f16.gguf") &&
+                  lemon::checkpoint_looks_like_repo_id("owner/repo:router-f16.gguf"),
+              "a rooted path is not a repo id; owner/repo still is");
+    }
+
+    // A scheme names the host like a URL does, but keeps the variant, and every
+    // checkpoint of the model drops it, since the download splits at the first ':'.
+    {
+        json req = {{"model_name", "user.M"}, {"recipe", "llamacpp"},
+                    {"checkpoints", {{"main", "hf://org/router-GGUF:router-f16.gguf"},
+                                     {"rulehead", "hf://org/router-GGUF:rulehead.bin"}}}};
+        apply_default_pull_source(req, "modelscope");
+        check(req["checkpoints"]["main"] == "org/router-GGUF:router-f16.gguf" &&
+                  req["checkpoints"]["rulehead"] == "org/router-GGUF:rulehead.bin" &&
+                  req.value("source", "") == "huggingface",
+              "hf:// is stripped from every checkpoint and becomes the source");
+
+        json ms = {{"model_name", "user.M"}, {"recipe", "llamacpp"},
+                   {"checkpoint", "ms://org/router-GGUF:router-f16.gguf"}};
+        apply_default_pull_source(ms, "huggingface");
+        check(ms["checkpoint"] == "org/router-GGUF:router-f16.gguf" &&
+                  ms.value("source", "") == "modelscope",
+              "ms:// names ModelScope over the configured default");
+
+        json clash = {{"model_name", "user.M"}, {"recipe", "llamacpp"},
+                      {"checkpoint", "hf://org/router-GGUF:router-f16.gguf"},
+                      {"source", "modelscope"}};
+        bool threw = false;
+        try {
+            apply_default_pull_source(clash, "huggingface");
+        } catch (const std::invalid_argument&) {
+            threw = true;
+        }
+        check(threw, "a scheme that contradicts an explicit source is refused");
+    }
+
     // An explicit source is never overridden by the default.
     {
         json req = {{"model_name", "user.M"}, {"recipe", "llamacpp"},
                     {"checkpoint", "owner/repo"}, {"source", "huggingface"}};
-        apply_default_pull_source(req, "modelscope");
+        bool resolved_default = false;
+        apply_default_pull_source(req, [&] {
+            resolved_default = true;
+            return "modelscope";
+        });
         check(req["source"] == "huggingface",
               "explicit source overrides the configured default");
+        check(!resolved_default, "explicit source bypasses a pending automatic decision");
     }
 
     // An explicit registry_source alone suppresses default injection.

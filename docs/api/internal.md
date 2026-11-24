@@ -185,6 +185,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 | `auto_evict` | No | Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `auto_evict_threshold_pct` | No | Defaults to `0.9`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `auto_update_models` | No | Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `backend_source` | No | Defaults to `"github"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `broadcast` | No | Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `config_version` | No | Defaults to `2`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `ctx_size` | No | Defaults to `-1`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -206,6 +207,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 | `log_level` | No | Defaults to `"info"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `log_max_file_size_mb` | No | Defaults to `10`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `log_max_files` | No | Defaults to `5`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `loom` | No | `loom` settings; send only the keys to change. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `max_loaded_models` | No | Defaults to `1`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `model_catalogs` | No | Defaults to `[]`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `models_dir` | No | Defaults to `"auto"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -693,7 +695,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 
 This endpoint does not take any parameters.
 
-An alias stands in for its target in the `model` field of inference requests and of [`POST /v1/load`](./lemonade.md#post-v1load) and [`POST /v1/unload`](./lemonade.md#post-v1unload); the Ollama and Anthropic gateways do not resolve aliases. Aliases live in `<cache_dir>/aliases.json`; see [Model Aliases](../guide/configuration/custom-models.md).
+An alias stands in for its target in the `model` field of inference requests on every gateway, of [`POST /v1/load`](./lemonade.md#post-v1load) and [`POST /v1/unload`](./lemonade.md#post-v1unload), and of Ollama's [`POST /api/show`](./ollama.md#post-apishow); Ollama's `/api/pull` and `/api/delete` take only model names. Aliases live in `<cache_dir>/aliases.json`; see [Model Aliases](../guide/configuration/custom-models.md).
 
 ### Example
 

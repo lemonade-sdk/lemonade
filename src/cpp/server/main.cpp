@@ -16,6 +16,7 @@
 #include <chrono>
 #include <csignal>
 #include <iostream>
+#include <string>
 #include <thread>
 
 #if defined(__GLIBC__)

@@ -601,6 +601,7 @@ protected:
     void stop_server();
 
     bool load_cancelled() const { return load_cancel_ && load_cancel_->load(); }
+    std::atomic<bool>* load_cancel_flag() const { return load_cancel_; }
 
     // Choose an available port
     int choose_port();

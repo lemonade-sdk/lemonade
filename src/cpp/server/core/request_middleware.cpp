@@ -82,9 +82,22 @@ RequestMiddleware::RequestMiddleware(RuntimeConfig* config, const RouteRegistry*
     const char* api_key_env = std::getenv("LEMONADE_API_KEY");
     api_key_ = api_key_env ? std::string(api_key_env) : "";
 
-    // Read admin API key - if not set, defaults to regular API key value
+    // An empty admin key is unset and must not disable authentication.
     const char* admin_api_key_env = std::getenv("LEMONADE_ADMIN_API_KEY");
-    admin_api_key_ = admin_api_key_env ? std::string(admin_api_key_env) : api_key_;
+    admin_api_key_ = (admin_api_key_env && *admin_api_key_env)
+        ? std::string(admin_api_key_env)
+        : api_key_;
+}
+
+bool RequestMiddleware::is_admin_request(const httplib::Request& req) const {
+    if (admin_api_key_.empty()) {
+        return true;
+    }
+    if (!req.has_header("Authorization") ||
+        req.get_header_value("Authorization").size() < 7) {
+        return false;
+    }
+    return httplib::get_bearer_token_auth(req) == admin_api_key_;
 }
 
 void RequestMiddleware::install(httplib::Server& server) {
@@ -205,6 +218,7 @@ httplib::Server::HandlerResponse RequestMiddleware::authenticate(const httplib::
         }
     }
 
+    telemetry::g_current_route_decision.clear();
     telemetry::g_incoming_client_id.clear();
     telemetry::g_incoming_session_id.clear();
 
@@ -261,7 +275,8 @@ httplib::Server::HandlerResponse RequestMiddleware::authenticate(const httplib::
         }
     } else if ((is_api_route || is_metrics_route) && req.method != "OPTIONS") {
         if (!api_key_.empty()) {
-            if ((auth_token != api_key_) && (auth_token != admin_api_key_)) {
+            if (auth_token != api_key_ &&
+                (admin_api_key_.empty() || auth_token != admin_api_key_)) {
                 res.status = 401;
                 res.set_content("{\"error\": \"Invalid or missing API key\"}", "application/json");
                 return httplib::Server::HandlerResponse::Handled;

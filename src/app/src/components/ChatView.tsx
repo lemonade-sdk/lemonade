@@ -12,6 +12,7 @@ import { backendCompactLabel, capabilityColor } from '../modelPresentation';
 import { scheduleIdleWork } from '../startupScheduler';
 import { useI18n } from '../i18n';
 import ChatReadinessProgress from './ChatReadinessProgress';
+import ContextMeter from './ContextMeter';
 
 const Model3DResult = lazy(() => import(/* webpackChunkName: "chat-model3d" */ './Model3DResult'));
 const LogViewer = lazy(() => import(/* webpackChunkName: "chat-logs" */ './LogViewer'));
@@ -65,7 +66,7 @@ import { prepareToolCallsForStorage } from '../features/chatHistory/toolCallPers
 import { ConversationImageRegistry } from '../features/images/imageRegistry';
 import type { DownloadListItem } from '../features/downloadManager/downloadStore';
 import { findModelInfoByName, getAudioTranscriptionComponent, getPrimaryChatComponent, getVisionChatComponent, isCollectionModel, virtualLoadedCollection } from '../features/collections/collectionModels';
-import { LEMONADE_MCP_SERVER_ID, LEMONADE_MCP_TOOL_COUNT, MAX_MCP_SERVER_SELECTION, type McpServerToolOption } from '../tools/mcpMetadata';
+import { LEMONADE_MCP_SERVER_ID, LEMONADE_MCP_TOOL_COUNT, MAX_MCP_SERVER_SELECTION, WEB_SEARCH_TOOL_NAME, isDefaultMcpTool, type McpServerToolOption } from '../tools/mcpMetadata';
 import { isRouterModelInfo, preflightRouter, routerPreflightError } from '../features/router/routerRuntime';
 import { TTS_SETTINGS_EVENT, loadTtsPlaybackSettings, ttsVoiceFromRecipeOptions } from '../features/audio/ttsSettings';
 import { selectDictationModel, updateDraftWithDictation } from '../features/audio/dictationModels';
@@ -472,7 +473,7 @@ function mcpToolNamesForServers(servers: McpServerToolOption[], serverIds: strin
   const selected = new Set(serverIds);
   return servers
     .filter(server => selected.has(server.id))
-    .flatMap(server => server.toolOptions.map(tool => tool.runtimeName));
+    .flatMap(server => server.toolOptions.map(tool => tool.runtimeName).filter(isDefaultMcpTool));
 }
 
 function modelModeBadge(capability: ModelCapability, recipe?: string | null): string {
@@ -1037,6 +1038,9 @@ const ChatView: React.FC<ChatViewProps> = ({
   });
   const [selectedMcpServerIds, setSelectedMcpServerIds] = useState<string[]>(() => loadScopedStringArray(MCP_SERVER_IDS_KEY) || DEFAULT_MCP_SERVER_IDS);
   const [selectedMcpToolNames, setSelectedMcpToolNames] = useState<string[] | null>(() => loadScopedStringArray(MCP_TOOL_NAMES_KEY));
+  const mcpConfigurationVersionRef = useRef(0);
+  const [webSearchToggleBusy, setWebSearchToggleBusy] = useState(false);
+  const [webSearchToggleError, setWebSearchToggleError] = useState('');
   const [mcpPickerOpen, setMcpPickerOpen] = useState(false);
   const [mcpPickerTab, setMcpPickerTab] = useState<'lemonade' | 'external'>('lemonade');
   const [addMenuOpen, setAddMenuOpen] = useState(false);
@@ -1712,11 +1716,13 @@ const ChatView: React.FC<ChatViewProps> = ({
   const canUseAudioInput = currentIsOmniCollection || currentCapability === 'audio' || (currentCapability === 'chat' && supportsChatAudioInput);
 
   const persistMcpEnabled = useCallback((next: boolean) => {
+    mcpConfigurationVersionRef.current += 1;
     setUseMcp(next);
     try { localStorage.setItem(scopedKey(MCP_ENABLED_KEY), String(next)); } catch { /* ignore */ }
   }, []);
 
   const persistMcpSelection = useCallback((serverIds: string[], toolNames: string[] | null) => {
+    mcpConfigurationVersionRef.current += 1;
     const uniqueServerIds = [...new Set(serverIds.filter(Boolean))].slice(0, MAX_MCP_SERVER_SELECTION);
     const uniqueToolNames = toolNames === null ? null : [...new Set(toolNames.filter(Boolean))];
     setSelectedMcpServerIds(uniqueServerIds);
@@ -1734,7 +1740,10 @@ const ChatView: React.FC<ChatViewProps> = ({
   }, [dismissIncomingPrompt, persistMcpEnabled, persistMcpSelection]);
 
   const selectedMcpServerIdSet = useMemo(() => new Set(selectedMcpServerIds), [selectedMcpServerIds]);
-  const selectedMcpToolNameSet = useMemo(() => selectedMcpToolNames === null ? null : new Set(selectedMcpToolNames), [selectedMcpToolNames]);
+  const selectedMcpToolNameSet = useMemo(
+    () => new Set(selectedMcpToolNames ?? mcpToolNamesForServers(mcpOptions, selectedMcpServerIds)),
+    [mcpOptions, selectedMcpServerIds, selectedMcpToolNames],
+  );
   const selectedMcpToolCount = useMemo(() => {
     if (selectedMcpToolNames !== null) return selectedMcpToolNames.length;
     const visibleToolCount = mcpToolNamesForServers(mcpOptions, selectedMcpServerIds).length;
@@ -1810,7 +1819,7 @@ const ChatView: React.FC<ChatViewProps> = ({
       const serverToolNames = new Set(server.toolOptions.map(tool => tool.runtimeName));
       nextToolNames = selected
         ? nextToolNames.filter(name => !serverToolNames.has(name))
-        : [...new Set([...nextToolNames, ...serverToolNames])];
+        : [...new Set([...nextToolNames, ...[...serverToolNames].filter(isDefaultMcpTool)])];
     }
     persistMcpSelection(nextIds, nextToolNames);
     if (!useMcp && nextIds.length > 0) persistMcpEnabled(true);
@@ -1829,6 +1838,47 @@ const ChatView: React.FC<ChatViewProps> = ({
     persistMcpSelection(nextIds, nextToolNames);
     if (!useMcp) persistMcpEnabled(true);
   }, [mcpOptions, persistMcpEnabled, persistMcpSelection, selectedMcpServerIdSet, selectedMcpServerIds, selectedMcpToolNames, useMcp]);
+
+  // The quick switch and the Tools dialog write the same selection. Resolve the
+  // full catalog before materializing implicit defaults, so toggling web search
+  // cannot accidentally replace all default tools with only web_search.
+  const handleWebSearchToggle = useCallback(async () => {
+    if (webSearchToggleBusy) return;
+    const startingVersion = mcpConfigurationVersionRef.current;
+    setWebSearchToggleBusy(true);
+    setWebSearchToggleError('');
+    try {
+      const { listMcpServerToolOptions } = await import(
+        /* webpackChunkName: "mcp-runtime" */ '../tools/mcpRuntime'
+      );
+      const options = mcpOptions.length ? mcpOptions : await listMcpServerToolOptions();
+      // Do not undo a later Tools dialog change while the runtime chunk loads.
+      if (mcpConfigurationVersionRef.current !== startingVersion) return;
+      if (!options.some(server => server.id === LEMONADE_MCP_SERVER_ID &&
+        server.toolOptions.some(tool => tool.runtimeName === WEB_SEARCH_TOOL_NAME))) {
+        throw new Error('Web search is not available.');
+      }
+      if (!mcpOptions.length) setMcpOptions(options);
+
+      const enabled = useMcp && selectedMcpServerIdSet.has(LEMONADE_MCP_SERVER_ID)
+        && selectedMcpToolNameSet.has(WEB_SEARCH_TOOL_NAME);
+      const nextIds = selectedMcpServerIdSet.has(LEMONADE_MCP_SERVER_ID)
+        ? selectedMcpServerIds : [...selectedMcpServerIds, LEMONADE_MCP_SERVER_ID];
+      if (nextIds.length > MAX_MCP_SERVER_SELECTION) {
+        throw new Error('Deselect an MCP server in Tools to enable web search.');
+      }
+      const base = selectedMcpToolNames ?? mcpToolNamesForServers(options, selectedMcpServerIds);
+      persistMcpSelection(nextIds, enabled
+        ? base.filter(name => name !== WEB_SEARCH_TOOL_NAME)
+        : [...new Set([...base, WEB_SEARCH_TOOL_NAME])]);
+      if (!enabled && !useMcp) persistMcpEnabled(true);
+    } catch (error) {
+      setWebSearchToggleError(friendlyErrorMessage(error));
+    } finally {
+      setWebSearchToggleBusy(false);
+    }
+  }, [mcpOptions, persistMcpEnabled, persistMcpSelection, selectedMcpServerIdSet,
+    selectedMcpServerIds, selectedMcpToolNameSet, selectedMcpToolNames, useMcp, webSearchToggleBusy]);
 
   const openMcpPicker = useCallback(() => {
     mcpReturnFocusEntryRef.current = 'tools';
@@ -2231,8 +2281,42 @@ const ChatView: React.FC<ChatViewProps> = ({
 
   const activeConvo = conversations.find(c => c.id === activeId) || null;
   const messages = activeConvo?.messages || [];
+  const contextUsage = useMemo(() => {
+    const thread = activeConvo?.messages || [];
+    for (let i = thread.length - 1; i >= 0; i--) {
+      const message = thread[i];
+      if (message.role !== 'assistant' || !message.stats?.context) continue;
+      // Never display another model's last token count after switching models.
+      return message.model?.name?.toLowerCase() === currentModel.toLowerCase()
+        ? message.stats.context : null;
+    }
+    return null;
+  }, [activeConvo?.messages, currentModel]);
+  const liveModel = activeId ? streamModelsRef.current[activeId] : null;
+  const liveContextUsage = activeId && isStreaming
+    && liveModel?.name?.toLowerCase() === currentModel.toLowerCase()
+    ? streaming.getLiveStats(activeId)?.context ?? null : null;
+  const displayedContextUsage = isStreaming ? liveContextUsage : contextUsage;
+  const contextHistory = useMemo(() => (activeConvo?.messages || [])
+    .filter(message => {
+      if (message.role === 'assistant' && !isPersistableAssistantMessage(message)) return false;
+      if (message.generatedImages?.length || message.audioUrl || message.model3dUrl) return false;
+      return true;
+    })
+    .map(message => ({
+      role: message.role,
+      content: message.images?.length && supportsChatImageInput && !isCollectionModel(currentKnownModelInfo)
+        ? [
+          { type: 'text' as const, text: message.content },
+          ...message.images.map(url => ({ type: 'image_url' as const, image_url: { url } })),
+        ]
+        : message.content,
+    })), [activeConvo?.messages, supportsChatImageInput, currentKnownModelInfo]);
   const incomingPromptPending = !activeId && !!incomingPrompt && !incomingPromptHandledRef.current;
   const toolsUnavailable = hasBrowserPromptContext(messages) || incomingPromptPending;
+  const webSearchEnabled = useMcp && modeSupportsMcp && !toolsUnavailable
+    && selectedMcpServerIdSet.has(LEMONADE_MCP_SERVER_ID)
+    && selectedMcpToolNameSet.has(WEB_SEARCH_TOOL_NAME);
   useEffect(() => {
     if (toolsUnavailable) setMcpPickerOpen(false);
   }, [toolsUnavailable]);
@@ -2727,7 +2811,7 @@ ${finalText}`
           // A failed primary socket may still close while the legacy port connects.
           if (!isCurrent() || !realtimeRef.current) return;
           setIsLiveConnected(false);
-          if (dictating && liveFinalizeTimerRef.current === null) setLiveError('Realtime microphone disconnected.');
+          if (dictating && liveFinalizeTimerRef.current === null) setLiveError(t('Realtime microphone disconnected.'));
           failDictation();
         },
         onError: message => { if (isCurrent()) { setLiveError(message); failDictation(); } },
@@ -2735,12 +2819,12 @@ ${finalText}`
         onTranscription: (text, final) => { if (isCurrent()) handleLiveTranscription(text, final); },
       });
       if (!isCurrent()) { handle.close(); return; }
-      if (!handle.isConnected()) throw new Error('Realtime microphone disconnected.');
+      if (!handle.isConnected()) throw new Error(t('Realtime microphone disconnected.'));
       realtimeRef.current = handle;
       isLiveRecordingRef.current = true;
       await startRecording();
       if (!isCurrent()) { stopRecording(); return; }
-      if (!handle.isConnected()) throw new Error('Realtime microphone disconnected.');
+      if (!handle.isConnected()) throw new Error(t('Realtime microphone disconnected.'));
       setIsLiveRecording(true);
     } catch (err) {
       if (!isCurrent()) return;
@@ -3293,7 +3377,7 @@ ${finalText}`
             chatVisionModel,
             directInputImageIds: requestImages?.length ? userMessage.imageIds : [],
           },
-          selectedMcpToolNames || undefined,
+          selectedMcpToolNames ?? undefined,
         );
       } catch (err) {
         // MCP availability must never dead-end the chat composer. Surface the
@@ -4409,6 +4493,19 @@ ${index}`;
               )}
             </div>
           )}
+          {modeSupportsChatCompletions && (
+            <ContextMeter
+              model={currentLoadedModel}
+              modelInfo={currentEffectiveSettingsModelInfo}
+              usage={displayedContextUsage}
+              history={contextHistory}
+              previousUsage={contextUsage}
+              pendingImageCount={supportsChatImageInput && !isCollectionModel(currentKnownModelInfo) ? pendingImages.length : 0}
+              mcpEnabled={useMcp && !toolsUnavailable}
+              mcpServerIds={selectedMcpServerIds}
+              mcpToolNames={selectedMcpToolNames}
+            />
+          )}
           {canShowEffectiveSettings && (
             <button
               type="button"
@@ -4939,24 +5036,59 @@ ${index}`;
                 </button>
                 <button
                   type="button"
-                  className={`composer__add-row${mcpPickerOpen ? ' is-active' : ''}`}
-                  role="menuitem"
-                  data-mcp-entry="tools"
-                  onClick={openMcpPicker}
-                  disabled={!modeSupportsMcp || toolsUnavailable}
-                  aria-label={t('Tools')}
-                  aria-haspopup="dialog"
+                  className={`composer__add-row composer__add-row--web-search${webSearchEnabled ? ' is-active' : ''}`}
+                  role="menuitemcheckbox"
+                  aria-checked={webSearchEnabled}
+                  onClick={() => { void handleWebSearchToggle(); }}
+                  disabled={!modeSupportsMcp || toolsUnavailable || webSearchToggleBusy ||
+                    (!selectedMcpServerIdSet.has(LEMONADE_MCP_SERVER_ID) && selectedMcpServerIds.length >= MAX_MCP_SERVER_SELECTION)}
                 >
-                  <span className="composer__add-icon"><Icon name="tools" size={16} /></span>
+                  <span className="composer__add-icon"><Icon name="globe" size={16} /></span>
                   <span className="composer__add-text">
-                    <strong>{t('Tools')}</strong>
-                    <small>{toolsUnavailable
-                      ? 'Unavailable for imported webpage context'
-                      : useMcp
-                        ? `${selectedMcpToolCount} selected · Lemonade and external MCP`
-                        : 'Lemonade tools and external MCP servers'}</small>
+                    <strong>{t('Web search tool')}</strong>
+                    <small>{webSearchEnabled ? t('On · Sends queries to the web') : t('Off · Enable external web search')}</small>
+                  </span>
+                  <span className={`composer__web-search-switch${webSearchEnabled ? ' is-on' : ''}`} aria-hidden="true">
+                    <span />
                   </span>
                 </button>
+                {webSearchToggleError && <div className="composer__add-error" role="alert">{webSearchToggleError}</div>}
+                <div className="composer__add-tools-row" role="group" aria-label={t('Tools')}>
+                  <button
+                    type="button"
+                    className={`composer__add-row composer__add-tools-open${mcpPickerOpen ? ' is-active' : ''}`}
+                    role="menuitem"
+                    data-mcp-entry="tools"
+                    onClick={openMcpPicker}
+                    disabled={!modeSupportsMcp || toolsUnavailable}
+                    aria-label={t('Tools')}
+                    aria-haspopup="dialog"
+                  >
+                    <span className="composer__add-icon"><Icon name="tools" size={16} /></span>
+                    <span className="composer__add-text">
+                      <strong>{t('Tools')}</strong>
+                      <small>{toolsUnavailable
+                        ? 'Unavailable for imported webpage context'
+                        : useMcp
+                          ? `${selectedMcpToolCount} selected · Lemonade and external MCP`
+                          : 'Lemonade tools and external MCP servers'}</small>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="composer__add-tools-toggle"
+                    role="menuitemcheckbox"
+                    aria-checked={useMcp && modeSupportsMcp}
+                    aria-label={t('Tools for this chat')}
+                    title={t('Tools for this chat')}
+                    onClick={() => persistMcpEnabled(!useMcp)}
+                    disabled={!modeSupportsMcp || toolsUnavailable}
+                  >
+                    <span className={`composer__web-search-switch${useMcp && modeSupportsMcp ? ' is-on' : ''}`} aria-hidden="true">
+                      <span />
+                    </span>
+                  </button>
+                </div>
               </div>
             )}
             {addMenuOpen && mcpPickerOpen && !toolsUnavailable && (
@@ -4983,18 +5115,12 @@ ${index}`;
                     <span>{t('Back')}</span>
                   </button>
                   <div className="composer__mcp-header">
-                    <label className="composer__mcp-master">
-                      <input
-                        type="checkbox"
-                        checked={useMcp && modeSupportsMcp}
-                        disabled={!modeSupportsMcp}
-                        onChange={event => persistMcpEnabled(event.target.checked)}
-                      />
+                    <div className="composer__mcp-master">
                       <span>
                         <strong id="composer-mcp-dialog-title">{t('Tools for this chat')}</strong>
                         <small>{selectedMcpServerIds.length} server{selectedMcpServerIds.length === 1 ? '' : 's'} · {selectedMcpToolCount} tool{selectedMcpToolCount === 1 ? '' : 's'}</small>
                       </span>
-                    </label>
+                    </div>
                     <button type="button" className="btn btn--ghost" onClick={resetMcpSelection}>{t('Built-in default')}</button>
                   </div>
                   <div className="composer__mcp-tabs" role="tablist" aria-label={t('Tool providers')}>
@@ -5051,7 +5177,7 @@ ${index}`;
                                 {server.toolOptions.length === 0 ? (
                                   <p className="composer__mcp-empty">{t('No tools discovered for this server.')}</p>
                                 ) : server.toolOptions.map(tool => {
-                                  const toolSelected = selectedMcpToolNameSet === null || selectedMcpToolNameSet.has(tool.runtimeName);
+                                  const toolSelected = selectedMcpToolNameSet.has(tool.runtimeName);
                                   return (
                                     <label key={tool.runtimeName} className="composer__mcp-tool" title={tool.description || tool.title || tool.name}>
                                       <input
@@ -5061,7 +5187,7 @@ ${index}`;
                                         onChange={() => handleMcpToolToggle(server, tool.runtimeName)}
                                       />
                                       <span>
-                                        <strong>{tool.title || tool.name}</strong>
+                                        <strong>{tool.runtimeName === WEB_SEARCH_TOOL_NAME ? t('Web search') : (tool.title || tool.name)}</strong>
                                         {tool.runtimeName !== tool.name && <small>{tool.runtimeName}</small>}
                                       </span>
                                     </label>
@@ -5075,12 +5201,17 @@ ${index}`;
                     </div>
                   )}
                   <div className="composer__mcp-footer">
-                    <button type="button" className="btn btn--ghost" onClick={() => persistMcpSelection(selectedMcpServerIds, null)} disabled={selectedMcpToolNames === null}>{t('Select all tools for selected servers')}</button>
+                    <button type="button" className="btn btn--ghost" onClick={() => persistMcpSelection(selectedMcpServerIds, null)} disabled={selectedMcpToolNames === null}>{t('Select default tools for selected servers')}</button>
                   </div>
                 </div>
               </div>
             )}
           </div>
+          {webSearchEnabled && (
+            <span className="composer__web-search-status" role="img" aria-label={t('Web search active')} title={t('Web search active')}>
+              <Icon name="globe" size={16} aria-hidden="true" />
+            </span>
+          )}
           <input
             ref={fileInputRef}
             type="file"

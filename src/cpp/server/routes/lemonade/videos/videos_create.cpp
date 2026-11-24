@@ -15,27 +15,35 @@ using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
 const RouteError kShuttingDown{503, "", "The server is shutting down"};
+const RouteError kJobLimit{429, "", "All 50 jobs in the store are still active or resumable"};
 
 const RouteArg kPrompt{"prompt", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
                        "The text description of the video to generate."};
 const RouteArg kNegativePrompt{"negative_prompt", ArgIn::JsonBody, {{"type", "string"}}, false,
                                Support::Available, "Text describing what to avoid."};
-const RouteArg kVideoFrames{"video_frames", ArgIn::JsonBody, {{"type", "integer"}, {"minimum", 1}}, false,
+const RouteArg kVideoFrames{"video_frames", ArgIn::JsonBody,
+                            {{"type", "integer"}, {"minimum", 1}, {"maximum", video_store::kMaxVideoFrames}}, false,
                             Support::Available,
                             "Number of frames to generate. Defaults to the model's `video_frames` recipe "
                             "option, else `33`."};
-const RouteArg kFps{"fps", ArgIn::JsonBody, {{"type", "integer"}, {"minimum", 1}}, false, Support::Available,
+const RouteArg kFps{"fps", ArgIn::JsonBody, {{"type", "integer"}, {"minimum", 1}, {"maximum", video_store::kMaxFps}},
+                    false, Support::Available,
                     "Frames per second of the returned clip. Defaults to the model's `fps` recipe option, "
                     "else `16`."};
-const RouteArg kDuration{"duration", ArgIn::JsonBody, {{"type", "number"}, {"minimum", 0}}, false,
+const RouteArg kDuration{"duration", ArgIn::JsonBody,
+                         {{"type", "number"}, {"minimum", 0}, {"maximum", video_store::kMaxDuration}}, false,
                          Support::Available,
                          "Length of the clip in seconds. Approximate: it is converted to frames at `fps` and "
                          "rounded to the nearest count the model takes, which is 4n+1 for Wan. "
                          "`video_frames` wins when both are given."};
-const RouteArg kWidth{"width", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
+const RouteArg kWidth{"width", ArgIn::JsonBody,
+                      {{"type", "integer"}, {"minimum", 1}, {"maximum", video_store::kMaxDimension}}, false,
+                      Support::Available,
                       "Output width in pixels. Video models are sensitive to resolutions they were not "
                       "trained on. Defaults to the model's own."};
-const RouteArg kHeight{"height", ArgIn::JsonBody, {{"type", "integer"}}, false, Support::Available,
+const RouteArg kHeight{"height", ArgIn::JsonBody,
+                       {{"type", "integer"}, {"minimum", 1}, {"maximum", video_store::kMaxDimension}}, false,
+                       Support::Available,
                        "Output height in pixels. Defaults to the model's own."};
 const RouteArg kCfgScale{"cfg_scale", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
                          "Classifier-free guidance scale. Defaults to the model's own."};
@@ -43,6 +51,9 @@ const RouteArg kSamplingMethod{"sampling_method", ArgIn::JsonBody, {{"type", "st
                                Support::Available, "Sampler name, such as `euler`. Defaults to the model's own."};
 const RouteArg kFlowShift{"flow_shift", ArgIn::JsonBody, {{"type", "number"}}, false, Support::Available,
                           "Flow shift, used by flow-matching models such as Wan. Defaults to the model's own."};
+const RouteArg kVideoSteps{"steps", ArgIn::JsonBody,
+                           {{"type", "integer"}, {"minimum", 1}, {"maximum", video_store::kMaxSteps}}, false,
+                           Support::Available, "Number of sampling steps. Defaults to the model's own."};
 const RouteArg kOutputFormat{"output_format", ArgIn::JsonBody, {{"enum", json::array({"webm", "webp", "avi"})}},
                              false, Support::Available,
                              "Container format of the clip: `webm`, `webp` or `avi`. Defaults to `webm`."};
@@ -78,7 +89,7 @@ public:
         };
         s.args = {
             kPrompt, model_loading::kModel, kNegativePrompt, kDuration, kVideoFrames, kFps, kWidth, kHeight,
-            inference::kSteps, kCfgScale, kSamplingMethod, kFlowShift, inference::kSeed, kOutputFormat
+            kVideoSteps, kCfgScale, kSamplingMethod, kFlowShift, inference::kSeed, kOutputFormat
         };
 
         RouteResponse response;
@@ -104,7 +115,7 @@ public:
             "fps": 16
         })");
         s.examples = {example};
-        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kShuttingDown, kUnexpectedException};
+        s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kJobLimit, kShuttingDown, kUnexpectedException};
         s.error_format = ErrorFormat::OpenAi;
         s.request_format = RequestFormat::Json;
         return s;
@@ -115,6 +126,10 @@ public:
             const std::string model =
                 canonical_model_name(ctx_, req.arg(model_loading::kModel).get<std::string>());
             req.body[model_loading::kModel.name] = model;
+            if (const std::string error = video_store::normalize_request(req.body); !error.empty()) {
+                write_openai_error(res, kArgInvalid, error);
+                return;
+            }
             // Set here, never taken from the client, and named before the job runs so
             // the clean-up below cannot remove a clip that is still being written.
             req.body["clip_file"] = video_store::new_file_name();
@@ -133,13 +148,17 @@ public:
             json body = {{"id", id},
                          {"status", "queued"},
                          {"model", model}};
-            if (job && job->contains("created_at")) body["created_at"] = (*job)["created_at"];
+            if (job) body["created_at"] = job->created_at;
             res.status = 202;
             res.set_content(body.dump(), "application/json");
         } catch (const std::exception& e) {
             const auto* job_error = dynamic_cast<const lemon::jobs::JobError*>(&e);
             if (job_error && job_error->status == kShuttingDown.status) {
                 write_openai_error(res, kShuttingDown, e.what(), "server_error");
+                return;
+            }
+            if (job_error && job_error->status == kJobLimit.status) {
+                write_openai_error(res, kJobLimit, e.what(), "rate_limit_error");
                 return;
             }
             LOG(ERROR, "Server") << "ERROR in videos_create: " << e.what() << std::endl;
@@ -149,19 +168,24 @@ public:
 
 private:
     void remove_unreferenced_clips() {
-        std::set<std::string> keep;
-        for (const auto& summary : ctx_.job_manager->list()) {
-            const auto job = ctx_.job_manager->get(summary.value("id", ""));
-            if (!job || !job->contains("steps") || !(*job)["steps"].is_array()) continue;
-            for (const auto& step : (*job)["steps"]) {
-                for (const char* where : {"params", "output"}) {
-                    if (step.contains(where) && step[where].is_object() &&
-                        step[where].contains("clip_file") && step[where]["clip_file"].is_string())
-                        keep.insert(step[where]["clip_file"].get<std::string>());
+        video_store::clean_up([this] {
+            video_store::CleanupSnapshot snapshot;
+            for (const auto& summary : ctx_.job_manager->list()) {
+                const auto found = ctx_.job_manager->get(summary.value("id", ""));
+                if (!found) continue;
+                snapshot.live_jobs.insert(found->id);
+                const json job = found->to_api_json();
+                if (!job.contains("steps") || !job["steps"].is_array()) continue;
+                for (const auto& step : job["steps"]) {
+                    for (const char* where : {"params", "output"}) {
+                        if (step.contains(where) && step[where].is_object() &&
+                            step[where].contains("clip_file") && step[where]["clip_file"].is_string())
+                            snapshot.referenced.insert(step[where]["clip_file"].get<std::string>());
+                    }
                 }
             }
-        }
-        video_store::remove_all_except(keep);
+            return snapshot;
+        });
     }
 };
 

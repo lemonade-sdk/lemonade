@@ -19,11 +19,14 @@
 #include "lemon/auto_tune.h"
 #include "telemetry.h"
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <iostream>
 #include <lemon/model_manager.h>
 #include <mutex>
 #include <queue>
+#include <stdexcept>
 #include <thread>
 #include "lemon/utils/aixlog.hpp"
 #include "lemon/global_vram_monitor.h"
@@ -35,6 +38,23 @@
 namespace lemon {
 
 namespace {
+
+// Waits like cv.wait(lock, ready), but in short slices when there is a cancel flag, so
+// a canceled caller stops waiting instead of blocking until another client's load
+// finishes. Returns false when canceled; the load being waited on is not affected.
+template <class Ready>
+bool wait_unless_canceled(std::condition_variable& cv, std::unique_lock<std::mutex>& lock,
+                          Ready ready, std::atomic<bool>* cancel) {
+    if (!cancel) {
+        cv.wait(lock, ready);
+        return true;
+    }
+    while (!ready()) {
+        if (cancel->load()) return false;
+        cv.wait_for(lock, std::chrono::milliseconds(25));
+    }
+    return true;
+}
 
 // RAII: holds a suspend-inhibitor refcount for the duration of one inference,
 // but only when the feature is enabled in config. Released on scope exit so all
@@ -172,6 +192,8 @@ WrappedServer* Router::find_server_by_model_name(const std::string& model_name) 
 std::string Router::resolve_model_name(const std::string& model_name) const {
     return model_name.empty() ? model_name : model_manager_->resolve_model_name(model_name);
 }
+
+std::uint64_t Router::models_generation() const { return model_manager_->models_generation(); }
 
 std::optional<ModelInfo> Router::try_get_model_info(const std::string& model_name) const {
     if (model_name.empty()) {
@@ -407,23 +429,26 @@ void Router::transition_server_residency_locked(
 
 bool Router::ensure_loaded_model_residency(
     const std::string& model_name,
-    LoadPurpose load_purpose) {
+    LoadPurpose load_purpose,
+    std::atomic<bool>* cancel) {
     return ensure_loaded_model_residency_canonical(
-        resolve_model_name(model_name), load_purpose);
+        resolve_model_name(model_name), load_purpose, cancel);
 }
 
 bool Router::ensure_loaded_model_residency_canonical(
     const std::string& canonical_model_name,
-    LoadPurpose load_purpose) {
+    LoadPurpose load_purpose,
+    std::atomic<bool>* cancel) {
     const ResidencyClass requested_residency_class =
         residency_class_for_load_purpose(load_purpose);
 
     std::unique_lock<std::mutex> lock(load_mutex_);
-    load_cv_.wait(lock, [&] {
+    const bool ready = wait_unless_canceled(load_cv_, lock, [&] {
         return !is_loading_ &&
                (!exclusive_active_ ||
                 exclusive_owner_ == std::this_thread::get_id());
-    });
+    }, cancel);
+    if (!ready) throw std::runtime_error("load cancelled");
 
     prune_unavailable_servers_locked();
 
@@ -880,10 +905,11 @@ void Router::load_model(const std::string& model_name,
     // LOAD SERIALIZATION STRATEGY (from spec: point #2 in Additional Considerations)
     std::unique_lock<std::mutex> lock(load_mutex_);
 
-    load_cv_.wait(lock, [&] {
+    const bool ready = wait_unless_canceled(load_cv_, lock, [&] {
         return !is_loading_
                && (!exclusive_active_ || exclusive_owner_ == std::this_thread::get_id());
-    });
+    }, cancel_flag);
+    if (!ready) throw std::runtime_error("load cancelled");
 
     is_loading_ = true;
 
@@ -1153,6 +1179,11 @@ void Router::load_model(const std::string& model_name,
             new_server->set_load_duration_ms(std::chrono::duration_cast<std::chrono::milliseconds>(load_end - load_start).count());
             LOG(DEBUG, "Router") << "Backend started successfully in " << new_server->get_load_duration_ms() << "ms" << std::endl;
         } catch (const ConfigurationException& e) {
+            error_message = e.what();
+            load_success = false;
+            unrecoverable_config = true;
+            LOG(ERROR, "Router") << "Backend load failed: " << error_message << std::endl;
+        } catch (const std::invalid_argument& e) {
             error_message = e.what();
             load_success = false;
             unrecoverable_config = true;
@@ -1875,6 +1906,7 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
 json Router::chat_completion(const json& request, std::atomic<bool>* cancel) {
     std::string requested_model = request.value("model", "");
     std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("LLM", "chat.completions", requested_model, request);
+    if (span) telemetry::apply_route_attributes(*span);
 
     std::optional<WrappedServer::RequestCancelScope> cancel_scope;
     if (cancel) {
@@ -1999,6 +2031,7 @@ json Router::chat_completion(const json& request, std::atomic<bool>* cancel) {
 json Router::completion(const json& request) {
     std::string requested_model = request.value("model", "");
     std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("LLM", "completions", requested_model, request);
+    if (span) telemetry::apply_route_attributes(*span);
 
     try {
         WrappedServer* active_server = nullptr;
@@ -2419,7 +2452,11 @@ AudioFormatMetadata Router::audio_speech_format_metadata(
                       : AudioFormatMetadata{};
 }
 
-json Router::image_generations(const json& request) {
+json Router::image_generations(const json& request, std::atomic<bool>* cancel) {
+    std::optional<WrappedServer::RequestCancelScope> cancel_scope;
+    if (cancel) {
+        cancel_scope.emplace(utils::RequestCancelToken{cancel});
+    }
     return execute_inference(request, [&](WrappedServer* server) {
         json rejected = reject_video_model(server);
         if (!rejected.is_null()) {
@@ -2451,7 +2488,11 @@ json Router::video_generations(const json& request, std::atomic<bool>* cancel) {
     });
 }
 
-json Router::image_edits(const json& request) {
+json Router::image_edits(const json& request, std::atomic<bool>* cancel) {
+    std::optional<WrappedServer::RequestCancelScope> cancel_scope;
+    if (cancel) {
+        cancel_scope.emplace(utils::RequestCancelToken{cancel});
+    }
     return execute_inference(request, [&](WrappedServer* server) {
         json rejected = reject_video_model(server);
         if (!rejected.is_null()) {
@@ -2467,7 +2508,11 @@ json Router::image_edits(const json& request) {
     });
 }
 
-json Router::image_variations(const json& request) {
+json Router::image_variations(const json& request, std::atomic<bool>* cancel) {
+    std::optional<WrappedServer::RequestCancelScope> cancel_scope;
+    if (cancel) {
+        cancel_scope.emplace(utils::RequestCancelToken{cancel});
+    }
     return execute_inference(request, [&](WrappedServer* server) {
         json rejected = reject_video_model(server);
         if (!rejected.is_null()) {
@@ -2718,6 +2763,7 @@ void Router::chat_completion_stream(const std::string& request_body, httplib::Da
     std::string requested_model = request_json.value("model", "");
 
     std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("LLM", "chat.completions", requested_model, request_json);
+    if (span) telemetry::apply_route_attributes(*span);
     auto live_request = live_throughput_.start();
 
     bool hide_outputs = false;
@@ -2874,6 +2920,7 @@ void Router::completion_stream(const std::string& request_body, httplib::DataSin
     std::string requested_model = request_json.value("model", "");
 
     std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("LLM", "completions", requested_model, request_json);
+    if (span) telemetry::apply_route_attributes(*span);
     auto live_request = live_throughput_.start();
 
     bool hide_outputs = false;
@@ -2991,6 +3038,7 @@ void Router::responses_stream(const std::string& request_body, httplib::DataSink
     std::string requested_model = request_json.value("model", "");
 
     std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("LLM", "responses", requested_model, request_json);
+    if (span) telemetry::apply_route_attributes(*span);
     auto live_request = live_throughput_.start();
 
     bool hide_outputs = false;

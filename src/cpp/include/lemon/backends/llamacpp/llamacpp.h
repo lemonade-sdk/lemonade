@@ -94,8 +94,8 @@ inline const BackendDescriptor descriptor = {
             /*cap_add*/ {},
         }},
     },
-    // see ISystemOneServer
-    /*mode_capability_requirements*/ {{"classification", "systemone"}},
+    // see ISystemOneServer and llamacpp_rulehead.h
+    /*mode_capability_requirements*/ {{"classification", {"systemone", "zero-shot"}}},
 };
 
 }  // namespace llamacpp

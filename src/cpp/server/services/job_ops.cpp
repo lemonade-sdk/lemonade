@@ -1,5 +1,6 @@
 #include "lemon/server/job_ops.h"
 
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -10,9 +11,14 @@
 #include <lemon/utils/aixlog.hpp>
 
 #include "lemon/error_types.h"
+#include "lemon/jobs/job_media_io.h"
+#include "lemon/jobs/job_media_limits.h"
 #include "lemon/model_manager.h"
+#include "lemon/model_types.h"
 #include "lemon/router.h"
 #include "lemon/server.h"
+#include "lemon/server/api_route.h"
+#include "lemon/server/audio_formats.h"
 #include "lemon/server/model_json.h"
 #include "lemon/server/model_loader.h"
 #include "lemon/server/system_stats.h"
@@ -20,8 +26,83 @@
 #include "lemon/system_info.h"
 #include "lemon/system_metrics_platform.h"
 #include "lemon/utils/json_utils.h"
+#include "lemon/wrapped_server.h"
 
 namespace lemon {
+
+namespace {
+
+std::string error_message(const nlohmann::json& response, const std::string& fallback) {
+    const auto err = response.find("error");
+    if (err == response.end()) return fallback;
+    if (err->is_object()) {
+        const auto message = err->find("message");
+        if (message != err->end() && message->is_string()) return message->get<std::string>();
+    }
+    if (err->is_string()) return err->get<std::string>();
+    return fallback;
+}
+
+lemon::jobs::json image_op_result(const nlohmann::json& response, const std::string& op) {
+    if (response.contains("error"))
+        throw lemon::jobs::JobError(424, error_message(response, op + " failed"));
+    size_t bytes = 0;
+    if (response.contains("data") && response["data"].is_array()) {
+        for (const auto& item : response["data"]) {
+            if (item.is_object() && item.contains("b64_json") && item["b64_json"].is_string())
+                bytes += lemon::jobs::base64_decoded_size(
+                    item["b64_json"].get_ref<const std::string&>());
+        }
+    }
+    if (!lemon::jobs::media_output_within_limit(bytes))
+        throw lemon::jobs::JobError(413, op + " output exceeds the job media output limit of " +
+                                       std::to_string(lemon::jobs::kMaxJobMediaOutputBytes) + " bytes");
+    lemon::jobs::json out = response;
+    if (bytes > 0) out["size"] = bytes;
+    return out;
+}
+
+void throw_if_format_error(const AudioFormat& format) {
+    if (format.error.empty()) return;
+    if (format.error.find("'" + format.format + "'") != std::string::npos)
+        throw lemon::jobs::JobError(400, format.error);
+    throw lemon::jobs::JobError(400, format.error + ": '" + format.format + "'");
+}
+
+void throw_if_cancelled(const lemon::jobs::CancelFlag& cancel) {
+    if (cancel.load()) throw lemon::jobs::JobError(499, "interrupted");
+}
+
+lemon::jobs::json media_op_result(const std::string& op, lemon::jobs::CancelFlag& cancel,
+                                  const std::function<void(httplib::DataSink&)>& generate,
+                                  const std::string& mime_type,
+                                  const std::string& response_format,
+                                  const std::map<std::string, std::string>& headers = {}) {
+    lemon::jobs::MediaSinkCapture capture(cancel);
+    httplib::DataSink sink;
+    sink.write = [&](const char* data, size_t len) { return capture.write(data, len); };
+    sink.is_writable = [&]() { return capture.writable(); };
+    sink.done = []() {};
+    {
+        WrappedServer::RequestCancelScope cancel_scope(utils::RequestCancelToken{&cancel});
+        generate(sink);
+    }
+    throw_if_cancelled(cancel);
+    if (!capture.stream_error().is_null())
+        throw lemon::jobs::JobError(424, error_message(capture.stream_error(), op + " failed"));
+    if (capture.overflowed()) {
+        throw lemon::jobs::JobError(413, op + " output exceeds the job media output limit of " +
+                                             std::to_string(lemon::jobs::kMaxJobMediaOutputBytes) + " bytes");
+    }
+    if (capture.buffer().empty()) throw lemon::jobs::JobError(502, op + " produced no output");
+    if (auto error_payload = extract_error_payload(capture.buffer()); !error_payload.is_null())
+        throw lemon::jobs::JobError(424, error_message(error_payload, op + " failed"));
+    return lemon::jobs::media_result_json(
+        lemon::utils::JsonUtils::base64_encode(capture.buffer()), capture.buffer().size(),
+        mime_type, response_format, headers);
+}
+
+} // namespace
 
 lemon::jobs::OpProviders JobOps::build(ServerContext& ctx) {
     lemon::jobs::OpProviders providers;
@@ -73,7 +154,7 @@ lemon::jobs::OpProviders JobOps::build(ServerContext& ctx) {
         if (!model_manager->is_model_downloaded(model))
             throw lemon::jobs::JobError(404, "model '" + model + "' is not downloaded");
         auto info = model_manager->get_model_info(model);
-        nlohmann::json opt_json = nlohmann::json::parse(params.dump());
+        nlohmann::json opt_json = params;
         RecipeOptions options(info.recipe, opt_json);
         std::optional<bool> pinned = std::nullopt;
         if (params.contains("pinned") && params["pinned"].is_boolean())
@@ -134,33 +215,51 @@ lemon::jobs::OpProviders JobOps::build(ServerContext& ctx) {
     };
     providers.chat_op = [router](const lemon::jobs::json& params,
                                  lemon::jobs::CancelFlag& cancel) -> lemon::jobs::json {
-        nlohmann::json request = nlohmann::json::parse(params.dump());
+        nlohmann::json request = params;
         nlohmann::json response = router->chat_completion(request, &cancel);
-        if (response.contains("error")) {
-            std::string msg = "chat failed";
-            const auto& err = response["error"];
-            if (err.is_object() && err.contains("message") && err["message"].is_string())
-                msg = err["message"].get<std::string>();
-            else if (err.is_string())
-                msg = err.get<std::string>();
-            throw lemon::jobs::JobError(424, msg);
-        }
+        if (response.contains("error"))
+            throw lemon::jobs::JobError(424, error_message(response, "chat failed"));
         return lemon::jobs::json::parse(response.dump());
     };
     // generate_video does not take the router's exclusive slot, so a clip does not
     // hold up other models; the slot is also what records job-owned models, so
     // the op unloads a model it loaded itself when it is interrupted.
-    providers.video_op = [router, model_loader](const lemon::jobs::json& params,
-                                                lemon::jobs::CancelFlag& cancel)
+    providers.video_op = [router, model_loader, model_manager](const lemon::jobs::json& params,
+                                                               const std::string& job_id,
+                                                               lemon::jobs::CancelFlag& cancel)
         -> lemon::jobs::json {
         nlohmann::json request = nlohmann::json::parse(params.dump());
+        if (const std::string error = video_store::normalize_request(request); !error.empty())
+            throw lemon::jobs::JobError(400, error);
         const std::string model = request.value("model", std::string());
+        // clip_file comes from the job's params, which a generic job can leave out or fill
+        // with another video's name, so the op always writes to a name it reserved itself.
+        const std::string file =
+            video_store::reserve_file_name(request.value("clip_file", std::string()), job_id);
+        bool published = false;
+        struct ReleaseUnpublished {
+            const std::string& file;
+            const bool& published;
+            ~ReleaseUnpublished() {
+                if (!published) video_store::release(file);
+            }
+        } release_unpublished{file, published};
         std::map<std::string, int> loaded_here;
         auto unload_if_interrupted = [&] {
             if (cancel.load() && !loaded_here.empty())
                 router->unload_job_models(loaded_here, {});
         };
         if (!model.empty()) {
+            // Checked before loading: naming a chat model would otherwise download it and
+            // evict a loaded model before the router turns it away. An unknown model is
+            // left to the load, which reports it.
+            std::optional<ModelInfo> info;
+            try {
+                info = model_manager->get_model_info(model);
+            } catch (const std::exception&) {
+            }
+            if (info && get_model_type_from_labels(info->labels) != ModelType::VIDEO)
+                throw lemon::jobs::JobError(400, "model '" + model + "' is not a video model");
             const bool was_loaded = router->is_model_loaded(model);
             model_loader->ensure_loaded(
                 model, ModelLoader::load_options(request.value("ctx_size", nlohmann::json())),
@@ -184,12 +283,8 @@ lemon::jobs::OpProviders JobOps::build(ServerContext& ctx) {
             throw lemon::jobs::JobError(424, msg);
         }
         if (response.contains("b64_json") && response["b64_json"].is_string()) {
-            std::string file = request.value("clip_file", std::string());
-            // clip_file comes from the job's params, which a generic job can fill with
-            // another video's name: writing there would replace that video's clip.
-            if (!video_store::is_valid_file_name(file) || video_store::exists(file))
-                file = video_store::new_file_name();
             video_store::write(file, utils::JsonUtils::base64_decode(response["b64_json"].get<std::string>()));
+            published = true;
             response.erase("b64_json");
             response["clip_file"] = file;
         }
@@ -197,6 +292,96 @@ lemon::jobs::OpProviders JobOps::build(ServerContext& ctx) {
             throw lemon::jobs::JobError(424, "video generation returned no clip");
         }
         return lemon::jobs::json::parse(response.dump());
+    };
+    providers.image_generations_op = [router](
+        const lemon::jobs::json& params, lemon::jobs::CancelFlag& cancel) -> lemon::jobs::json {
+        throw_if_cancelled(cancel);
+        nlohmann::json request = params;
+        nlohmann::json response = router->image_generations(request, &cancel);
+        throw_if_cancelled(cancel);
+        auto out = image_op_result(response, "image_generations");
+        return out;
+    };
+    providers.image_edits_op = [router](
+        const lemon::jobs::json& params, lemon::jobs::CancelFlag& cancel) -> lemon::jobs::json {
+        throw_if_cancelled(cancel);
+        nlohmann::json request = params;
+        lemon::jobs::normalize_image_inputs(request, true);
+        nlohmann::json response = router->image_edits(request, &cancel);
+        throw_if_cancelled(cancel);
+        auto out = image_op_result(response, "image_edits");
+        return out;
+    };
+    providers.image_variations_op = [router](
+        const lemon::jobs::json& params, lemon::jobs::CancelFlag& cancel) -> lemon::jobs::json {
+        throw_if_cancelled(cancel);
+        nlohmann::json request = params;
+        lemon::jobs::normalize_image_inputs(request, true);
+        nlohmann::json response = router->image_variations(request, &cancel);
+        throw_if_cancelled(cancel);
+        auto out = image_op_result(response, "image_variations");
+        return out;
+    };
+    providers.audio_speech_op = [router](
+        const lemon::jobs::json& params, lemon::jobs::CancelFlag& cancel) -> lemon::jobs::json {
+        throw_if_cancelled(cancel);
+        nlohmann::json request = params;
+        // Jobs buffer the result, so streaming selectors cannot be honoured.
+        request.erase("stream");
+        request.erase("stream_format");
+        const std::string model = request.value("model", "");
+        const AudioFormat format = negotiate_speech_format(
+            *router, model, request.value("response_format", nlohmann::json()),
+            false);
+        throw_if_format_error(format);
+        const auto info = router->try_get_model_info(model);
+        if (!info) throw lemon::jobs::JobError(404, "unknown model '" + model + "'");
+        if (info->type != ModelType::TTS)
+            throw lemon::jobs::JobError(400, "model '" + model + "' is not a text-to-speech model");
+        request["response_format"] = format.format;
+        if (request.contains("voice") && request["voice"] == "") request.erase("voice");
+        auto out = media_op_result(
+            "audio_speech", cancel,
+            [&](httplib::DataSink& sink) { router->audio_speech(request, sink); },
+            format.mime_type, format.format, format.headers);
+        return out;
+    };
+    providers.audio_generations_op = [router](
+        const lemon::jobs::json& params, lemon::jobs::CancelFlag& cancel) -> lemon::jobs::json {
+        throw_if_cancelled(cancel);
+        nlohmann::json request = params;
+        // Jobs buffer the result, so streaming selectors cannot be honoured.
+        request.erase("stream");
+        request.erase("stream_format");
+        const std::string model = request.value("model", "");
+        AudioFormat format = negotiate_audio_generation_format(
+            *router, model, request.value("response_format", nlohmann::json()));
+        // Jobs validate formats strictly; the HTTP endpoint falls back to a default format.
+        if (format.error.empty() && router->audio_generation_supported_formats(model).empty() &&
+            !is_known_audio_format(format.format))
+            format.error = "Unsupported audio format requested";
+        throw_if_format_error(format);
+        const auto info = router->try_get_model_info(model);
+        if (!info) throw lemon::jobs::JobError(404, "unknown model '" + model + "'");
+        if (info->type != ModelType::AUDIO_GENERATION)
+            throw lemon::jobs::JobError(400, "model '" + model + "' is not an audio-generation model");
+        request["response_format"] = format.format;
+        auto out = media_op_result(
+            "audio_generations", cancel,
+            [&](httplib::DataSink& sink) { router->audio_generations(request, sink); },
+            format.mime_type, format.format, format.headers);
+        return out;
+    };
+    providers.model_3d_generations_op = [router](
+        const lemon::jobs::json& params, lemon::jobs::CancelFlag& cancel) -> lemon::jobs::json {
+        throw_if_cancelled(cancel);
+        nlohmann::json request = params;
+        lemon::jobs::normalize_image_inputs(request, false);
+        auto out = media_op_result(
+            "model_3d_generations", cancel,
+            [&](httplib::DataSink& sink) { router->model_3d_generations(request, sink); },
+            "model/gltf-binary", "glb");
+        return out;
     };
     providers.begin_exclusive = [router, job_states, current_job, state_mutex](
                                     const std::string& job_id,
