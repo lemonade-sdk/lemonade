@@ -20,7 +20,9 @@
 #include "lemon/server/api_route.h"
 #include "lemon/server/audio_formats.h"
 #include "lemon/server/model_json.h"
+#include "lemon/server/model_loader.h"
 #include "lemon/server/system_stats.h"
+#include "lemon/server/video_store.h"
 #include "lemon/system_info.h"
 #include "lemon/system_metrics_platform.h"
 #include "lemon/utils/json_utils.h"
@@ -109,6 +111,7 @@ lemon::jobs::OpProviders JobOps::build(ServerContext& ctx) {
     ModelJson* model_json = ctx.model_json;
     SystemMetricsPlatform* metrics = ctx.metrics;
     Server* server = ctx.server;
+    ModelLoader* model_loader = ctx.model_loader;
 
     // A running job remembers which models were loaded before it started (snapshot)
     // and which ones it loaded itself (owned), so pausing it can unload exactly its own
@@ -216,6 +219,85 @@ lemon::jobs::OpProviders JobOps::build(ServerContext& ctx) {
         nlohmann::json response = router->chat_completion(request, &cancel);
         if (response.contains("error"))
             throw lemon::jobs::JobError(424, error_message(response, "chat failed"));
+        return lemon::jobs::json::parse(response.dump());
+    };
+    // generate_video does not take the router's exclusive slot, so a clip does not
+    // hold up other models; the slot is also what records job-owned models, so
+    // the op unloads a model it loaded itself when interrupted, unless the
+    // backend confirms its job settled cooperatively and can be reused.
+    providers.video_op = [router, model_loader, model_manager](const lemon::jobs::json& params,
+                                                               const std::string& job_id,
+                                                               lemon::jobs::CancelFlag& cancel)
+        -> lemon::jobs::json {
+        nlohmann::json request = nlohmann::json::parse(params.dump());
+        if (const std::string error = video_store::normalize_request(request); !error.empty())
+            throw lemon::jobs::JobError(400, error);
+        const std::string model = request.value("model", std::string());
+        // clip_file comes from the job's params, which a generic job can leave out or fill
+        // with another video's name, so the op always writes to a name it reserved itself.
+        const std::string file =
+            video_store::reserve_file_name(request.value("clip_file", std::string()), job_id);
+        bool published = false;
+        struct ReleaseUnpublished {
+            const std::string& file;
+            const bool& published;
+            ~ReleaseUnpublished() {
+                if (!published) video_store::release(file);
+            }
+        } release_unpublished{file, published};
+        std::map<std::string, int> loaded_here;
+        auto unload_if_interrupted = [&] {
+            if (cancel.load() && !loaded_here.empty())
+                router->unload_job_models(loaded_here, {});
+        };
+        if (!model.empty()) {
+            // Checked before loading: naming a chat model would otherwise download it and
+            // evict a loaded model before the router turns it away. An unknown model is
+            // left to the load, which reports it.
+            std::optional<ModelInfo> info;
+            try {
+                info = model_manager->get_model_info(model);
+            } catch (const std::exception&) {
+            }
+            if (info && get_model_type_from_labels(info->labels) != ModelType::VIDEO)
+                throw lemon::jobs::JobError(400, "model '" + model + "' is not a video model");
+            const bool was_loaded = router->is_model_loaded(model);
+            model_loader->ensure_loaded(
+                model, ModelLoader::load_options(request.value("ctx_size", nlohmann::json())),
+                LoadPurpose::UserInference, &cancel);
+            if (!was_loaded)
+                loaded_here[router->canonical_model_name(model)] = router->loaded_model_pid(model);
+            if (cancel.load()) {
+                unload_if_interrupted();
+                throw lemon::jobs::JobError(499, "interrupted");
+            }
+        }
+        nlohmann::json response = router->video_generations(request, &cancel);
+        if (response.contains("error")) {
+            const auto& err = response["error"];
+            const bool settled = err.is_object() && err.contains("details") &&
+                err["details"].is_object() && err["details"].contains("backend_job_settled") &&
+                err["details"]["backend_job_settled"] == true;
+            if (!settled) unload_if_interrupted();
+            if (cancel.load()) throw lemon::jobs::JobError(499, "interrupted");
+            std::string msg = "video generation failed";
+            if (err.is_object() && err.contains("message") && err["message"].is_string())
+                msg = err["message"].get<std::string>();
+            else if (err.is_string())
+                msg = err.get<std::string>();
+            throw lemon::jobs::JobError(424, msg);
+        }
+        // Completion may race with cancel. Do not publish a canceled clip.
+        if (cancel.load()) throw lemon::jobs::JobError(499, "interrupted");
+        if (response.contains("b64_json") && response["b64_json"].is_string()) {
+            video_store::write(file, utils::JsonUtils::base64_decode(response["b64_json"].get<std::string>()));
+            published = true;
+            response.erase("b64_json");
+            response["clip_file"] = file;
+        }
+        if (!response.contains("clip_file")) {
+            throw lemon::jobs::JobError(424, "video generation returned no clip");
+        }
         return lemon::jobs::json::parse(response.dump());
     };
     providers.image_generations_op = [router](

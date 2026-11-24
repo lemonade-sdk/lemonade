@@ -15,6 +15,7 @@ Usage:
     python server_llm.py --wrapped-server llamacpp --backend rocm
     python server_llm.py --wrapped-server ryzenai --backend npu
     python server_llm.py --wrapped-server flm
+    python server_llm.py --wrapped-server loom --backend hrx
 """
 
 import asyncio

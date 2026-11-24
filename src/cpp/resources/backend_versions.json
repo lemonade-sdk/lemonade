@@ -53,9 +53,15 @@
           "llama-hrx-b129-bin-manylinux-hrx-x64.tar.gz": "sha256:309e124c2c532980c5541cc2857f187a2a3f5cc82b781d01c05ebb498b524058"
         }
       },
+      "ROCm/hrx-system": {
+        "v0.2.0": {
+          "hrx_loom-0.2.0-py3-none-win_amd64.whl": "sha256:14c133b032eb3b9c9b59b2092b7f564699fd2ec69fc8c1d04874e74be30664fa",
+          "hrx_loom-0.2.0-py3-none-manylinux_2_39_x86_64.whl": "sha256:5148f9e3a264af400ec4bae38bd7b06bf551d28cc33b7a61d67f7bcefa590438"
+        }
+      },
       "gufo-org/gufo": {
-        "v0.35.0": {
-          "gufo-v0.35.0-windows-x86_64.zip": "sha256:32c76bc1b1c6fda10b6786489fa454b42ec06ef19b1a374100ac95203a6dbbb5"
+        "v0.36.0": {
+          "gufo-v0.36.0-windows-x86_64.zip": "sha256:52ac553e83950d5e1c83096f07288344dee0b871ed0894f6a2fd63b415ed5b48"
         }
       }
     },
@@ -280,37 +286,37 @@
           }
         },
         "lemonade-sdk/thenoise": {
-          "thenoise-0.15.0-rocm10.1.0": {
-            "qualification-report-thenoise-0.15.0-rocm10.1.0-linux.json": "sha256:c7ff3497e5a864036715b1bcffad63cf9b514fe8e4fee7b048ddc57b0a247f04",
-            "qualification-report-thenoise-0.15.0-rocm10.1.0-windows.json": "sha256:37b3d9da7d35b50d657eae9078560dd2b60c481dbf6801e343f8c4ce5a51f9f1",
-            "thenoise-0.15.0-rocm10.1.0-cuda-x64.part01-of-02.tar.gz": "sha256:bb2e49d9804dc2fb10a069a048a63f42c652526a489c93c4aadbcf16257e7e46",
-            "thenoise-0.15.0-rocm10.1.0-cuda-x64.part02-of-02.tar.gz": "sha256:689ee6961907673e51a8650a184665dc9343baf664420907513aff4ee3561c48",
-            "thenoise-0.15.0-rocm10.1.0-cuda-x64.partcount": "sha256:53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
-            "thenoise-0.15.0-rocm10.1.0-cuda-x64.sha256": "sha256:50535af4209a7f574e1d7407ba4c32b1ee293e15a6a1721b3104c544d645838a",
-            "thenoise-0.15.0-rocm10.1.0-gfx103X-win-x64.part01-of-02.zip": "sha256:5d5f92ea64fc9d7d201c735874e9ab652ebc62c2891faf0290546ff765d770e1",
-            "thenoise-0.15.0-rocm10.1.0-gfx103X-win-x64.part02-of-02.zip": "sha256:c707f94b3faaa94676d6b85d3feb9c7975965b8c76596ede1d7732c54100544d",
-            "thenoise-0.15.0-rocm10.1.0-gfx103X-win-x64.partcount": "sha256:53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
-            "thenoise-0.15.0-rocm10.1.0-gfx103X-x64.part01-of-02.tar.gz": "sha256:c87218df829e8345b997b591b8098d691cd5fc429d5e60dbaa1be544ff6e27b1",
-            "thenoise-0.15.0-rocm10.1.0-gfx103X-x64.part02-of-02.tar.gz": "sha256:16b7be625151379358b90d648380a675e908a4a01254ae2dfe17f2d56863fe16",
-            "thenoise-0.15.0-rocm10.1.0-gfx103X-x64.partcount": "sha256:53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
-            "thenoise-0.15.0-rocm10.1.0-gfx110X-win-x64.part01-of-02.zip": "sha256:f0b59a8d988cf0faf6cb7fa3210f0c3efd5f586d6f363163a7077e878b507302",
-            "thenoise-0.15.0-rocm10.1.0-gfx110X-win-x64.part02-of-02.zip": "sha256:fe9b70b535608fad2c04c222b314eb1c67bf0844c9c48bfe0d79a5db6adff0e5",
-            "thenoise-0.15.0-rocm10.1.0-gfx110X-win-x64.partcount": "sha256:53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
-            "thenoise-0.15.0-rocm10.1.0-gfx110X-x64.part01-of-02.tar.gz": "sha256:6d349ad0982fa31103320ae973957a2be5d16cf1174531a762352081624b3c7e",
-            "thenoise-0.15.0-rocm10.1.0-gfx110X-x64.part02-of-02.tar.gz": "sha256:897e0eda2ed5cb72ef8911f986b3154078b6ad0e7bb69920e8e55527c5ce0e5e",
-            "thenoise-0.15.0-rocm10.1.0-gfx110X-x64.partcount": "sha256:53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
-            "thenoise-0.15.0-rocm10.1.0-gfx1150-win-x64.zip": "sha256:a83448d42bfcb0e200ef794588da31325a79025e0874370bda20d62d5a3ed1c3",
-            "thenoise-0.15.0-rocm10.1.0-gfx1150-x64.tar.gz": "sha256:b2ff79ab72094b345e1d606a6c975e495ce38e9de286a1caac3c42b10c89dede",
-            "thenoise-0.15.0-rocm10.1.0-gfx1151-win-x64.zip": "sha256:72cd15bfd6dd479a397e9febd826992d13a40da8433ce0958f0c93ca20f67544",
-            "thenoise-0.15.0-rocm10.1.0-gfx1151-x64.tar.gz": "sha256:cc467ea02582017fdf5afede2f1476abac83397b1502b1cff55abe2dc3fade84",
-            "thenoise-0.15.0-rocm10.1.0-gfx1152-win-x64.zip": "sha256:56987a82ecb61805c22b2dea68cdafc15213d42a0428c3eabc69b93d5023342f",
-            "thenoise-0.15.0-rocm10.1.0-gfx1152-x64.tar.gz": "sha256:d6018850fb1a117fc35e4b10f884d1286dda9e908b0113780495219d4d041042",
-            "thenoise-0.15.0-rocm10.1.0-gfx120X-win-x64.part01-of-02.zip": "sha256:0fe5f94f70f3a28bb3b94db4263cf1131830f6e7314426455bd8139c79182d94",
-            "thenoise-0.15.0-rocm10.1.0-gfx120X-win-x64.part02-of-02.zip": "sha256:44506847dfeb3b1a40f1f9a87b5fd415f26376a85fabe0ca5e8151b1f7710af9",
-            "thenoise-0.15.0-rocm10.1.0-gfx120X-win-x64.partcount": "sha256:53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
-            "thenoise-0.15.0-rocm10.1.0-gfx120X-x64.part01-of-02.tar.gz": "sha256:c392a9ba1a8c60c5766ed17a96a9d726d0cfd7caa7ca60f022771d27d5b1febd",
-            "thenoise-0.15.0-rocm10.1.0-gfx120X-x64.part02-of-02.tar.gz": "sha256:9da8f64d2fcea51394aeea59c244f8c85dc7503fb7a755315b9466b23be59567",
-            "thenoise-0.15.0-rocm10.1.0-gfx120X-x64.partcount": "sha256:53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3"
+          "thenoise-0.16.0-rocm10.1.0": {
+            "qualification-report-thenoise-0.16.0-rocm10.1.0-linux.json": "sha256:c7ff3497e5a864036715b1bcffad63cf9b514fe8e4fee7b048ddc57b0a247f04",
+            "qualification-report-thenoise-0.16.0-rocm10.1.0-windows.json": "sha256:7612787ed60646e502c5ade687d39f799fc04bef1f323c9435370e9849789af1",
+            "thenoise-0.16.0-rocm10.1.0-cuda-x64.part01-of-02.tar.gz": "sha256:a1d6a1a3ed4a4c18be2cc6ef21b24a67512d03649bd438ba8102b73d24e2dff3",
+            "thenoise-0.16.0-rocm10.1.0-cuda-x64.part02-of-02.tar.gz": "sha256:158b8e286566c717f485e056585e5ad896e9f68a9009064bb095d408197d9017",
+            "thenoise-0.16.0-rocm10.1.0-cuda-x64.partcount": "sha256:53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
+            "thenoise-0.16.0-rocm10.1.0-cuda-x64.sha256": "sha256:54eec1c268f88761ea1ec05140974f43b7be1476365c7fafaabd03e3c569aa7b",
+            "thenoise-0.16.0-rocm10.1.0-gfx103X-win-x64.part01-of-02.zip": "sha256:c4dceff55d03b5ab8d51c15cea2037168fa0dc1345535ae25166d79e32d3dddf",
+            "thenoise-0.16.0-rocm10.1.0-gfx103X-win-x64.part02-of-02.zip": "sha256:427f6894336a264c1c3b368a3c2a4c5531c110bf1b1480a00739bb4eefd1649a",
+            "thenoise-0.16.0-rocm10.1.0-gfx103X-win-x64.partcount": "sha256:53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
+            "thenoise-0.16.0-rocm10.1.0-gfx103X-x64.part01-of-02.tar.gz": "sha256:af1e48725378a37b2a25be6759ed859cf49ccbb2888a957c33ff6763003ef8c5",
+            "thenoise-0.16.0-rocm10.1.0-gfx103X-x64.part02-of-02.tar.gz": "sha256:4d180f495222c3fd98a9649ae7e5a9987a6ab3aaad8bfcb870942bb9503a2e60",
+            "thenoise-0.16.0-rocm10.1.0-gfx103X-x64.partcount": "sha256:53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
+            "thenoise-0.16.0-rocm10.1.0-gfx110X-win-x64.part01-of-02.zip": "sha256:fc8c2094822121237449db955dc0b0b5e1370c1332b3dfe5372adb68a5f5c63d",
+            "thenoise-0.16.0-rocm10.1.0-gfx110X-win-x64.part02-of-02.zip": "sha256:8d54dd130563f7419960ba6a9cd67c5d70d0d0477109ddb8b987cc1cad334ffc",
+            "thenoise-0.16.0-rocm10.1.0-gfx110X-win-x64.partcount": "sha256:53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
+            "thenoise-0.16.0-rocm10.1.0-gfx110X-x64.part01-of-02.tar.gz": "sha256:431fb35fd1cde1c2b2164b663ffbc5c5fb93ab415a4b1700b093bde8e1af50a5",
+            "thenoise-0.16.0-rocm10.1.0-gfx110X-x64.part02-of-02.tar.gz": "sha256:469b84b46672459ecc44af2fac3914b8aca15109448e02fdba304be878c7e966",
+            "thenoise-0.16.0-rocm10.1.0-gfx110X-x64.partcount": "sha256:53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
+            "thenoise-0.16.0-rocm10.1.0-gfx1150-win-x64.zip": "sha256:973d67126e5fa02bfc050bc22d4f9c0e6377a72183b4f5fcdc4abf7973a387c9",
+            "thenoise-0.16.0-rocm10.1.0-gfx1150-x64.tar.gz": "sha256:cde419b911304c4d0d069786cb9410512f1320d53e57a45e76b31ab72e470f76",
+            "thenoise-0.16.0-rocm10.1.0-gfx1151-win-x64.zip": "sha256:ff7ff07ccd85d2c130fd4cf7158772d11ef004f93ece246ec69191acd2dfd081",
+            "thenoise-0.16.0-rocm10.1.0-gfx1151-x64.tar.gz": "sha256:1b548d7f61e203f08815ce20f8e801b677365393b6718da94b9b4e996b640011",
+            "thenoise-0.16.0-rocm10.1.0-gfx1152-win-x64.zip": "sha256:f0c6722f66bbd86137e7ab922e352dbd637f414c585304bcea97c4b441cdc806",
+            "thenoise-0.16.0-rocm10.1.0-gfx1152-x64.tar.gz": "sha256:490c13a197f2f910b5b31181ab10ebcc2591f30b0dc4c8e4a0db76478889baa6",
+            "thenoise-0.16.0-rocm10.1.0-gfx120X-win-x64.part01-of-02.zip": "sha256:4701891f782a4bdd6d6f9ef1f0a4ec88f6365d4cb2a0cdba9d12bdb84a88fd74",
+            "thenoise-0.16.0-rocm10.1.0-gfx120X-win-x64.part02-of-02.zip": "sha256:4ead0e664990019f294db03a08bff76b45e3a73781d1387a0ffbe030edac05e0",
+            "thenoise-0.16.0-rocm10.1.0-gfx120X-win-x64.partcount": "sha256:53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
+            "thenoise-0.16.0-rocm10.1.0-gfx120X-x64.part01-of-02.tar.gz": "sha256:fe48c2013b3abf5b9a1e67032c3c1d752ceb8b0120763be87dbabbbd27075e66",
+            "thenoise-0.16.0-rocm10.1.0-gfx120X-x64.part02-of-02.tar.gz": "sha256:d420e3b5009940d96a12e28b32f412477833b000664b8fb878dbb2767e25fd3f",
+            "thenoise-0.16.0-rocm10.1.0-gfx120X-x64.partcount": "sha256:53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3"
           }
         },
         "lemonade-sdk/vllm-rocm": {
@@ -426,17 +432,20 @@
     }
   },
   "llamacpp": {
-    "vulkan": "b12233",
-    "rocm-stable": "b12223",
-    "rocm-nightly": "b1372",
-    "cuda": "b12223",
-    "metal": "b12233",
-    "cpu": "b12233",
-    "nathanw": "vulkan-radv-performance@sha256:41018261e61b7e32fb38e4985ba569d0837804e727dcc62689c2fb1d73ec8f15",
-    "halobox": "rocm-10.0-strix-llama@sha256:015fddafc28bfdb1653a99905010e83a9327f072206cb1f882f1f9f922069f48"
+    "vulkan": "b12633",
+    "rocm-stable": "b12625",
+    "rocm-nightly": "b1385",
+    "cuda": "b12625",
+    "metal": "b12633",
+    "cpu": "b12633",
+    "nathanw": "vulkan-radv-performance@sha256:4cb3f2ecd8340b8a5928d3917969d256ea55e4a7346cd25deb2b470126c9ae0e",
+    "halobox": "rocm-10.0-strix-llama@sha256:a8d329920f1375352d0e7167ee17cbebe89257be5a51bed77a591077581a7ea1"
   },
   "llamacpp-hrx": {
     "hrx": "hrx-b129"
+  },
+  "loom": {
+    "hrx": "v0.2.0"
   },
   "whispercpp": {
     "cpu": "v1.8.4",
@@ -446,23 +455,23 @@
     "metal": "v1.8.4"
   },
   "sd-cpp": {
-    "cpu": "master-957-90e86d1",
-    "rocm-stable": "master-957-90e86d1",
-    "vulkan": "master-957-90e86d1",
-    "cuda": "master-957-90e86d1",
-    "metal": "master-957-90e86d1"
+    "cpu": "master-1106-b115a63",
+    "rocm-stable": "master-1106-b115a63",
+    "vulkan": "master-1106-b115a63",
+    "cuda": "master-1106-b115a63",
+    "metal": "master-1106-b115a63"
   },
   "rocmfpx": {
     "rocm": "rocm-10.0-rocmfpx@sha256:4df326e907a469f4acc6091fa7fb68fb275c2d5a7136bacd8e47e7339a5c49f7"
   },
   "halogen": {
-    "rocm": "0.19.1@sha256:7ab5c3dfd77acb2387603f1807069cac3494e678f413c0670745ba2df74c0f0e"
+    "rocm": "0.20.7@sha256:773073448dc9ff4a8c6b6c278802e254fd5f1546764e27531aeb3b77cb13482e"
   },
   "gufo": {
-    "rocm": "0.35.0@sha256:99e9b5471b7a9b007c686c2aa795afaf966744d64e753cb009c89541f9e9c2b6"
+    "rocm": "0.36.0@sha256:69a858b088658040ec9b81e7a0f32d663f775e90f78894943aea0ec7a4bf7d52"
   },
   "ds4": {
-    "rocm": "rocm-10.0@sha256:e14ad3edb88c9c2e80b1c1464ef9307bcc56c935f31c4df9fa8e980974f68c47"
+    "rocm": "rocm-10.0@sha256:686650eed951f80d861905642b3d1d4347b44c0369aa2de5d1db1033bb72813f"
   },
   "therock": {
     "version": "10.1.0",
@@ -547,8 +556,8 @@
   },
   "thenoise": {
     "comment": "TheNoise shared release: ROCm uses <tag>-gfxNNNN-x64.tar.gz; Linux CUDA uses <tag>-cuda-x64.tar.gz.",
-    "rocm": "thenoise-0.15.0-rocm10.1.0",
-    "cuda": "thenoise-0.15.0-rocm10.1.0"
+    "rocm": "thenoise-0.16.0-rocm10.1.0",
+    "cuda": "thenoise-0.16.0-rocm10.1.0"
   },
   "rocm_asset_families": {
     "comment": "Maps a concrete ROCm ISA (as detected on the device) to the family target name the GitHub release repos publish assets under. ISAs not listed here (e.g. gfx908, gfx90a, which ship as individual assets) are used verbatim. Add a new GPU's ISA here when its release asset is published under a family name.",

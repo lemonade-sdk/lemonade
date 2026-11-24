@@ -120,7 +120,7 @@ const tests = [
       );
       assertMatches(
         source,
-        /if \(components\.length > 0\)[\s\S]*?for \(const componentName of components\)[\s\S]*?loadModelRuntime\(componentInfo \|\| componentName, visited\)/,
+        /if \(components\.length > 0\)[\s\S]*?for \(const componentName of components\)[\s\S]*?loadModelRuntime\(componentInfo \|\| componentName, visited\b/,
         'Loading a collection should recursively load its concrete components.',
       );
       assertIncludes(

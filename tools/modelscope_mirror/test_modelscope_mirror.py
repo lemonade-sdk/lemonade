@@ -13,10 +13,12 @@ import modelscope_mirror as m
 VERSIONS = {
     "comment": "x",
     "checksums": {
-        "github": {
-            "lemonade-sdk/ort-server": {"0.4.0": {"a.zip": "sha256:" + "a" * 64}}
+        "modelscope": {
+            "github": {
+                "lemonade-sdk/ort-server": {"0.4.0": {"a.zip": "sha256:" + "a" * 64}}
+            },
+            "therock": {"10.1.0": {"t.tar.gz": "sha256:" + "b" * 64}},
         },
-        "therock": {"10.1.0": {"t.tar.gz": "sha256:" + "b" * 64}},
     },
     "llamacpp": {
         "comment": "c",
@@ -46,6 +48,12 @@ class PinsTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             m.pinned_releases({"newbackend": {"cpu": "v1"}}, None, True)
 
+    def test_hand_pins_count_for_github_files(self):
+        hand = {
+            "checksums": {"github": {"o/r": {"v1": {"f.zip": "sha256:" + "d" * 64}}}}
+        }
+        self.assertEqual(m.pinned_sha256([hand], "github/o/r/v1", "f.zip"), "d" * 64)
+
     def test_pinned_sha256_reads_both_sections(self):
         self.assertEqual(
             m.pinned_sha256(
@@ -60,7 +68,11 @@ class PinsTest(unittest.TestCase):
 
     def test_pins_that_disagree_stop_the_mirror(self):
         other = {
-            "checksums": {"therock": {"10.1.0": {"t.tar.gz": "sha256:" + "c" * 64}}}
+            "checksums": {
+                "modelscope": {
+                    "therock": {"10.1.0": {"t.tar.gz": "sha256:" + "c" * 64}}
+                }
+            }
         }
         with self.assertRaises(SystemExit):
             m.pinned_sha256([VERSIONS, other], "therock/10.1.0", "t.tar.gz")
@@ -99,22 +111,15 @@ class PinsTest(unittest.TestCase):
         ]
         versions = {"checksums": VERSIONS["checksums"], "onnxruntime": {"cpu": "0.4.0"}}
         versions["therock"] = VERSIONS["therock"]
-        # therock_item() is called but its file is already hashed, so AMD is not contacted.
-        new_tarball = {"name": "new.tar.gz", "size": 1, "sha256": "", "url": "u"}
-        existing_tarball = {"name": "t.tar.gz", "size": 1, "sha256": "", "url": "u"}
-        rock_item = m.Item("therock", "therock/10.1.0", "src")
-        rock_item.files = [existing_tarball, new_tarball]
         with mock.patch.object(m, "release_item", return_value=item), mock.patch.object(
-            m, "therock_item", return_value=rock_item
-        ), mock.patch.object(m, "download", return_value="c" * 64):
+            m, "therock_item", side_effect=AssertionError("AMD contacted")
+        ):
             out = m.checksums_for(versions, False, True, Path("."))
         self.assertEqual(
             out["github"]["lemonade-sdk/ort-server"]["0.4.0"],
             {"a.zip": "sha256:" + "a" * 64, "late.zip": "sha256:" + "e" * 64},
         )
-        # Existing hash preserved; new tarball hashed.
-        self.assertEqual(out["therock"]["10.1.0"]["t.tar.gz"], "sha256:" + "b" * 64)
-        self.assertEqual(out["therock"]["10.1.0"]["new.tar.gz"], "sha256:" + "c" * 64)
+        self.assertEqual(out["therock"], VERSIONS["checksums"]["modelscope"]["therock"])
 
 
 class ManifestTest(unittest.TestCase):

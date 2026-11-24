@@ -156,9 +156,6 @@ jobs:
             else
               gh issue create --title "$TITLE" --body "$body"
             fi
-          elif [[ -n "$issue" && "$EVENT" != "workflow_run" ]]; then
-            # Only close after a full-coverage run (main + stable + RC).
-            # A release-only run checks just its own pins and must not clear an
-            # incident that was filed for a different set of missing files.
+          elif [[ -n "$issue" ]]; then
             gh issue close "$issue" --comment "[This run]($RUN_URL) found every pinned file on ModelScope."
           fi

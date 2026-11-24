@@ -12,6 +12,7 @@ import { backendCompactLabel, capabilityColor } from '../modelPresentation';
 import { scheduleIdleWork } from '../startupScheduler';
 import { useI18n } from '../i18n';
 import ChatReadinessProgress from './ChatReadinessProgress';
+import ContextMeter from './ContextMeter';
 
 const Model3DResult = lazy(() => import(/* webpackChunkName: "chat-model3d" */ './Model3DResult'));
 const LogViewer = lazy(() => import(/* webpackChunkName: "chat-logs" */ './LogViewer'));
@@ -65,7 +66,7 @@ import { prepareToolCallsForStorage } from '../features/chatHistory/toolCallPers
 import { ConversationImageRegistry } from '../features/images/imageRegistry';
 import type { DownloadListItem } from '../features/downloadManager/downloadStore';
 import { findModelInfoByName, getAudioTranscriptionComponent, getPrimaryChatComponent, getVisionChatComponent, isCollectionModel, virtualLoadedCollection } from '../features/collections/collectionModels';
-import { LEMONADE_MCP_SERVER_ID, LEMONADE_MCP_TOOL_COUNT, MAX_MCP_SERVER_SELECTION, type McpServerToolOption } from '../tools/mcpMetadata';
+import { LEMONADE_MCP_SERVER_ID, LEMONADE_MCP_TOOL_COUNT, MAX_MCP_SERVER_SELECTION, WEB_SEARCH_TOOL_NAME, isDefaultMcpTool, type McpServerToolOption } from '../tools/mcpMetadata';
 import { isRouterModelInfo, preflightRouter, routerPreflightError } from '../features/router/routerRuntime';
 import { TTS_SETTINGS_EVENT, loadTtsPlaybackSettings, ttsVoiceFromRecipeOptions } from '../features/audio/ttsSettings';
 import { selectDictationModel, updateDraftWithDictation } from '../features/audio/dictationModels';
@@ -460,7 +461,7 @@ function mcpToolNamesForServers(servers: McpServerToolOption[], serverIds: strin
   const selected = new Set(serverIds);
   return servers
     .filter(server => selected.has(server.id))
-    .flatMap(server => server.toolOptions.map(tool => tool.runtimeName));
+    .flatMap(server => server.toolOptions.map(tool => tool.runtimeName).filter(isDefaultMcpTool));
 }
 
 function modelModeBadge(capability: ModelCapability, recipe?: string | null): string {
@@ -606,6 +607,8 @@ interface AudioGenerationSettings {
   seed: number | '';
   lyrics: string;
   vocalLanguage: string;
+  sigmaShift: number;
+  negativePrompt: string;
 }
 
 const DEFAULT_AUDIO_GENERATION_SETTINGS: AudioGenerationSettings = {
@@ -615,7 +618,17 @@ const DEFAULT_AUDIO_GENERATION_SETTINGS: AudioGenerationSettings = {
   seed: -1,
   lyrics: '',
   vocalLanguage: 'en',
+  sigmaShift: 5,
+  negativePrompt: '',
 };
+
+const OPENMOSS_SFX_DEFAULTS = {
+  steps: 100,
+  cfg: 4,
+  sigmaShift: 5,
+};
+
+const OPENMOSS_SFX_SEED_LIMIT = 0x100000000;
 
 type OpenMossMode = 'plain' | 'describe' | 'clone';
 
@@ -629,8 +642,16 @@ const DEFAULT_OPENMOSS_SETTINGS: OpenMossSettings = {
   voiceDescription: '',
 };
 
-const OPENMOSS_VOICE_DESIGN_PHRASE =
-  'Hello there. This is a short sample of the voice you described.';
+const OPENMOSS_SPEECH_PARAMS = [
+  { key: 'audio_temperature', label: 'Audio temp', min: 0, max: 3, step: 0.05 },
+  { key: 'audio_top_p', label: 'Audio top-p', min: 0, max: 1, step: 0.05 },
+  { key: 'audio_top_k', label: 'Audio top-k', min: 0, max: 200, step: 1 },
+  { key: 'audio_repetition_penalty', label: 'Repetition', min: 1, max: 2, step: 0.05 },
+  { key: 'text_temperature', label: 'Text temp', min: 0, max: 3, step: 0.05 },
+  { key: 'text_top_p', label: 'Text top-p', min: 0, max: 1, step: 0.05 },
+  { key: 'text_top_k', label: 'Text top-k', min: 0, max: 200, step: 1 },
+  { key: 'speed', label: 'Speed', min: 0.25, max: 4, step: 0.05 },
+] as const;
 
 type Model3DSourceMode = 'image' | 'text';
 
@@ -864,12 +885,6 @@ async function audioToInputAudio(file: File): Promise<{ type: 'input_audio'; inp
   return { type: 'input_audio', input_audio: { data: payload, format } };
 }
 
-async function fileToBase64(file: Blob): Promise<string> {
-  const dataUrl = await blobToDataUrl(file);
-  const comma = dataUrl.indexOf(',');
-  return comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
-}
-
 async function wavVoiceSampleToBase64(file: File): Promise<string> {
   const maxBytes = 10 * 1024 * 1024;
   if (file.size > maxBytes) {
@@ -966,10 +981,15 @@ const ChatView: React.FC<ChatViewProps> = ({
   const [imageSettings, setImageSettings] = useState<ImageGenerationSettings>(DEFAULT_IMAGE_SETTINGS);
   const [audioGenerationSettings, setAudioGenerationSettings] = useState<AudioGenerationSettings>(DEFAULT_AUDIO_GENERATION_SETTINGS);
   const [openMossSettings, setOpenMossSettings] = useState<OpenMossSettings>(DEFAULT_OPENMOSS_SETTINGS);
+  const [openMossSpeechParams, setOpenMossSpeechParams] = useState<Record<string, number>>({});
   const [model3dSettings, setModel3dSettings] = useState<Model3DSettings>(DEFAULT_MODEL3D_SETTINGS);
   const imageSettingsModelRef = useRef<string | null>(null);
   const imageSettingsTouchedRef = useRef(false);
   const imageSettingsCommittedRef = useRef(false);
+  const audioGenerationSettingsModelRef = useRef<string | null>(null);
+  const audioGenerationEditedRef = useRef<Set<string>>(new Set());
+  const openMossSettingsModelRef = useRef<string | null>(null);
+  const openMossDescriptionEditedRef = useRef(false);
   const [pendingImages, setPendingImages] = useState<Array<{ preview: string; original: File }>>([]);
   const [imageAttachmentError, setImageAttachmentError] = useState('');
   const [imageRegistry] = useState(() => new ConversationImageRegistry());
@@ -1002,6 +1022,9 @@ const ChatView: React.FC<ChatViewProps> = ({
   });
   const [selectedMcpServerIds, setSelectedMcpServerIds] = useState<string[]>(() => loadScopedStringArray(MCP_SERVER_IDS_KEY) || DEFAULT_MCP_SERVER_IDS);
   const [selectedMcpToolNames, setSelectedMcpToolNames] = useState<string[] | null>(() => loadScopedStringArray(MCP_TOOL_NAMES_KEY));
+  const mcpConfigurationVersionRef = useRef(0);
+  const [webSearchToggleBusy, setWebSearchToggleBusy] = useState(false);
+  const [webSearchToggleError, setWebSearchToggleError] = useState('');
   const [mcpPickerOpen, setMcpPickerOpen] = useState(false);
   const [mcpPickerTab, setMcpPickerTab] = useState<'lemonade' | 'external'>('lemonade');
   const [addMenuOpen, setAddMenuOpen] = useState(false);
@@ -1314,40 +1337,22 @@ const ChatView: React.FC<ChatViewProps> = ({
   const isAceStepAudio = currentCapability === 'audio-generation'
     && (currentRecipe.includes('acestep') || currentRecipe.includes('ace-step') || (/ace[-_ ]?step/.test(String(currentModel || '').toLowerCase())));
   const currentLabels = (currentKnownModelInfo?.labels || []).map(label => String(label).toLowerCase());
+  const isOpenMossSfx = currentCapability === 'audio-generation'
+    && (currentRecipe.includes('openmoss') || /moss[-_ ]?soundeffect/i.test(String(currentModel || '')));
   const isOpenMossTts = currentCapability === 'tts'
     && (currentRecipe.includes('openmoss') || /moss[-_ ]?(tts|voicegen)/i.test(String(currentModel || '')));
   const currentIsVoiceDesign = currentLabels.includes('voice-design')
     || /voicegen/i.test(String(currentModel || ''));
-  const openMossModels = useMemo(() => {
-    const loadedNames = new Set(loadedModels.map(model => model.model_name.toLowerCase()));
-    return knownModelInfos
-      .map(info => {
-        const name = String((info as any).model_name || info.name || info.id || '').trim();
-        const recipe = String(
-          (info as any).recipe
-          || ((Array.isArray(info.recipes) && info.recipes[0]) ? (info.recipes[0] as any).recipe : ''),
-        ).toLowerCase();
-        const labels = (info.labels || []).map(label => String(label).toLowerCase());
-        return { name, recipe, labels, downloaded: Boolean((info as any).downloaded) };
-      })
-      .filter(model => model.name
-        && (model.recipe.includes('openmoss') || /moss[-_ ]?(tts|voicegen)/i.test(model.name))
-        && (loadedNames.has(model.name.toLowerCase())
-          || model.name === currentModel
-          || (model.downloaded && !activeDownloadForModel(downloadItems, model.name))));
-  }, [currentModel, downloadItems, knownModelInfos, loadedModels]);
-  const openMossVoiceDesignModel = currentIsVoiceDesign && isOpenMossTts
-    ? currentModel
-    : (openMossModels.find(model => model.labels.includes('voice-design') || /voicegen/i.test(model.name))?.name || '');
-  const openMossCloneModel = isOpenMossTts && !currentIsVoiceDesign
-    ? currentModel
-    : (openMossModels.find(model => !model.labels.includes('voice-design') && !/voicegen/i.test(model.name))?.name || '');
+  const openMossModes: OpenMossMode[] = currentIsVoiceDesign ? ['describe'] : ['plain', 'describe', 'clone'];
+  const openMossMode: OpenMossMode = openMossModes.includes(openMossSettings.mode)
+    ? openMossSettings.mode
+    : openMossModes[0];
   const openMossDescribeUnavailable = isOpenMossTts
-    && openMossSettings.mode === 'describe'
-    && !openMossVoiceDesignModel;
+    && openMossMode === 'describe'
+    && !openMossSettings.voiceDescription.trim();
   const openMossCloneUnavailable = isOpenMossTts
-    && openMossSettings.mode === 'clone'
-    && (!openMossCloneModel || pendingAudioFiles.length === 0);
+    && openMossMode === 'clone'
+    && pendingAudioFiles.length === 0;
   const imageGenerationModels = useMemo(() => {
     const names = new Set<string>();
     loadedModels.forEach(model => {
@@ -1443,25 +1448,61 @@ const ChatView: React.FC<ChatViewProps> = ({
     return () => { cancelled = true; };
   }, [connectionStatus, currentCapability, currentModel, isOpenMossTts]);
 
-  useEffect(() => {
-    if (currentCapability !== 'audio-generation') return;
-    const recipeOptions = currentModelRecipeOptions || {};
-    setAudioGenerationSettings(prev => ({
-      ...prev,
-      duration: isAceStepAudio ? 150 : 10,
-      steps: typeof recipeOptions.steps === 'number' ? recipeOptions.steps : 50,
-      cfg: typeof recipeOptions.cfg_scale === 'number' ? recipeOptions.cfg_scale : 4.5,
-      lyrics: '',
-    }));
-  }, [currentModel, currentCapability, currentModelRecipeOptions, isAceStepAudio]);
+  const editAudioGenerationSetting = useCallback(<K extends keyof AudioGenerationSettings>(
+    key: K,
+    value: AudioGenerationSettings[K],
+  ) => {
+    audioGenerationEditedRef.current.add(key);
+    setAudioGenerationSettings(prev => ({ ...prev, [key]: value }));
+  }, []);
+
+  const editOpenMossDescription = useCallback((voiceDescription: string) => {
+    openMossDescriptionEditedRef.current = true;
+    setOpenMossSettings(prev => ({ ...prev, voiceDescription }));
+  }, []);
 
   useEffect(() => {
-    if (!isOpenMossTts) return;
-    setOpenMossSettings({
-      mode: 'plain',
-      voiceDescription: String(currentModelRecipeOptions?.voice || ''),
-    });
-    setPendingAudioFiles([]);
+    const modelKey = currentModel || '';
+    if (audioGenerationSettingsModelRef.current !== modelKey) {
+      audioGenerationSettingsModelRef.current = modelKey;
+      audioGenerationEditedRef.current = new Set();
+    }
+    if (currentCapability !== 'audio-generation') return;
+    const recipeOptions = currentModelRecipeOptions || {};
+    const fallback = isOpenMossSfx ? OPENMOSS_SFX_DEFAULTS : DEFAULT_AUDIO_GENERATION_SETTINGS;
+    const numericOption = (key: string, value: number) => (
+      typeof recipeOptions[key] === 'number' ? recipeOptions[key] as number : value
+    );
+    const defaults: Partial<AudioGenerationSettings> = {
+      duration: isAceStepAudio ? 150 : 10,
+      steps: numericOption('steps', fallback.steps),
+      cfg: numericOption('cfg_scale', fallback.cfg),
+      sigmaShift: numericOption('sigma_shift', fallback.sigmaShift),
+      negativePrompt: '',
+      lyrics: '',
+    };
+    const edited = audioGenerationEditedRef.current;
+    const untouched = Object.fromEntries(
+      Object.entries(defaults).filter(([key]) => !edited.has(key)),
+    ) as Partial<AudioGenerationSettings>;
+    setAudioGenerationSettings(prev => ({ ...prev, ...untouched }));
+  }, [currentModel, currentCapability, currentModelRecipeOptions, isAceStepAudio, isOpenMossSfx]);
+
+  useEffect(() => {
+    if (!isOpenMossTts) {
+      openMossSettingsModelRef.current = null;
+      return;
+    }
+    if (openMossSettingsModelRef.current !== currentModel) {
+      openMossSettingsModelRef.current = currentModel;
+      openMossDescriptionEditedRef.current = false;
+      setOpenMossSettings(DEFAULT_OPENMOSS_SETTINGS);
+      setOpenMossSpeechParams({});
+      setPendingAudioFiles([]);
+    }
+    if (openMossDescriptionEditedRef.current) return;
+    const recipeVoice = String(currentModelRecipeOptions?.voice || '');
+    setOpenMossSettings(prev => (prev.voiceDescription === recipeVoice ? prev : { ...prev, voiceDescription: recipeVoice }));
   }, [currentModel, currentModelRecipeOptions, isOpenMossTts]);
 
   useEffect(() => {
@@ -1469,14 +1510,14 @@ const ChatView: React.FC<ChatViewProps> = ({
       || currentIsOmniCollection
       || modelSupportsChatAudioInput(currentKnownModelInfo, currentLoadedModel);
     if (keepsAudioAttachments) return;
-    if (isOpenMossTts && openMossSettings.mode === 'clone') return;
+    if (isOpenMossTts && openMossMode === 'clone') return;
     setPendingAudioFiles([]);
   }, [
     currentCapability,
     currentKnownModelInfo,
     currentLoadedModel,
     isOpenMossTts,
-    openMossSettings.mode,
+    openMossMode,
   ]);
 
   const hasRealtimeAudio = useMemo(
@@ -1661,11 +1702,13 @@ const ChatView: React.FC<ChatViewProps> = ({
   const canUseAudioInput = currentIsOmniCollection || currentCapability === 'audio' || (currentCapability === 'chat' && supportsChatAudioInput);
 
   const persistMcpEnabled = useCallback((next: boolean) => {
+    mcpConfigurationVersionRef.current += 1;
     setUseMcp(next);
     try { localStorage.setItem(scopedKey(MCP_ENABLED_KEY), String(next)); } catch { /* ignore */ }
   }, []);
 
   const persistMcpSelection = useCallback((serverIds: string[], toolNames: string[] | null) => {
+    mcpConfigurationVersionRef.current += 1;
     const uniqueServerIds = [...new Set(serverIds.filter(Boolean))].slice(0, MAX_MCP_SERVER_SELECTION);
     const uniqueToolNames = toolNames === null ? null : [...new Set(toolNames.filter(Boolean))];
     setSelectedMcpServerIds(uniqueServerIds);
@@ -1683,7 +1726,10 @@ const ChatView: React.FC<ChatViewProps> = ({
   }, [dismissIncomingPrompt, persistMcpEnabled, persistMcpSelection]);
 
   const selectedMcpServerIdSet = useMemo(() => new Set(selectedMcpServerIds), [selectedMcpServerIds]);
-  const selectedMcpToolNameSet = useMemo(() => selectedMcpToolNames === null ? null : new Set(selectedMcpToolNames), [selectedMcpToolNames]);
+  const selectedMcpToolNameSet = useMemo(
+    () => new Set(selectedMcpToolNames ?? mcpToolNamesForServers(mcpOptions, selectedMcpServerIds)),
+    [mcpOptions, selectedMcpServerIds, selectedMcpToolNames],
+  );
   const selectedMcpToolCount = useMemo(() => {
     if (selectedMcpToolNames !== null) return selectedMcpToolNames.length;
     const visibleToolCount = mcpToolNamesForServers(mcpOptions, selectedMcpServerIds).length;
@@ -1759,7 +1805,7 @@ const ChatView: React.FC<ChatViewProps> = ({
       const serverToolNames = new Set(server.toolOptions.map(tool => tool.runtimeName));
       nextToolNames = selected
         ? nextToolNames.filter(name => !serverToolNames.has(name))
-        : [...new Set([...nextToolNames, ...serverToolNames])];
+        : [...new Set([...nextToolNames, ...[...serverToolNames].filter(isDefaultMcpTool)])];
     }
     persistMcpSelection(nextIds, nextToolNames);
     if (!useMcp && nextIds.length > 0) persistMcpEnabled(true);
@@ -1778,6 +1824,47 @@ const ChatView: React.FC<ChatViewProps> = ({
     persistMcpSelection(nextIds, nextToolNames);
     if (!useMcp) persistMcpEnabled(true);
   }, [mcpOptions, persistMcpEnabled, persistMcpSelection, selectedMcpServerIdSet, selectedMcpServerIds, selectedMcpToolNames, useMcp]);
+
+  // The quick switch and the Tools dialog write the same selection. Resolve the
+  // full catalog before materializing implicit defaults, so toggling web search
+  // cannot accidentally replace all default tools with only web_search.
+  const handleWebSearchToggle = useCallback(async () => {
+    if (webSearchToggleBusy) return;
+    const startingVersion = mcpConfigurationVersionRef.current;
+    setWebSearchToggleBusy(true);
+    setWebSearchToggleError('');
+    try {
+      const { listMcpServerToolOptions } = await import(
+        /* webpackChunkName: "mcp-runtime" */ '../tools/mcpRuntime'
+      );
+      const options = mcpOptions.length ? mcpOptions : await listMcpServerToolOptions();
+      // Do not undo a later Tools dialog change while the runtime chunk loads.
+      if (mcpConfigurationVersionRef.current !== startingVersion) return;
+      if (!options.some(server => server.id === LEMONADE_MCP_SERVER_ID &&
+        server.toolOptions.some(tool => tool.runtimeName === WEB_SEARCH_TOOL_NAME))) {
+        throw new Error('Web search is not available.');
+      }
+      if (!mcpOptions.length) setMcpOptions(options);
+
+      const enabled = useMcp && selectedMcpServerIdSet.has(LEMONADE_MCP_SERVER_ID)
+        && selectedMcpToolNameSet.has(WEB_SEARCH_TOOL_NAME);
+      const nextIds = selectedMcpServerIdSet.has(LEMONADE_MCP_SERVER_ID)
+        ? selectedMcpServerIds : [...selectedMcpServerIds, LEMONADE_MCP_SERVER_ID];
+      if (nextIds.length > MAX_MCP_SERVER_SELECTION) {
+        throw new Error('Deselect an MCP server in Tools to enable web search.');
+      }
+      const base = selectedMcpToolNames ?? mcpToolNamesForServers(options, selectedMcpServerIds);
+      persistMcpSelection(nextIds, enabled
+        ? base.filter(name => name !== WEB_SEARCH_TOOL_NAME)
+        : [...new Set([...base, WEB_SEARCH_TOOL_NAME])]);
+      if (!enabled && !useMcp) persistMcpEnabled(true);
+    } catch (error) {
+      setWebSearchToggleError(friendlyErrorMessage(error));
+    } finally {
+      setWebSearchToggleBusy(false);
+    }
+  }, [mcpOptions, persistMcpEnabled, persistMcpSelection, selectedMcpServerIdSet,
+    selectedMcpServerIds, selectedMcpToolNameSet, selectedMcpToolNames, useMcp, webSearchToggleBusy]);
 
   const openMcpPicker = useCallback(() => {
     mcpReturnFocusEntryRef.current = 'tools';
@@ -2176,8 +2263,42 @@ const ChatView: React.FC<ChatViewProps> = ({
 
   const activeConvo = conversations.find(c => c.id === activeId) || null;
   const messages = activeConvo?.messages || [];
+  const contextUsage = useMemo(() => {
+    const thread = activeConvo?.messages || [];
+    for (let i = thread.length - 1; i >= 0; i--) {
+      const message = thread[i];
+      if (message.role !== 'assistant' || !message.stats?.context) continue;
+      // Never display another model's last token count after switching models.
+      return message.model?.name?.toLowerCase() === currentModel.toLowerCase()
+        ? message.stats.context : null;
+    }
+    return null;
+  }, [activeConvo?.messages, currentModel]);
+  const liveModel = activeId ? streamModelsRef.current[activeId] : null;
+  const liveContextUsage = activeId && isStreaming
+    && liveModel?.name?.toLowerCase() === currentModel.toLowerCase()
+    ? streaming.getLiveStats(activeId)?.context ?? null : null;
+  const displayedContextUsage = isStreaming ? liveContextUsage : contextUsage;
+  const contextHistory = useMemo(() => (activeConvo?.messages || [])
+    .filter(message => {
+      if (message.role === 'assistant' && !isPersistableAssistantMessage(message)) return false;
+      if (message.generatedImages?.length || message.audioUrl || message.model3dUrl) return false;
+      return true;
+    })
+    .map(message => ({
+      role: message.role,
+      content: message.images?.length && supportsChatImageInput && !isCollectionModel(currentKnownModelInfo)
+        ? [
+          { type: 'text' as const, text: message.content },
+          ...message.images.map(url => ({ type: 'image_url' as const, image_url: { url } })),
+        ]
+        : message.content,
+    })), [activeConvo?.messages, supportsChatImageInput, currentKnownModelInfo]);
   const incomingPromptPending = !activeId && !!incomingPrompt && !incomingPromptHandledRef.current;
   const toolsUnavailable = hasBrowserPromptContext(messages) || incomingPromptPending;
+  const webSearchEnabled = useMcp && modeSupportsMcp && !toolsUnavailable
+    && selectedMcpServerIdSet.has(LEMONADE_MCP_SERVER_ID)
+    && selectedMcpToolNameSet.has(WEB_SEARCH_TOOL_NAME);
   useEffect(() => {
     if (toolsUnavailable) setMcpPickerOpen(false);
   }, [toolsUnavailable]);
@@ -2665,7 +2786,7 @@ ${finalText}`
           // A failed primary socket may still close while the legacy port connects.
           if (!isCurrent() || !realtimeRef.current) return;
           setIsLiveConnected(false);
-          if (dictating && liveFinalizeTimerRef.current === null) setLiveError('Realtime microphone disconnected.');
+          if (dictating && liveFinalizeTimerRef.current === null) setLiveError(t('Realtime microphone disconnected.'));
           failDictation();
         },
         onError: message => { if (isCurrent()) { setLiveError(message); failDictation(); } },
@@ -2673,12 +2794,12 @@ ${finalText}`
         onTranscription: (text, final) => { if (isCurrent()) handleLiveTranscription(text, final); },
       });
       if (!isCurrent()) { handle.close(); return; }
-      if (!handle.isConnected()) throw new Error('Realtime microphone disconnected.');
+      if (!handle.isConnected()) throw new Error(t('Realtime microphone disconnected.'));
       realtimeRef.current = handle;
       isLiveRecordingRef.current = true;
       await startRecording();
       if (!isCurrent()) { stopRecording(); return; }
-      if (!handle.isConnected()) throw new Error('Realtime microphone disconnected.');
+      if (!handle.isConnected()) throw new Error(t('Realtime microphone disconnected.'));
       setIsLiveRecording(true);
     } catch (err) {
       if (!isCurrent()) return;
@@ -2833,6 +2954,16 @@ ${finalText}`
         } else {
           audioOptions.cfg = audioGenerationSettings.cfg;
         }
+        const isOpenMossSfxModel = String(model.recipe || '').toLowerCase().includes('openmoss')
+          || /moss[-_ ]?soundeffect/i.test(String(model.name || ''));
+        if (isOpenMossSfxModel) {
+          audioOptions.sigma_shift = audioGenerationSettings.sigmaShift;
+          const negativePrompt = audioGenerationSettings.negativePrompt.trim();
+          if (negativePrompt) audioOptions.negative_prompt = negativePrompt;
+          if (typeof audioOptions.seed !== 'number' || audioOptions.seed < 0) {
+            audioOptions.seed = Math.floor(Math.random() * OPENMOSS_SFX_SEED_LIMIT);
+          }
+        }
         const audio = await api.audioGeneration(model.name, text, audioOptions);
         appendAssistantMessage(convoId, {
           content: isAceStepModel
@@ -2888,68 +3019,38 @@ ${finalText}`
         });
       } else if (model.capability === 'tts') {
         if (!text) throw new Error(t('TTS mode needs text to speak.'));
-        let targetModel = model.name;
         const directOptions = (await api.getModelOptions(model.name)).effective || {};
         let voice = ttsVoiceFromRecipeOptions(directOptions);
-        let speechOptions: Record<string, unknown> = {};
+        const speechOptions: Record<string, unknown> = {};
         let content = 'Generated speech audio from your text.';
-        let reloadTargetAfterVoiceDesign = false;
 
         if (isOpenMossTts) {
+          Object.assign(speechOptions, openMossSpeechParams);
           voice = openMossSettings.voiceDescription.trim();
-          if (openMossSettings.mode === 'describe') {
-            if (!openMossVoiceDesignModel) {
-              throw new Error(t('Install MOSS-VoiceGen to design a voice from a description.'));
-            }
-            targetModel = openMossVoiceDesignModel;
-            if (openMossCloneModel) {
-              if (!loadedModels.some(item => item.model_name.toLowerCase() === openMossVoiceDesignModel.toLowerCase())) {
-                await loadModelForChat(
-                  openMossVoiceDesignModel,
-                  findModelInfoByName(knownModelInfos, openMossVoiceDesignModel) || null,
-                );
-              }
-              const designedSample = await api.textToSpeech(
-                openMossVoiceDesignModel,
-                OPENMOSS_VOICE_DESIGN_PHRASE,
-                voice,
-              );
-              try {
-                speechOptions.reference_wav_b64 = await fileToBase64(designedSample.blob);
-              } finally {
-                URL.revokeObjectURL(designedSample.url);
-              }
-              targetModel = openMossCloneModel;
+          if (openMossMode === 'describe') {
+            if (!voice) throw new Error(t('Describe the voice you want before generating speech.'));
+            const requestLabels = (findModelInfoByName(knownModelInfos, model.name)?.labels || [])
+              .map(label => String(label).toLowerCase());
+            const isVoiceDesignModel = requestLabels.includes('voice-design') || /voicegen/i.test(model.name);
+            if (!isVoiceDesignModel) {
+              speechOptions.voice_design_description = voice;
               voice = '';
-              reloadTargetAfterVoiceDesign = true;
-              content = t('Designed a voice from your description and generated speech with it.');
-            } else {
-              content = t('Generated speech with the described voice.');
             }
-          } else if (openMossSettings.mode === 'clone') {
+            content = t('Designed a voice from your description and generated speech with it.');
+          } else if (openMossMode === 'clone') {
             const sample = audioFiles[0];
             if (!sample) throw new Error(t('Attach a WAV voice sample to clone.'));
-            if (!openMossCloneModel) throw new Error(t('Install OpenMOSS-TTS to clone a voice sample.'));
-            targetModel = openMossCloneModel;
             speechOptions.reference_wav_b64 = await wavVoiceSampleToBase64(sample);
             content = t('Generated speech using the attached voice sample.');
           }
-
-          if (reloadTargetAfterVoiceDesign || !loadedModels.some(item => item.model_name.toLowerCase() === targetModel.toLowerCase())) {
-            await loadModelForChat(targetModel, findModelInfoByName(knownModelInfos, targetModel) || null);
-          }
         }
 
-        const audio = await api.textToSpeech(targetModel, text, voice, speechOptions);
-        const targetInfo = findModelInfoByName(knownModelInfos, targetModel);
-        const outputModel = targetModel === model.name
-          ? model
-          : (snapshotFromModelInfo(targetInfo) || { ...model, name: targetModel });
+        const audio = await api.textToSpeech(model.name, text, voice, speechOptions);
         appendAssistantMessage(convoId, {
           content,
           audioUrl: trackGeneratedMediaUrl(audio.url),
-          audioName: `${targetModel}.wav`,
-          model: outputModel,
+          audioName: `${model.name}.wav`,
+          model,
         });
       } else if (model.capability === 'audio') {
         const file = audioFiles[0];
@@ -2981,7 +3082,7 @@ ${finalText}`
   }, [
     appendAssistantMessage, audioGenerationSettings, imageMode, imageSettings,
     isOpenMossTts, knownModelInfos, loadedModels, model3dSettings, onRefresh,
-    loadModelForChat, openMossCloneModel, openMossSettings, openMossVoiceDesignModel,
+    loadModelForChat, openMossMode, openMossSettings, openMossSpeechParams,
     speakWithPinnedTts, trackGeneratedMediaUrl,
   ]);
 
@@ -3123,7 +3224,7 @@ ${finalText}`
             chatVisionModel,
             directInputImageIds: requestImages?.length ? userMessage.imageIds : [],
           },
-          selectedMcpToolNames || undefined,
+          selectedMcpToolNames ?? undefined,
         );
       } catch (err) {
         // MCP availability must never dead-end the chat composer. Surface the
@@ -3486,10 +3587,10 @@ ${index}`;
     || (currentCapability === 'image' && imageMode === 'edit')
     || (currentCapability === 'model3d' && model3dSettings.sourceMode === 'image');
   const acceptsAudioAttachments = canUseAudioInput
-    || (isOpenMossTts && openMossSettings.mode === 'clone');
+    || (isOpenMossTts && openMossMode === 'clone');
 
   const addAttachments = useCallback(async (files: File[]) => {
-    if (isOpenMossTts && openMossSettings.mode === 'clone') {
+    if (isOpenMossTts && openMossMode === 'clone') {
       const wav = files.find(file => file.type.toLowerCase().includes('wav') || file.name.toLowerCase().endsWith('.wav'));
       if (wav) setPendingAudioFiles([wav]);
       return;
@@ -3549,7 +3650,7 @@ ${index}`;
   }, [
     acceptsImageAttachments, canUseAudioInput, currentCapability, imageMode, isOpenMossTts,
     modeSupportsChatCompletions, model3dSettings.sourceMode,
-    openMossSettings.mode, pendingImages.length, t, createImageEditPreview,
+    openMossMode, pendingImages.length, t, createImageEditPreview,
   ]);
 
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
@@ -3690,7 +3791,7 @@ ${index}`;
   }, []);
 
   const hasMessages = messages.length > 0 || isStreaming || capabilityBusy || modelPreparation !== null;
-  const isOpenMossCloneMode = isOpenMossTts && openMossSettings.mode === 'clone';
+  const isOpenMossCloneMode = isOpenMossTts && openMossMode === 'clone';
   const canAttach = acceptsImageAttachments || acceptsAudioAttachments;
   const imageAttachmentLimitReached = acceptsImageAttachments
     && !acceptsAudioAttachments
@@ -3810,9 +3911,11 @@ ${index}`;
           ? (model3dSettings.sourceMode === 'image' ? '3D mode · image becomes /3d/generations · export GLB or geometry-only STL' : '3D mode · image model renders a reference, then TRELLIS reconstructs it')
           : currentCapability === 'tts'
             ? (isOpenMossTts
-              ? openMossSettings.mode === 'describe'
-                ? 'OpenMOSS · describe a voice; MOSS-VoiceGen creates a reference for speech synthesis'
-                : openMossSettings.mode === 'clone'
+              ? openMossMode === 'describe'
+                ? (currentIsVoiceDesign
+                  ? 'OpenMOSS · the description becomes the voice via /audio/speech'
+                  : 'OpenMOSS · the server designs a reference voice from your description, then speaks with it')
+                : openMossMode === 'clone'
                   ? 'OpenMOSS · attach one WAV sample to clone its voice'
                   : 'OpenMOSS · optional voice style instruction via /audio/speech'
               : 'TTS mode · text becomes /audio/speech')
@@ -4221,6 +4324,19 @@ ${index}`;
               )}
             </div>
           )}
+          {modeSupportsChatCompletions && (
+            <ContextMeter
+              model={currentLoadedModel}
+              modelInfo={currentEffectiveSettingsModelInfo}
+              usage={displayedContextUsage}
+              history={contextHistory}
+              previousUsage={contextUsage}
+              pendingImageCount={supportsChatImageInput && !isCollectionModel(currentKnownModelInfo) ? pendingImages.length : 0}
+              mcpEnabled={useMcp && !toolsUnavailable}
+              mcpServerIds={selectedMcpServerIds}
+              mcpToolNames={selectedMcpToolNames}
+            />
+          )}
           {canShowEffectiveSettings && (
             <button
               type="button"
@@ -4404,7 +4520,7 @@ ${index}`;
                 min={1}
                 max={600}
                 value={audioGenerationSettings.duration}
-                onChange={e => setAudioGenerationSettings(prev => ({ ...prev, duration: Math.max(1, Math.min(600, parseInt(e.target.value, 10) || 1)) }))}
+                onChange={e => editAudioGenerationSetting('duration', Math.max(1, Math.min(600, parseInt(e.target.value, 10) || 1)))}
                 disabled={isBusy}
               />
               <small>s</small>
@@ -4416,7 +4532,7 @@ ${index}`;
                 min={1}
                 max={200}
                 value={audioGenerationSettings.steps}
-                onChange={e => setAudioGenerationSettings(prev => ({ ...prev, steps: Math.max(1, Math.min(200, parseInt(e.target.value, 10) || 1)) }))}
+                onChange={e => editAudioGenerationSetting('steps', Math.max(1, Math.min(200, parseInt(e.target.value, 10) || 1)))}
                 disabled={isBusy}
               />
             </label>
@@ -4429,7 +4545,7 @@ ${index}`;
                   max={30}
                   step={0.5}
                   value={audioGenerationSettings.cfg}
-                  onChange={e => setAudioGenerationSettings(prev => ({ ...prev, cfg: Math.max(0, Math.min(30, parseFloat(e.target.value) || 0)) }))}
+                  onChange={e => editAudioGenerationSetting('cfg', Math.max(0, Math.min(30, parseFloat(e.target.value) || 0)))}
                   disabled={isBusy}
                 />
               </label>
@@ -4441,10 +4557,36 @@ ${index}`;
                 min={-1}
                 value={audioGenerationSettings.seed}
                 placeholder="-1"
-                onChange={e => setAudioGenerationSettings(prev => ({ ...prev, seed: seedFromInput(e.target.value) }))}
+                onChange={e => editAudioGenerationSetting('seed', seedFromInput(e.target.value))}
                 disabled={isBusy}
               />
             </label>
+            {isOpenMossSfx && (
+              <label className="composer__image-setting">
+                <span>{t('Sigma shift')}</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={20}
+                  step={0.5}
+                  value={audioGenerationSettings.sigmaShift}
+                  onChange={e => editAudioGenerationSetting('sigmaShift', Math.max(0, Math.min(20, parseFloat(e.target.value) || 0)))}
+                  disabled={isBusy}
+                />
+              </label>
+            )}
+            {isOpenMossSfx && (
+              <label className="composer__openmoss-description composer__audio-negative-prompt">
+                <span>{t('Negative prompt')} <small>{t('optional')}</small></span>
+                <input
+                  type="text"
+                  value={audioGenerationSettings.negativePrompt}
+                  onChange={e => editAudioGenerationSetting('negativePrompt', e.target.value)}
+                  placeholder={t('Sounds to steer away from…')}
+                  disabled={isBusy}
+                />
+              </label>
+            )}
             {isAceStepAudio && (
               <label className="composer__image-setting composer__image-setting--language">
                 <span>{t('Lyrics language')}</span>
@@ -4452,7 +4594,7 @@ ${index}`;
                   type="text"
                   maxLength={12}
                   value={audioGenerationSettings.vocalLanguage}
-                  onChange={e => setAudioGenerationSettings(prev => ({ ...prev, vocalLanguage: e.target.value }))}
+                  onChange={e => editAudioGenerationSetting('vocalLanguage', e.target.value)}
                   placeholder="en"
                   disabled={isBusy}
                 />
@@ -4463,7 +4605,7 @@ ${index}`;
                 <span>{t('Lyrics')} <small>{t('optional · leave empty for instrumental')}</small></span>
                 <textarea
                   value={audioGenerationSettings.lyrics}
-                  onChange={e => setAudioGenerationSettings(prev => ({ ...prev, lyrics: e.target.value }))}
+                  onChange={e => editAudioGenerationSetting('lyrics', e.target.value)}
                   placeholder={'[verse]\nMoonlight spills across the floor…\n\n[chorus]\nWe sing until the morning light…'}
                   rows={3}
                   disabled={isBusy}
@@ -4477,7 +4619,7 @@ ${index}`;
             <label className="composer__image-setting composer__image-setting--mode">
               <span>{t('Voice mode')}</span>
               <select
-                value={openMossSettings.mode}
+                value={openMossMode}
                 onChange={event => {
                   const mode = event.target.value as OpenMossMode;
                   setOpenMossSettings(previous => ({ ...previous, mode }));
@@ -4485,49 +4627,76 @@ ${index}`;
                 }}
                 disabled={isBusy}
               >
-                <option value="plain">{t('Plain')}</option>
-                <option value="describe">{t('Describe voice')}</option>
-                <option value="clone">{t('Clone WAV sample')}</option>
+                {openMossModes.includes('plain') && <option value="plain">{t('Plain')}</option>}
+                {openMossModes.includes('describe') && <option value="describe">{t('Describe voice')}</option>}
+                {openMossModes.includes('clone') && <option value="clone">{t('Clone WAV sample')}</option>}
               </select>
             </label>
             <label className="composer__openmoss-description">
               <span>
-                {openMossSettings.mode === 'describe'
+                {openMossMode === 'describe'
                   ? t('Voice description')
-                  : openMossSettings.mode === 'clone'
+                  : openMossMode === 'clone'
                     ? t('Style note')
                     : t('Voice style')}
-                <small>{openMossSettings.mode === 'clone' ? t('optional') : t('optional instruction')}</small>
+                <small>{openMossMode === 'describe' ? t('required') : openMossMode === 'clone' ? t('optional') : t('optional instruction')}</small>
               </span>
               <input
                 type="text"
                 value={openMossSettings.voiceDescription}
-                onChange={event => setOpenMossSettings(previous => ({ ...previous, voiceDescription: event.target.value }))}
-                placeholder={openMossSettings.mode === 'describe'
+                onChange={event => editOpenMossDescription(event.target.value)}
+                placeholder={openMossMode === 'describe'
                   ? 'Warm low female voice, British accent…'
-                  : openMossSettings.mode === 'clone'
+                  : openMossMode === 'clone'
                     ? 'Calm, conversational delivery…'
                     : 'Cheerful, whispering, dramatic…'}
                 disabled={isBusy}
               />
             </label>
+            <details className="composer__openmoss-params">
+              <summary>{t('Generation parameters')}</summary>
+              <div className="composer__openmoss-params-grid">
+                {OPENMOSS_SPEECH_PARAMS.map(param => (
+                  <label key={param.key} className="composer__image-setting">
+                    <span>{t(param.label)}</span>
+                    <input
+                      type="number"
+                      min={param.min}
+                      max={param.max}
+                      step={param.step}
+                      value={openMossSpeechParams[param.key] ?? ''}
+                      placeholder={t('Auto')}
+                      onChange={event => {
+                        const raw = event.target.value;
+                        const value = Number(raw);
+                        setOpenMossSpeechParams(previous => {
+                          const next = { ...previous };
+                          if (raw === '' || !Number.isFinite(value)) delete next[param.key];
+                          else next[param.key] = value;
+                          return next;
+                        });
+                      }}
+                      disabled={isBusy}
+                    />
+                  </label>
+                ))}
+              </div>
+            </details>
             <div
-              className={`composer__openmoss-status${openMossDescribeUnavailable || (openMossSettings.mode === 'clone' && !openMossCloneModel) ? ' composer__openmoss-status--error' : ''}`}
+              className={`composer__openmoss-status${openMossDescribeUnavailable || openMossCloneUnavailable ? ' composer__openmoss-status--error' : ''}`}
               role="status"
               aria-live="polite"
             >
-              {openMossSettings.mode === 'describe'
+              {openMossMode === 'describe'
                 ? openMossDescribeUnavailable
-                  ? t('Install MOSS-VoiceGen to enable described voices.')
-                  : openMossCloneModel
-                    ? t('Voice design: {design} → speech: {speech}', { design: openMossVoiceDesignModel, speech: openMossCloneModel })
-                    : t('Using {model} directly for described speech.', { model: openMossVoiceDesignModel })
-                : openMossSettings.mode === 'clone'
-                  ? !openMossCloneModel
-                    ? t('Install OpenMOSS-TTS to clone a WAV voice sample.')
-                    : pendingAudioFiles.length > 0
-                      ? t('Voice sample ready: {name}', { name: pendingAudioFiles[0].name })
-                      : t('Attach one WAV voice sample with the paperclip below.')
+                  ? t('Describe the voice you want: pitch, accent, age, delivery.')
+                  : currentIsVoiceDesign
+                    ? t('{model} speaks your text in the described voice.', { model: currentModel || '' })
+                    : t('{model} designs a reference voice from your description, then speaks your text with it.', { model: currentModel || '' })
+                : openMossMode === 'clone'
+                  ? pendingAudioFiles.length > 0
+                    ? t('Voice sample ready: {name}', { name: pendingAudioFiles[0].name })
+                    : t('Attach one WAV voice sample with the paperclip below.')
                   : t('The selected OpenMOSS model receives the optional voice style directly.')}
             </div>
           </div>
@@ -4690,24 +4859,59 @@ ${index}`;
                 </button>
                 <button
                   type="button"
-                  className={`composer__add-row${mcpPickerOpen ? ' is-active' : ''}`}
-                  role="menuitem"
-                  data-mcp-entry="tools"
-                  onClick={openMcpPicker}
-                  disabled={!modeSupportsMcp || toolsUnavailable}
-                  aria-label={t('Tools')}
-                  aria-haspopup="dialog"
+                  className={`composer__add-row composer__add-row--web-search${webSearchEnabled ? ' is-active' : ''}`}
+                  role="menuitemcheckbox"
+                  aria-checked={webSearchEnabled}
+                  onClick={() => { void handleWebSearchToggle(); }}
+                  disabled={!modeSupportsMcp || toolsUnavailable || webSearchToggleBusy ||
+                    (!selectedMcpServerIdSet.has(LEMONADE_MCP_SERVER_ID) && selectedMcpServerIds.length >= MAX_MCP_SERVER_SELECTION)}
                 >
-                  <span className="composer__add-icon"><Icon name="tools" size={16} /></span>
+                  <span className="composer__add-icon"><Icon name="globe" size={16} /></span>
                   <span className="composer__add-text">
-                    <strong>{t('Tools')}</strong>
-                    <small>{toolsUnavailable
-                      ? 'Unavailable for imported webpage context'
-                      : useMcp
-                        ? `${selectedMcpToolCount} selected · Lemonade and external MCP`
-                        : 'Lemonade tools and external MCP servers'}</small>
+                    <strong>{t('Web search tool')}</strong>
+                    <small>{webSearchEnabled ? t('On · Sends queries to the web') : t('Off · Enable external web search')}</small>
+                  </span>
+                  <span className={`composer__web-search-switch${webSearchEnabled ? ' is-on' : ''}`} aria-hidden="true">
+                    <span />
                   </span>
                 </button>
+                {webSearchToggleError && <div className="composer__add-error" role="alert">{webSearchToggleError}</div>}
+                <div className="composer__add-tools-row" role="group" aria-label={t('Tools')}>
+                  <button
+                    type="button"
+                    className={`composer__add-row composer__add-tools-open${mcpPickerOpen ? ' is-active' : ''}`}
+                    role="menuitem"
+                    data-mcp-entry="tools"
+                    onClick={openMcpPicker}
+                    disabled={!modeSupportsMcp || toolsUnavailable}
+                    aria-label={t('Tools')}
+                    aria-haspopup="dialog"
+                  >
+                    <span className="composer__add-icon"><Icon name="tools" size={16} /></span>
+                    <span className="composer__add-text">
+                      <strong>{t('Tools')}</strong>
+                      <small>{toolsUnavailable
+                        ? 'Unavailable for imported webpage context'
+                        : useMcp
+                          ? `${selectedMcpToolCount} selected · Lemonade and external MCP`
+                          : 'Lemonade tools and external MCP servers'}</small>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="composer__add-tools-toggle"
+                    role="menuitemcheckbox"
+                    aria-checked={useMcp && modeSupportsMcp}
+                    aria-label={t('Tools for this chat')}
+                    title={t('Tools for this chat')}
+                    onClick={() => persistMcpEnabled(!useMcp)}
+                    disabled={!modeSupportsMcp || toolsUnavailable}
+                  >
+                    <span className={`composer__web-search-switch${useMcp && modeSupportsMcp ? ' is-on' : ''}`} aria-hidden="true">
+                      <span />
+                    </span>
+                  </button>
+                </div>
               </div>
             )}
             {addMenuOpen && mcpPickerOpen && !toolsUnavailable && (
@@ -4734,18 +4938,12 @@ ${index}`;
                     <span>{t('Back')}</span>
                   </button>
                   <div className="composer__mcp-header">
-                    <label className="composer__mcp-master">
-                      <input
-                        type="checkbox"
-                        checked={useMcp && modeSupportsMcp}
-                        disabled={!modeSupportsMcp}
-                        onChange={event => persistMcpEnabled(event.target.checked)}
-                      />
+                    <div className="composer__mcp-master">
                       <span>
                         <strong id="composer-mcp-dialog-title">{t('Tools for this chat')}</strong>
                         <small>{selectedMcpServerIds.length} server{selectedMcpServerIds.length === 1 ? '' : 's'} · {selectedMcpToolCount} tool{selectedMcpToolCount === 1 ? '' : 's'}</small>
                       </span>
-                    </label>
+                    </div>
                     <button type="button" className="btn btn--ghost" onClick={resetMcpSelection}>{t('Built-in default')}</button>
                   </div>
                   <div className="composer__mcp-tabs" role="tablist" aria-label={t('Tool providers')}>
@@ -4802,7 +5000,7 @@ ${index}`;
                                 {server.toolOptions.length === 0 ? (
                                   <p className="composer__mcp-empty">{t('No tools discovered for this server.')}</p>
                                 ) : server.toolOptions.map(tool => {
-                                  const toolSelected = selectedMcpToolNameSet === null || selectedMcpToolNameSet.has(tool.runtimeName);
+                                  const toolSelected = selectedMcpToolNameSet.has(tool.runtimeName);
                                   return (
                                     <label key={tool.runtimeName} className="composer__mcp-tool" title={tool.description || tool.title || tool.name}>
                                       <input
@@ -4812,7 +5010,7 @@ ${index}`;
                                         onChange={() => handleMcpToolToggle(server, tool.runtimeName)}
                                       />
                                       <span>
-                                        <strong>{tool.title || tool.name}</strong>
+                                        <strong>{tool.runtimeName === WEB_SEARCH_TOOL_NAME ? t('Web search') : (tool.title || tool.name)}</strong>
                                         {tool.runtimeName !== tool.name && <small>{tool.runtimeName}</small>}
                                       </span>
                                     </label>
@@ -4826,12 +5024,17 @@ ${index}`;
                     </div>
                   )}
                   <div className="composer__mcp-footer">
-                    <button type="button" className="btn btn--ghost" onClick={() => persistMcpSelection(selectedMcpServerIds, null)} disabled={selectedMcpToolNames === null}>{t('Select all tools for selected servers')}</button>
+                    <button type="button" className="btn btn--ghost" onClick={() => persistMcpSelection(selectedMcpServerIds, null)} disabled={selectedMcpToolNames === null}>{t('Select default tools for selected servers')}</button>
                   </div>
                 </div>
               </div>
             )}
           </div>
+          {webSearchEnabled && (
+            <span className="composer__web-search-status" role="img" aria-label={t('Web search active')} title={t('Web search active')}>
+              <Icon name="globe" size={16} aria-hidden="true" />
+            </span>
+          )}
           <input
             ref={fileInputRef}
             type="file"

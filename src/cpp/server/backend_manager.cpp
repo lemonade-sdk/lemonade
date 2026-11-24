@@ -273,8 +273,10 @@ std::string latest_unavailable_on_modelscope(const std::string& repo) {
 bool backend_download_service_reachable() {
     const std::string source = backends::BackendUtils::effective_backend_source();
     const char* endpoint = std::getenv("MODELSCOPE_ENDPOINT");
+    // The ModelScope site root answers with a redirect.
     return utils::HttpClient::is_reachable(
-        backend_source::reachability_probe_url(source, endpoint ? endpoint : ""), 2);
+        backend_source::reachability_probe_url(source, endpoint ? endpoint : ""), 2,
+        utils::HttpSecurityPolicy::ExternalHttpsOnly, /*accept_redirect=*/true);
 }
 
 bool has_matching_system_rocm_runtime(const fs::path& rocm_root, bool resolved_explicitly,
@@ -708,12 +710,13 @@ BackendManager::InstallParams BackendManager::get_install_params(const std::stri
     std::string release_version = final_params.version_override.empty()
                                       ? resolved_version
                                       : final_params.version_override;
-    return {final_params.repo, final_params.filename, release_version};
+    return {final_params.repo, final_params.filename, release_version, final_params.archive_subdir};
 }
 
 void BackendManager::install_backend(const std::string& recipe, const std::string& backend,
                                      bool force,
-                                     DownloadProgressCallback progress_cb) {
+                                     DownloadProgressCallback progress_cb,
+                                     std::atomic<bool>* cancel) {
     std::string resolved_backend = normalize_backend_name(recipe, backend);
     LOG(DEBUG, "BackendManager") << "Installing " << recipe << ":" << resolved_backend << std::endl;
 
@@ -724,7 +727,8 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
                 [this, recipe, resolved_backend, force](DownloadProgressCallback report,
                                                         utils::CancelToken) {
                     install_backend(recipe, resolved_backend, force, report);
-                }));
+                }),
+            cancel);
         return;
     }
 
@@ -926,7 +930,8 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
 
     try {
         backends::BackendUtils::install_from_github(
-            *spec, params.version, params.repo, params.filename, resolved_backend, backend_progress_cb);
+            *spec, params.version, params.repo, params.filename, resolved_backend, backend_progress_cb,
+            params.archive_subdir);
         // install_from_github only returns after atomically swapping the new
         // backend into place; from here on the working install is the new one.
         backend_committed = true;

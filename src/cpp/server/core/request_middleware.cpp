@@ -89,6 +89,17 @@ RequestMiddleware::RequestMiddleware(RuntimeConfig* config, const RouteRegistry*
         : api_key_;
 }
 
+bool RequestMiddleware::is_admin_request(const httplib::Request& req) const {
+    if (admin_api_key_.empty()) {
+        return true;
+    }
+    if (!req.has_header("Authorization") ||
+        req.get_header_value("Authorization").size() < 7) {
+        return false;
+    }
+    return httplib::get_bearer_token_auth(req) == admin_api_key_;
+}
+
 void RequestMiddleware::install(httplib::Server& server) {
     server.set_pre_routing_handler([this](const httplib::Request& req, httplib::Response& res) {
         return pre_route(req, res);
@@ -207,6 +218,7 @@ httplib::Server::HandlerResponse RequestMiddleware::authenticate(const httplib::
         }
     }
 
+    telemetry::g_current_route_decision.clear();
     telemetry::g_incoming_client_id.clear();
     telemetry::g_incoming_session_id.clear();
 
