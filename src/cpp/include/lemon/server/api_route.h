@@ -131,6 +131,11 @@ public:
                                 const std::string& content_type = "text/event-stream");
 
 protected:
+    bool is_admin_request(const RouteRequest& req) const;
+    bool authorize_backend_args(const RouteRequest& req, httplib::Response& res) const;
+    bool authorize_backend_args(const RouteRequest& req, httplib::Response& res,
+                                const nlohmann::json& options) const;
+
     void record_usage(const nlohmann::json& response, const RouteRequest& req) const;
 
     bool check_args(RouteRequest& req, httplib::Response& res, bool query_only = false) const;
@@ -181,6 +186,7 @@ std::unique_ptr<WrappedServer::RequestCancelScope> cancel_on_disconnect(const Ro
 void attach_route_decision(nlohmann::json& response, httplib::Response& res,
                            const std::optional<RouterDispatchResult>& decision);
 
+extern const RouteError kBackendArgsAdminRequired;
 extern const RouteError kBackendError;
 extern const RouteError kMalformedBackendResponse;
 
@@ -200,6 +206,11 @@ extern const RouteError kNoOutputError;
 // buffers the output and answers with an error instead.
 void serve_media_or_error(httplib::Response& res, const std::string& mime_type,
                           const std::function<void(httplib::DataSink&)>& generate);
+
+// The streaming plumbing reports a backend failure as a payload in the sink rather than
+// throwing: an SSE-style "data: {\"error\":...}" event or the backend's own JSON error body.
+// Returns null when the buffer is not such a payload.
+nlohmann::json extract_error_payload(const std::string& buf);
 
 // Writes one named server-sent event. Returns false when the client has disconnected.
 bool write_sse_event(httplib::DataSink& sink, const std::string& event,

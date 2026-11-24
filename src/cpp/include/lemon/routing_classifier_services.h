@@ -3,6 +3,7 @@
 #include "lemon/model_types.h"
 #include "lemon/routing_policy.h"
 
+#include <cstdint>
 #include <functional>
 #include <map>
 #include <optional>
@@ -11,6 +12,7 @@
 
 namespace lemon {
 
+struct ModelInfo;
 class Router;
 
 using EnsureClassifierModelLoaded = std::function<void(const std::string& model)>;
@@ -47,6 +49,16 @@ ClassifierServices make_classifier_services_from_router_calls(
 CostInfo resolve_cost_info(std::optional<double> cost_input_per_million,
                            std::optional<double> cost_output_per_million,
                            const std::map<std::string, json>& extras);
+
+// resolve_cost_info() for a registry entry: its typed prices when known (>= 0),
+// otherwise the extras.
+CostInfo resolve_model_cost_info(const ModelInfo& info);
+
+// The cost_of behind make_router_cost_services(): results are cached across
+// calls and dropped whenever `generation` moves, so a price changed through
+// /pull is seen on the next request.
+CostServices make_cached_cost_services(std::function<std::uint64_t()> generation,
+                                       std::function<CostInfo(const std::string& candidate)> resolve);
 
 CostServices make_router_cost_services(Router& router);
 

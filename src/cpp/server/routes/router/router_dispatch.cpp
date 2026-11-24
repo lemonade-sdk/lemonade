@@ -11,24 +11,57 @@
 #include "lemon/server/shared_args.h"
 #include "lemon/utils/conversation_fingerprint.h"
 
+#include "../../telemetry.h"
+
 namespace lemon {
 
 using json = nlohmann::json;
 
-std::optional<RouterDispatchResult> router_dispatch(ServerContext& ctx, std::string& model,
-                                                    bool want_trace, json& body) {
-    if (model.empty()) {
+json route_span_payload(const RouterDispatchResult& result) {
+    // estimated_cost is flattened because a span attribute should be a scalar,
+    // and each field is optional, so an absent one simply is not emitted.
+    json route_attrs = {
+        {"collection", result.requested_model},
+        {"to", result.selected_model},
+        {"matched_rule", result.decision.matched_rule},
+        {"default_used", result.decision.default_used},
+    };
+    const auto cost_it = result.decision.outputs.find("estimated_cost");
+    if (cost_it != result.decision.outputs.end() && cost_it->is_object()) {
+        for (const auto& [key, value] : cost_it->items()) {
+            // A policy author may set outputs["estimated_cost"] themselves, so
+            // its keys are arbitrary and must not shadow the decision's own.
+            if (route_attrs.contains(key)) {
+                continue;
+            }
+            if (value.is_string() || value.is_number() || value.is_boolean()) {
+                route_attrs[key] = value;
+            }
+        }
+    }
+    return route_attrs;
+}
+
+std::optional<ModelInfo> router_collection_info(ServerContext& ctx, const std::string& model) {
+    if (model.empty() || !ctx.model_manager->model_exists(model)) {
         return std::nullopt;
     }
+    ModelInfo info = ctx.model_manager->get_model_info(model);
+    if (!is_router_collection_recipe(info.recipe)) {
+        return std::nullopt;
+    }
+    return info;
+}
+
+std::optional<RouterDispatchResult> router_dispatch(ServerContext& ctx, std::string& model,
+                                                    bool want_trace, json& body,
+                                                    const std::optional<ModelInfo>& collection) {
+    if (!collection) {
+        return std::nullopt;
+    }
+    const ModelInfo& info = *collection;
     const std::string requested_model = model;
     try {
-        if (!ctx.model_manager->model_exists(requested_model)) {
-            return std::nullopt;
-        }
-        ModelInfo info = ctx.model_manager->get_model_info(requested_model);
-        if (!is_router_collection_recipe(info.recipe)) {
-            return std::nullopt;
-        }
         // The policy is parsed once when the models cache is built. A missing one means
         // the collection failed to parse, so the request keeps its model (fail open).
         if (!info.route_policy) {
@@ -59,6 +92,8 @@ std::optional<RouterDispatchResult> router_dispatch(ServerContext& ctx, std::str
         ctx.router->note_route_decision(utils::conversation_fingerprint(body),
                                         result.selected_model);
 
+        telemetry::g_current_route_decision = route_span_payload(result).dump();
+
         LOG(INFO, "Server") << "Router collection '" << requested_model << "' -> '"
                             << result.selected_model << "'" << std::endl;
         body[model_loading::kModel.name] = result.selected_model;
@@ -74,6 +109,19 @@ std::optional<RouterDispatchResult> router_dispatch(ServerContext& ctx, std::str
                                << requested_model << "': " << e.what() << std::endl;
     }
     return std::nullopt;
+}
+
+std::optional<RouterDispatchResult> router_dispatch(ServerContext& ctx, std::string& model,
+                                                    bool want_trace, json& body) {
+    std::optional<ModelInfo> collection;
+    try {
+        collection = router_collection_info(ctx, model);
+    } catch (const std::exception& e) {
+        LOG(WARNING, "Server") << "Router collection dispatch failed for '" << model
+                               << "': " << e.what() << std::endl;
+        return std::nullopt;
+    }
+    return router_dispatch(ctx, model, want_trace, body, collection);
 }
 
 std::set<std::string> active_policy_helper_models(ModelManager& model_manager) {

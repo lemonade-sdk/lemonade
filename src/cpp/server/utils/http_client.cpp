@@ -703,7 +703,9 @@ HttpResponse perform_request(const std::string& url,
                              long timeout_seconds,
                              HttpSecurityPolicy policy,
                              bool headers_only,
-                             size_t max_body_bytes = 0) {
+                             size_t max_body_bytes,
+                             const CancelToken& cancel,
+                             bool follow_redirects) {
     CURL* curl = curl_easy_init();
     if (!curl) {
         throw std::runtime_error("Failed to initialize CURL");
@@ -719,13 +721,19 @@ HttpResponse perform_request(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, response_header_callback);
     curl_easy_setopt(curl, CURLOPT_HEADERDATA, &response.headers);
     curl_easy_setopt(curl, CURLOPT_NOBODY, headers_only ? 1L : 0L);
-    if (!apply_http_security_policy(curl, policy, true)) {
+    if (!apply_http_security_policy(curl, policy, follow_redirects)) {
         curl_easy_cleanup(curl);
         throw std::runtime_error("Failed to apply HTTP security policy");
     }
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, effective_timeout(timeout_seconds));
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, kConnectTimeoutSeconds);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
+
+    if (cancel.flag != nullptr || cancel.should_cancel != nullptr) {
+        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, post_cancel_xferinfo_callback);
+        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &cancel);
+        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+    }
 
     // Add custom headers
     struct curl_slist* header_list = nullptr;
@@ -750,6 +758,9 @@ HttpResponse perform_request(const std::string& url,
         std::string error = "CURL error: " + std::string(curl_easy_strerror(res));
         curl_slist_free_all(header_list);
         curl_easy_cleanup(curl);
+        if (res == CURLE_ABORTED_BY_CALLBACK) {
+            throw HttpClientCancellationException(res, error);
+        }
         throw std::runtime_error(error);
     }
 
@@ -770,8 +781,11 @@ HttpResponse HttpClient::get(const std::string& url,
                              const std::map<std::string, std::string>& headers,
                              long timeout_seconds,
                              HttpSecurityPolicy policy,
-                             size_t max_body_bytes) {
-    return perform_request(url, headers, timeout_seconds, policy, false, max_body_bytes);
+                             size_t max_body_bytes,
+                             const CancelToken& cancel,
+                             bool follow_redirects) {
+    return perform_request(url, headers, timeout_seconds, policy, false,
+                           max_body_bytes, cancel, follow_redirects);
 }
 
 HttpResponse HttpClient::post(const std::string& url,
@@ -1715,7 +1729,8 @@ DownloadResult HttpClient::download_file(const std::string& url,
 
 bool HttpClient::is_reachable(const std::string& url,
                               int timeout_seconds,
-                              HttpSecurityPolicy policy) {
+                              HttpSecurityPolicy policy,
+                              bool accept_redirect) {
     CURL* curl = curl_easy_init();
     if (!curl) {
         return false;
@@ -1745,6 +1760,9 @@ bool HttpClient::is_reachable(const std::string& url,
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
     curl_easy_cleanup(curl);
 
+    if (accept_redirect && response_code >= 300 && response_code < 400) {
+        return true;
+    }
     return response_code == 200;
 }
 

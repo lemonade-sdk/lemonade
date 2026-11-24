@@ -13,10 +13,9 @@ not supported by the current wrapped server.
 Usage:
     python server_llm.py --wrapped-server llamacpp --backend vulkan
     python server_llm.py --wrapped-server llamacpp --backend rocm
-    python server_llm.py --wrapped-server ryzenai --backend cpu
-    python server_llm.py --wrapped-server ryzenai --backend hybrid
     python server_llm.py --wrapped-server ryzenai --backend npu
     python server_llm.py --wrapped-server flm
+    python server_llm.py --wrapped-server loom --backend hrx
 """
 
 import asyncio
@@ -566,8 +565,12 @@ class LLMTests(ServerTestBase):
             extra_body=get_extra_body("chat"),
         )
 
-        tool_calls = getattr(completion.choices[0].message, "tool_calls", None)
-        self.assertIsNotNone(tool_calls, "Response should have tool_calls")
+        message = completion.choices[0].message
+        tool_calls = getattr(message, "tool_calls", None)
+        self.assertIsNotNone(
+            tool_calls,
+            f"Response should have tool_calls; content was {message.content!r}",
+        )
         self.assertEqual(len(tool_calls), 1)
 
     @skip_if_unsupported("tool_calls_streaming")
@@ -607,7 +610,6 @@ class LLMTests(ServerTestBase):
 
         self.assertGreater(tool_call_count, 0, "Should receive tool call chunks")
 
-    # =========================================================================
     # GENERATION PARAMETERS TESTS
     # =========================================================================
 

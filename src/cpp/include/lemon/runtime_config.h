@@ -79,6 +79,7 @@ public:
     bool disable_model_filtering() const;
     bool enable_dgpu_gtt() const;
     std::string default_model_source() const;
+    std::string backend_source() const;
     std::string rocm_channel() const;
     std::string rocm_channel_for_recipe(const std::string& recipe) const;
     std::string rocm_install_method() const;

@@ -10,6 +10,7 @@
 #include <mutex>
 #include <set>
 #include <condition_variable>
+#include <cstdint>
 #include <thread>
 #include <unordered_map>
 #include <vector>
@@ -164,10 +165,12 @@ public:
                                             const RecipeOptions& request_options) const;
 
     // Apply request intent to an already-live process without reloading it.
-    // Returns false when the requested model is not currently live.
+    // Returns false when the requested model is not currently live. A set `cancel`
+    // stops the wait for another load with "load cancelled"; that load goes on.
     bool ensure_loaded_model_residency(
         const std::string& model_name,
-        LoadPurpose load_purpose);
+        LoadPurpose load_purpose,
+        std::atomic<bool>* cancel = nullptr);
 
     // Record the authoritative set of routing-helper models the active policies
     // need resident (the union across all active policies, as policy-authored
@@ -239,9 +242,10 @@ public:
     AudioFormatMetadata audio_speech_format_metadata(
         const std::string& model_name, const std::string& response_format);
 
-    json image_generations(const json& request);
-    json image_edits(const json& request);
-    json image_variations(const json& request);
+    json image_generations(const json& request, std::atomic<bool>* cancel = nullptr);
+    json video_generations(const json& request, std::atomic<bool>* cancel = nullptr);
+    json image_edits(const json& request, std::atomic<bool>* cancel = nullptr);
+    json image_variations(const json& request, std::atomic<bool>* cancel = nullptr);
 
     void audio_generations(const json& request, httplib::DataSink& sink);
     std::vector<std::string> audio_generation_supported_formats(const std::string& model_name);
@@ -279,6 +283,8 @@ public:
     // Registry lookup for seams that need ModelInfo without owning ModelManager
     // (e.g. routing CostServices). Returns nullopt when the name is unknown.
     std::optional<ModelInfo> try_get_model_info(const std::string& model_name) const;
+    // ModelManager::models_generation(), for caches keyed on registry contents.
+    std::uint64_t models_generation() const;
 
     // Test hooks
     void simulate_vram_pressure(double pct);
@@ -353,7 +359,8 @@ private:
         ResidencyClass requested_residency_class);
     bool ensure_loaded_model_residency_canonical(
         const std::string& canonical_model_name,
-        LoadPurpose load_purpose);
+        LoadPurpose load_purpose,
+        std::atomic<bool>* cancel = nullptr);
     bool has_npu_server() const;
     WrappedServer* find_npu_server() const;
     WrappedServer* find_npu_server_by_recipe(const std::string& recipe) const;
