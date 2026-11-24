@@ -24,8 +24,16 @@
     "response": {
       "status": 200,
       "content_type": "text/event-stream",
+      "stream_shape": [
+        "{\"data\": {\"content_block\": {\"text\": \"string\", \"type\": \"string\"}, \"index\": \"number\", \"type\": \"string\"}, \"event\": \"content_block_start\"}",
+        "{\"data\": {\"delta\": {\"stop_reason\": \"string\", \"stop_sequence\": \"null\"}, \"type\": \"string\", \"usage\": {\"input_tokens\": \"number\", \"output_tokens\": \"number\"}}, \"event\": \"message_delta\"}",
+        "{\"data\": {\"delta\": {\"text\": \"string\", \"type\": \"string\"}, \"index\": \"number\", \"type\": \"string\"}, \"event\": \"content_block_delta\"}",
+        "{\"data\": {\"index\": \"number\", \"type\": \"string\"}, \"event\": \"content_block_stop\"}",
+        "{\"data\": {\"message\": {\"content\": [], \"id\": \"string\", \"model\": \"string\", \"role\": \"string\", \"stop_reason\": \"null\", \"stop_sequence\": \"null\", \"type\": \"string\", \"usage\": {\"input_tokens\": \"number\", \"output_tokens\": \"number\"}}, \"type\": \"string\"}, \"event\": \"message_start\"}",
+        "{\"data\": {\"type\": \"string\"}, \"event\": \"message_stop\"}"
+      ],
       "head": [
-        "event: message_start\ndata: {\"message\":{\"content\":[],\"id\":\"chatcmpl-VoeIi1EHhQg4HDI3S7ehBxKOoUCjX2DI\",\"model\":\"Qwen3-0.6B-GGUF\",\"role\":\"assistant\",\"stop_reason\":null,\"stop_sequence\":null,\"type\":\"message\",\"usage\":{\"input_tokens\":0,\"output_tokens\":0}},\"type\":\"message_start\"}",
+        "event: message_start\ndata: {\"message\":{\"content\":[],\"id\":\"chatcmpl-u42IN0ayAIQFyl5zq2PDOvfz9jcE9Uce\",\"model\":\"Qwen3-0.6B-GGUF\",\"role\":\"assistant\",\"stop_reason\":null,\"stop_sequence\":null,\"type\":\"message\",\"usage\":{\"input_tokens\":0,\"output_tokens\":0}},\"type\":\"message_start\"}",
         "event: content_block_start\ndata: {\"content_block\":{\"text\":\"\",\"type\":\"text\"},\"index\":0,\"type\":\"content_block_start\"}",
         "event: content_block_delta\ndata: {\"delta\":{\"text\":\"The\",\"type\":\"text_delta\"},\"index\":0,\"type\":\"content_block_delta\"}"
       ],
@@ -2002,7 +2010,11 @@
         "event: complete\ndata: {\"bytes_downloaded\":0,\"bytes_previously_downloaded\":0,\"bytes_total\":0,\"file\":\"\",\"file_index\":2,\"percent\":100,\"total_download_size\":0,\"total_files\":2}"
       ],
       "tail": [],
-      "count": 5
+      "count": 5,
+      "stream_shape": [
+        "{\"data\": {\"bytes_downloaded\": \"number\", \"bytes_previously_downloaded\": \"number\", \"bytes_total\": \"number\", \"file\": \"string\", \"file_index\": \"number\", \"percent\": \"number\", \"total_download_size\": \"number\", \"total_files\": \"number\"}, \"event\": \"complete\"}",
+        "{\"data\": {\"bytes_downloaded\": \"number\", \"bytes_previously_downloaded\": \"number\", \"bytes_total\": \"number\", \"file\": \"string\", \"file_index\": \"number\", \"percent\": \"number\", \"total_download_size\": \"number\", \"total_files\": \"number\"}, \"event\": \"progress\"}"
+      ]
     }
   },
   "ffa89d472e2cfdcffff481e021955318ad94921f844599c529e51f05dcd2820d": {
@@ -4689,6 +4701,74 @@
       }
     }
   },
+  "9efe3923d57d1840b7efae518a7254724cc91dd18e8f44028067dbdf2cc60628": {
+    "route": "lemonade.videos_cancel",
+    "format": "Json",
+    "request": {
+      "method": "POST",
+      "path": "/v1/videos/job-20261117-071140-000003/cancel",
+      "query": {},
+      "json": null,
+      "form": {},
+      "files": {}
+    },
+    "response": {
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "status": "canceling"
+      }
+    }
+  },
+  "8f0a9de7cce02188180eda93e138054498d2f415e94334a6db8631ba6ad57847": {
+    "route": "lemonade.videos_create",
+    "format": "Json",
+    "request": {
+      "method": "POST",
+      "path": "/v1/videos",
+      "query": {},
+      "json": {
+        "model": "Wan2.1-T2V-1.3B",
+        "prompt": "a lovely cat walking through tall grass",
+        "video_frames": 33,
+        "fps": 16
+      },
+      "form": {},
+      "files": {}
+    },
+    "response": {
+      "status": 202,
+      "content_type": "application/json",
+      "body": {
+        "created_at": "2026-11-17T07:11:40Z",
+        "id": "job-20261117-071140-000001",
+        "model": "Wan2.1-T2V-1.3B",
+        "status": "queued"
+      }
+    }
+  },
+  "5758c3659c4bd220577286be578bcd2a2e41920466c651d33b01eeeb96879755": {
+    "route": "lemonade.videos_get",
+    "format": "Json",
+    "request": {
+      "method": "GET",
+      "path": "/v1/videos/job-20261117-071140-000002",
+      "query": {},
+      "json": null,
+      "form": {},
+      "files": {}
+    },
+    "response": {
+      "status": 200,
+      "content_type": "application/json",
+      "body": {
+        "created_at": "2026-11-17T07:11:40Z",
+        "id": "job-20261117-071140-000002",
+        "model": "Wan2.1-T2V-1.3B",
+        "status": "queued"
+      }
+    }
+  },
   "cd51000c6b239ba2e16e67af0c4f95a05a77aa86d4478e7cbaae952a91efcd4b": {
     "route": "llamacpp.rerank",
     "format": "Json",
@@ -5150,7 +5230,12 @@
         "{\"created_at\":\"2024-01-01T00:00:00Z\",\"done\":true,\"done_reason\":\"stop\",\"message\":{\"content\":\"\",\"role\":\"assistant\"},\"model\":\"Qwen3-0.6B-GGUF\"}",
         "{\"created_at\":\"2024-01-01T00:00:00Z\",\"done\":true,\"done_reason\":\"stop\",\"eval_count\":0,\"eval_duration\":0,\"load_duration\":0,\"message\":{\"content\":\"\",\"role\":\"assistant\"},\"model\":\"Qwen3-0.6B-GGUF\",\"prompt_eval_count\":0,\"prompt_eval_duration\":0,\"total_duration\":0}"
       ],
-      "count": 12
+      "count": 12,
+      "stream_shape": [
+        "{\"data\": {\"created_at\": \"string\", \"done\": \"bool\", \"done_reason\": \"string\", \"eval_count\": \"number\", \"eval_duration\": \"number\", \"load_duration\": \"number\", \"message\": {\"content\": \"string\", \"role\": \"string\"}, \"model\": \"string\", \"prompt_eval_count\": \"number\", \"prompt_eval_duration\": \"number\", \"total_duration\": \"number\"}, \"event\": null}",
+        "{\"data\": {\"created_at\": \"string\", \"done\": \"bool\", \"done_reason\": \"string\", \"message\": {\"content\": \"string\", \"role\": \"string\"}, \"model\": \"string\"}, \"event\": null}",
+        "{\"data\": {\"created_at\": \"string\", \"done\": \"bool\", \"message\": {\"content\": \"string\", \"role\": \"string\"}, \"model\": \"string\"}, \"event\": null}"
+      ]
     }
   },
   "ff9022b946860f529d1057b64e353a03ad3ad199561524be43b546c72dbce592": {
@@ -6827,7 +6912,12 @@
         "{\"created_at\":\"2024-01-01T00:00:00Z\",\"done\":true,\"done_reason\":\"length\",\"model\":\"Qwen3-0.6B-GGUF\",\"response\":\"\"}",
         "{\"context\":[],\"created_at\":\"2024-01-01T00:00:00Z\",\"done\":true,\"done_reason\":\"stop\",\"eval_count\":16,\"eval_duration\":0,\"load_duration\":0,\"model\":\"Qwen3-0.6B-GGUF\",\"prompt_eval_count\":5,\"prompt_eval_duration\":0,\"response\":\"\",\"total_duration\":0}"
       ],
-      "count": 18
+      "count": 18,
+      "stream_shape": [
+        "{\"data\": {\"context\": [], \"created_at\": \"string\", \"done\": \"bool\", \"done_reason\": \"string\", \"eval_count\": \"number\", \"eval_duration\": \"number\", \"load_duration\": \"number\", \"model\": \"string\", \"prompt_eval_count\": \"number\", \"prompt_eval_duration\": \"number\", \"response\": \"string\", \"total_duration\": \"number\"}, \"event\": null}",
+        "{\"data\": {\"created_at\": \"string\", \"done\": \"bool\", \"done_reason\": \"string\", \"model\": \"string\", \"response\": \"string\"}, \"event\": null}",
+        "{\"data\": {\"created_at\": \"string\", \"done\": \"bool\", \"model\": \"string\", \"response\": \"string\"}, \"event\": null}"
+      ]
     }
   },
   "5e16c5dece9ac52d76776a59c555c3e9606c7b1eea741332bc2835de80c55872": {
@@ -6970,7 +7060,11 @@
         "{\"status\":\"success\"}",
         "{\"status\":\"success\"}"
       ],
-      "count": 7
+      "count": 7,
+      "stream_shape": [
+        "{\"data\": {\"completed\": \"number\", \"digest\": \"string\", \"status\": \"string\", \"total\": \"number\"}, \"event\": null}",
+        "{\"data\": {\"status\": \"string\"}, \"event\": null}"
+      ]
     }
   },
   "6fcb0a73bafab2babbfe5a1f37f11e52ac646994b652ebb6068106a53e2ea885": {
@@ -7359,16 +7453,23 @@
     "response": {
       "status": 200,
       "content_type": "text/event-stream",
+      "stream_shape": [
+        "{\"data\": \"[DONE]\", \"event\": null}",
+        "{\"data\": {\"choices\": [\"{\\\"delta\\\": {\\\"content\\\": \\\"null\\\", \\\"role\\\": \\\"string\\\"}, \\\"finish_reason\\\": \\\"null\\\", \\\"index\\\": \\\"number\\\"}\"], \"created\": \"number\", \"id\": \"string\", \"model\": \"string\", \"object\": \"string\", \"system_fingerprint\": \"string\"}, \"event\": null}",
+        "{\"data\": {\"choices\": [\"{\\\"delta\\\": {\\\"content\\\": \\\"string\\\"}, \\\"finish_reason\\\": \\\"null\\\", \\\"index\\\": \\\"number\\\"}\"], \"created\": \"number\", \"id\": \"string\", \"model\": \"string\", \"object\": \"string\", \"system_fingerprint\": \"string\"}, \"event\": null}",
+        "{\"data\": {\"choices\": [\"{\\\"delta\\\": {\\\"reasoning_content\\\": \\\"string\\\"}, \\\"finish_reason\\\": \\\"null\\\", \\\"index\\\": \\\"number\\\"}\"], \"created\": \"number\", \"id\": \"string\", \"model\": \"string\", \"object\": \"string\", \"system_fingerprint\": \"string\"}, \"event\": null}",
+        "{\"data\": {\"choices\": [\"{\\\"delta\\\": {}, \\\"finish_reason\\\": \\\"string\\\", \\\"index\\\": \\\"number\\\"}\"], \"created\": \"number\", \"id\": \"string\", \"model\": \"string\", \"object\": \"string\", \"system_fingerprint\": \"string\", \"timings\": {\"cache_n\": \"number\", \"predicted_ms\": \"number\", \"predicted_n\": \"number\", \"predicted_per_second\": \"number\", \"predicted_per_token_ms\": \"number\", \"prompt_ms\": \"number\", \"prompt_n\": \"number\", \"prompt_per_second\": \"number\", \"prompt_per_token_ms\": \"number\"}}, \"event\": null}"
+      ],
       "head": [
-        "data: {\"choices\":[{\"finish_reason\":null,\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":null}}],\"created\":1793827645,\"id\":\"chatcmpl-NoEWRv1s5czlHNYL4Vp5FhTw91Ou8XM1\",\"model\":\"~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b12109-13ec8f614\",\"object\":\"chat.completion.chunk\"}",
-        "data: {\"choices\":[{\"finish_reason\":null,\"index\":0,\"delta\":{\"reasoning_content\":\"Okay\"}}],\"created\":1793827645,\"id\":\"chatcmpl-NoEWRv1s5czlHNYL4Vp5FhTw91Ou8XM1\",\"model\":\"~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b12109-13ec8f614\",\"object\":\"chat.completion.chunk\"}",
-        "data: {\"choices\":[{\"finish_reason\":null,\"index\":0,\"delta\":{\"reasoning_content\":\",\"}}],\"created\":1793827645,\"id\":\"chatcmpl-NoEWRv1s5czlHNYL4Vp5FhTw91Ou8XM1\",\"model\":\"~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b12109-13ec8f614\",\"object\":\"chat.completion.chunk\"}"
+        "data: {\"choices\":[{\"finish_reason\":null,\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":null}}],\"created\":1795449067,\"id\":\"chatcmpl-wxj9daQs3ergHalVloBeoyJ4OdbfJERB\",\"model\":\"~\\\\.cache\\\\huggingface\\\\hub/models--unsloth--Qwen3-0.6B-GGUF\\\\snapshots\\\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\\\Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b12633-9c10c94e1\",\"object\":\"chat.completion.chunk\"}",
+        "data: {\"choices\":[{\"finish_reason\":null,\"index\":0,\"delta\":{\"reasoning_content\":\"Okay\"}}],\"created\":1795449067,\"id\":\"chatcmpl-wxj9daQs3ergHalVloBeoyJ4OdbfJERB\",\"model\":\"~\\\\.cache\\\\huggingface\\\\hub/models--unsloth--Qwen3-0.6B-GGUF\\\\snapshots\\\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\\\Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b12633-9c10c94e1\",\"object\":\"chat.completion.chunk\"}",
+        "data: {\"choices\":[{\"finish_reason\":null,\"index\":0,\"delta\":{\"reasoning_content\":\",\"}}],\"created\":1795449067,\"id\":\"chatcmpl-wxj9daQs3ergHalVloBeoyJ4OdbfJERB\",\"model\":\"~\\\\.cache\\\\huggingface\\\\hub/models--unsloth--Qwen3-0.6B-GGUF\\\\snapshots\\\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\\\Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b12633-9c10c94e1\",\"object\":\"chat.completion.chunk\"}"
       ],
       "tail": [
-        "data: {\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"delta\":{}}],\"created\":1793827647,\"id\":\"chatcmpl-NoEWRv1s5czlHNYL4Vp5FhTw91Ou8XM1\",\"model\":\"~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b12109-13ec8f614\",\"object\":\"chat.completion.chunk\",\"timings\":{\"cache_n\":14,\"prompt_n\":1,\"prompt_ms\":13.334,\"prompt_per_token_ms\":13.334,\"prompt_per_second\":74.99625018749063,\"predicted_n\":179,\"predicted_ms\":1827.578,\"predicted_per_token_ms\":10.267292134831461,\"predicted_per_second\":97.39666378124491}}",
+        "data: {\"choices\":[{\"finish_reason\":\"stop\",\"index\":0,\"delta\":{}}],\"created\":1795449067,\"id\":\"chatcmpl-wxj9daQs3ergHalVloBeoyJ4OdbfJERB\",\"model\":\"~\\\\.cache\\\\huggingface\\\\hub/models--unsloth--Qwen3-0.6B-GGUF\\\\snapshots\\\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\\\Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b12633-9c10c94e1\",\"object\":\"chat.completion.chunk\",\"timings\":{\"cache_n\":14,\"prompt_n\":1,\"prompt_ms\":3.862,\"prompt_per_token_ms\":3.862,\"prompt_per_second\":258.9331952356292,\"predicted_n\":220,\"predicted_ms\":607.302,\"predicted_per_token_ms\":2.773068493150685,\"predicted_per_second\":360.6113597518204}}",
         "data: [DONE]"
       ],
-      "count": 177
+      "count": 218
     }
   },
   "f403a5c1aa4f51bfa025cc5b27b0c2e150ac0f5f244ee9e89eb3bff6dbbb962b": {
@@ -7597,7 +7698,12 @@
         "data: {\"choices\":[{\"text\":\"\",\"index\":0,\"logprobs\":null,\"finish_reason\":\"length\"}],\"created\":1793827670,\"model\":\"~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf\",\"system_fingerprint\":\"b12109-13ec8f614\",\"object\":\"text_completion\",\"usage\":{\"completion_tokens\":64,\"prompt_tokens\":7,\"total_tokens\":71,\"prompt_tokens_details\":{\"cached_tokens\":6}},\"id\":\"chatcmpl-NnGAa2fcrBou11qX4PgyeQCgXNJB9W6j\",\"timings\":{\"cache_n\":6,\"prompt_n\":1,\"prompt_ms\":5.813,\"prompt_per_token_ms\":5.813,\"prompt_per_second\":172.0282126268708,\"predicted_n\":64,\"predicted_ms\":3611.246,\"predicted_per_token_ms\":57.32136507936508,\"predicted_per_second\":17.445502189548982}}",
         "data: [DONE]"
       ],
-      "count": 66
+      "count": 66,
+      "stream_shape": [
+        "{\"data\": \"[DONE]\", \"event\": null}",
+        "{\"data\": {\"choices\": [\"{\\\"finish_reason\\\": \\\"null\\\", \\\"index\\\": \\\"number\\\", \\\"logprobs\\\": \\\"null\\\", \\\"text\\\": \\\"string\\\"}\"], \"created\": \"number\", \"id\": \"string\", \"model\": \"string\", \"object\": \"string\", \"system_fingerprint\": \"string\"}, \"event\": null}",
+        "{\"data\": {\"choices\": [\"{\\\"finish_reason\\\": \\\"string\\\", \\\"index\\\": \\\"number\\\", \\\"logprobs\\\": \\\"null\\\", \\\"text\\\": \\\"string\\\"}\"], \"created\": \"number\", \"id\": \"string\", \"model\": \"string\", \"object\": \"string\", \"system_fingerprint\": \"string\", \"timings\": {\"cache_n\": \"number\", \"predicted_ms\": \"number\", \"predicted_n\": \"number\", \"predicted_per_second\": \"number\", \"predicted_per_token_ms\": \"number\", \"prompt_ms\": \"number\", \"prompt_n\": \"number\", \"prompt_per_second\": \"number\", \"prompt_per_token_ms\": \"number\"}, \"usage\": {\"completion_tokens\": \"number\", \"prompt_tokens\": \"number\", \"prompt_tokens_details\": {\"cached_tokens\": \"number\"}, \"total_tokens\": \"number\"}}, \"event\": null}"
+      ]
     }
   },
   "1b300ef09b6e5327c83463187d91cd1283bbd363239f5bf6da584364ffc0b10c": {
@@ -9259,10 +9365,44 @@
       "status": 200,
       "content_type": "application/json",
       "body": {
-        "created": 1791943169,
+        "created": 1795370150,
         "data": [
           {
-            "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAIAAAB7GkOtAAAFR3RFWHRwYXJhbWV0ZXJzAEFkZCBhIHJl... (689,496 characters)"
+            "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAIAAAB7GkOtAAADYHRFWHRwYXJhbWV0ZXJzAEFkZCBhIHJl... (776,060 characters)",
+            "generation_info": {
+              "clip_skip": 0,
+              "height": 512,
+              "kind": "image",
+              "models": {
+                "diffusion_model": "flux-2-klein-4b.safetensors",
+                "llm": "qwen_3_4b.safetensors",
+                "vae": "flux2-vae.safetensors"
+              },
+              "negative_prompt": "",
+              "prompt": "Add a red barn and mountains in the background, photorealistic ",
+              "sample_params": {
+                "eta": 0.0,
+                "flow_shift": 1.0,
+                "guidance": {
+                  "distilled_guidance": 3.5,
+                  "txt_cfg": 1.0
+                },
+                "sample_method": "euler",
+                "sample_steps": 4,
+                "scheduler": "flux2"
+              },
+              "schema": "sdcpp.generation/v1",
+              "seed": "7282",
+              "vae_tiling_params": {
+                "enabled": true,
+                "rel_size_h": 0.0,
+                "rel_size_w": 0.0,
+                "target_overlap": 0.5,
+                "tile_size_h": 0,
+                "tile_size_w": 0
+              },
+              "width": 512
+            }
           }
         ],
         "output_format": "png"
@@ -9290,10 +9430,41 @@
       "status": 200,
       "content_type": "application/json",
       "body": {
-        "created": 1791943145,
+        "created": 1795370112,
         "data": [
           {
-            "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAIAAAB7GkOtAAAEgnRFWHRwYXJhbWV0ZXJzAEEgc2VyZW5l... (886,104 characters)"
+            "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAIAAAB7GkOtAAACwnRFWHRwYXJhbWV0ZXJzAEEgc2VyZW5l... (838,928 characters)",
+            "generation_info": {
+              "clip_skip": 2,
+              "height": 512,
+              "kind": "image",
+              "models": {
+                "model": "sd_turbo.safetensors"
+              },
+              "negative_prompt": "",
+              "prompt": "A serene mountain landscape at sunset ",
+              "sample_params": {
+                "eta": 1.0,
+                "guidance": {
+                  "distilled_guidance": 3.5,
+                  "txt_cfg": 1.0
+                },
+                "sample_method": "euler_a",
+                "sample_steps": 4,
+                "scheduler": "discrete"
+              },
+              "schema": "sdcpp.generation/v1",
+              "seed": "7262",
+              "vae_tiling_params": {
+                "enabled": true,
+                "rel_size_h": 0.0,
+                "rel_size_w": 0.0,
+                "target_overlap": 0.5,
+                "tile_size_h": 0,
+                "tile_size_w": 0
+              },
+              "width": 512
+            }
           }
         ],
         "output_format": "png"
@@ -9349,10 +9520,44 @@
       "status": 200,
       "content_type": "application/json",
       "body": {
-        "created": 1791943188,
+        "created": 1795370167,
         "data": [
           {
-            "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAIAAAB7GkOtAAAE3XRFWHRwYXJhbWV0ZXJzAHZhcmlhdGlv... (204,076 characters)"
+            "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAIAAAB7GkOtAAAC9nRFWHRwYXJhbWV0ZXJzAHZhcmlhdGlv... (272,020 characters)",
+            "generation_info": {
+              "clip_skip": 0,
+              "height": 512,
+              "kind": "image",
+              "models": {
+                "diffusion_model": "flux-2-klein-4b.safetensors",
+                "llm": "qwen_3_4b.safetensors",
+                "vae": "flux2-vae.safetensors"
+              },
+              "negative_prompt": "",
+              "prompt": "variation ",
+              "sample_params": {
+                "eta": 0.0,
+                "flow_shift": 1.0,
+                "guidance": {
+                  "distilled_guidance": 3.5,
+                  "txt_cfg": 1.0
+                },
+                "sample_method": "euler",
+                "sample_steps": 4,
+                "scheduler": "flux2"
+              },
+              "schema": "sdcpp.generation/v1",
+              "seed": "7403",
+              "vae_tiling_params": {
+                "enabled": true,
+                "rel_size_h": 0.0,
+                "rel_size_w": 0.0,
+                "target_overlap": 0.5,
+                "tile_size_h": 0,
+                "tile_size_w": 0
+              },
+              "width": 512
+            }
           }
         ],
         "output_format": "png"
@@ -9982,16 +10187,28 @@
     "response": {
       "status": 200,
       "content_type": "text/event-stream",
+      "stream_shape": [
+        "{\"data\": \"[DONE]\", \"event\": null}",
+        "{\"data\": {\"content_index\": \"number\", \"delta\": \"string\", \"item_id\": \"string\", \"output_index\": \"number\", \"type\": \"string\"}, \"event\": \"response.output_text.delta\"}",
+        "{\"data\": {\"content_index\": \"number\", \"item_id\": \"string\", \"output_index\": \"number\", \"part\": {\"annotations\": [], \"logprobs\": [], \"text\": \"string\", \"type\": \"string\"}, \"type\": \"string\"}, \"event\": \"response.content_part.done\"}",
+        "{\"data\": {\"content_index\": \"number\", \"item_id\": \"string\", \"output_index\": \"number\", \"part\": {\"text\": \"string\", \"type\": \"string\"}, \"type\": \"string\"}, \"event\": \"response.content_part.added\"}",
+        "{\"data\": {\"content_index\": \"number\", \"item_id\": \"string\", \"output_index\": \"number\", \"text\": \"string\", \"type\": \"string\"}, \"event\": \"response.output_text.done\"}",
+        "{\"data\": {\"item\": {\"content\": [\"{\\\"annotations\\\": [], \\\"logprobs\\\": [], \\\"text\\\": \\\"string\\\", \\\"type\\\": \\\"string\\\"}\"], \"id\": \"string\", \"role\": \"string\", \"status\": \"string\", \"type\": \"string\"}, \"output_index\": \"number\", \"type\": \"string\"}, \"event\": \"response.output_item.done\"}",
+        "{\"data\": {\"item\": {\"content\": [], \"id\": \"string\", \"role\": \"string\", \"status\": \"string\", \"type\": \"string\"}, \"output_index\": \"number\", \"type\": \"string\"}, \"event\": \"response.output_item.added\"}",
+        "{\"data\": {\"response\": {\"created_at\": \"number\", \"id\": \"string\", \"model\": \"string\", \"object\": \"string\", \"output\": [\"{\\\"content\\\": [\\\"{\\\\\\\"annotations\\\\\\\": [], \\\\\\\"logprobs\\\\\\\": [], \\\\\\\"text\\\\\\\": \\\\\\\"string\\\\\\\", \\\\\\\"type\\\\\\\": \\\\\\\"string\\\\\\\"}\\\"], \\\"id\\\": \\\"string\\\", \\\"role\\\": \\\"string\\\", \\\"status\\\": \\\"string\\\", \\\"type\\\": \\\"string\\\"}\"], \"status\": \"string\", \"usage\": {\"input_tokens\": \"number\", \"input_tokens_details\": {\"cached_tokens\": \"number\"}, \"output_tokens\": \"number\", \"total_tokens\": \"number\"}}, \"timings\": {\"cache_n\": \"number\", \"predicted_ms\": \"number\", \"predicted_n\": \"number\", \"predicted_per_second\": \"number\", \"predicted_per_token_ms\": \"number\", \"prompt_ms\": \"number\", \"prompt_n\": \"number\", \"prompt_per_second\": \"number\", \"prompt_per_token_ms\": \"number\"}, \"type\": \"string\"}, \"event\": \"response.completed\"}",
+        "{\"data\": {\"response\": {\"id\": \"string\", \"object\": \"string\", \"status\": \"string\"}, \"type\": \"string\"}, \"event\": \"response.created\"}",
+        "{\"data\": {\"response\": {\"id\": \"string\", \"object\": \"string\", \"status\": \"string\"}, \"type\": \"string\"}, \"event\": \"response.in_progress\"}"
+      ],
       "head": [
-        "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_L7uzVj7alzqP0uYc4HYBpvdp60tAsd1Z\",\"object\":\"response\",\"status\":\"in_progress\"}}",
-        "event: response.in_progress\ndata: {\"type\":\"response.in_progress\",\"response\":{\"id\":\"resp_L7uzVj7alzqP0uYc4HYBpvdp60tAsd1Z\",\"object\":\"response\",\"status\":\"in_progress\"}}",
-        "event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"content\":[],\"id\":\"msg_depHpGR0ZqLNdgRXk7wGBHbhXKjkiC0M\",\"role\":\"assistant\",\"status\":\"in_progress\",\"type\":\"message\"}}"
+        "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_6rGgQX8oQrdxXK2GVq5Bl3IyNNuJtlib\",\"object\":\"response\",\"status\":\"in_progress\"}}",
+        "event: response.in_progress\ndata: {\"type\":\"response.in_progress\",\"response\":{\"id\":\"resp_6rGgQX8oQrdxXK2GVq5Bl3IyNNuJtlib\",\"object\":\"response\",\"status\":\"in_progress\"}}",
+        "event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"content\":[],\"id\":\"msg_jitUQYoxxFtguuoteSOdYKfhBYzWNMB6\",\"role\":\"assistant\",\"status\":\"in_progress\",\"type\":\"message\"}}"
       ],
       "tail": [
-        "event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_L7uzVj7alzqP0uYc4HYBpvdp60tAsd1Z\",\"object\":\"response\",\"created_at\":1793827678,\"status\":\"completed\",\"model\":\"~/.cache/huggingface/hub/models--unsloth--Llama-3.2-1B-Instruct-GGUF/snapshots/b69aef112e9f895e6f98d7ae0949f72ff09aa401/Llama-3.2-1B-Instruct-UD-Q4_K_XL.gguf\",\"output\":[{\"type\":\"message\",\"status\":\"completed\",\"id\":\"msg_depHpGR0ZqLNdgRXk7wGBHbhXKjkiC0M\",\"content\":[{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"As of my knowledge cutoff in December 2023, the population of Paris, France is approximately 2.1 million people within the city limits and 12.2 million people in the larger metropolitan area, according to official statistics from the French National Institute for Statistics and Economic Studies (INSEE).\"}],\"role\":\"assistant\"}],\"usage\":{\"input_tokens\":42,\"output_tokens\":61,\"total_tokens\":103,\"input_tokens_details\":{\"cached_tokens\":41}}},\"timings\":{\"cache_n\":41,\"prompt_n\":1,\"prompt_ms\":16.128,\"prompt_per_token_ms\":16.128,\"prompt_per_second\":62.00396825396825,\"predicted_n\":61,\"predicted_ms\":375.356,\"predicted_per_token_ms\":6.255933333333333,\"predicted_per_second\":159.84825072730953}}",
+        "event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_6rGgQX8oQrdxXK2GVq5Bl3IyNNuJtlib\",\"object\":\"response\",\"created_at\":1795449099,\"status\":\"completed\",\"model\":\"~\\\\.cache\\\\huggingface\\\\hub/models--unsloth--Llama-3.2-1B-Instruct-GGUF\\\\snapshots\\\\b69aef112e9f895e6f98d7ae0949f72ff09aa401\\\\Llama-3.2-1B-Instruct-UD-Q4_K_XL.gguf\",\"output\":[{\"type\":\"message\",\"status\":\"completed\",\"id\":\"msg_jitUQYoxxFtguuoteSOdYKfhBYzWNMB6\",\"content\":[{\"type\":\"output_text\",\"annotations\":[],\"logprobs\":[],\"text\":\"As of my knowledge cutoff in December 2023, the estimated population of Paris is approximately 2.1 million people within the city limits. However, the larger metropolitan area of Paris, also known as Île-de-France, has a population of over 12.2 million people, making it one of the most populous metropolitan areas in Europe.\"}],\"role\":\"assistant\"}],\"usage\":{\"input_tokens\":42,\"output_tokens\":72,\"total_tokens\":114,\"input_tokens_details\":{\"cached_tokens\":41}}},\"timings\":{\"cache_n\":41,\"prompt_n\":1,\"prompt_ms\":4.94,\"prompt_per_token_ms\":4.94,\"prompt_per_second\":202.42914979757083,\"predicted_n\":72,\"predicted_ms\":313.894,\"predicted_per_token_ms\":4.421042253521127,\"predicted_per_second\":226.1910071552817}}",
         "data: [DONE]"
       ],
-      "count": 69
+      "count": 80
     }
   },
   "1e9b58604695ca076e0b836f2d2d1f5e36b66a899fc579a82d7200486ecaf830": {

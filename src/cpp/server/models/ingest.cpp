@@ -26,14 +26,17 @@
 #include <lemon/runtime_config.h>
 #include <lemon/system_info.h>
 #include <lemon/utils/aixlog.hpp>
+#include <lemon/utils/backend_args.h>
 #include <lemon/utils/json_utils.h>
 #include <lemon/utils/path_utils.h>
 #include <lemon/utils/safe_fs.h>
 
 #include <algorithm>
+#include <chrono>
 #include <filesystem>
 #include <set>
 #include <stdexcept>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -507,20 +510,21 @@ void ModelIngest::download_from_manifest(const json& manifest,
 void ModelIngest::register_model(const std::string& model_name,
                                  const json& model_data,
                                  bool allow_missing_checkpoint,
-                                 bool replace_existing) {
+                                 bool replace_existing, bool allow_backend_args) {
     std::set<std::string> visited;
     pull(model_name, model_data, true, nullptr, visited,
-         true, allow_missing_checkpoint, replace_existing);
+         true, allow_missing_checkpoint, replace_existing, utils::CancelToken(),
+         allow_backend_args);
 }
 
 void ModelIngest::pull(const std::string& model_name,
                                  const json& model_data,
                                  bool do_not_upgrade,
                                  DownloadProgressCallback progress_callback,
-                                 const utils::CancelToken& cancel) {
+                                 const utils::CancelToken& cancel, bool allow_backend_args) {
     std::set<std::string> visited;
     pull(model_name, model_data, do_not_upgrade, progress_callback, visited,
-         false, false, false, cancel);
+         false, false, false, cancel, allow_backend_args);
 }
 
 void ModelIngest::pull(const std::string& model_name,
@@ -531,7 +535,7 @@ void ModelIngest::pull(const std::string& model_name,
                                  bool register_only,
                                  bool allow_missing_checkpoint,
                                  bool replace_existing,
-                                 const utils::CancelToken& cancel) {
+                                 const utils::CancelToken& cancel, bool allow_backend_args) {
     // Keep a mutable registration payload so legacy re-pulls that omit the
     // registry retain the source recorded on the existing model. The original
     // request remains untouched for validation and download semantics.
@@ -697,12 +701,19 @@ void ModelIngest::pull(const std::string& model_name,
         variant = actual_checkpoint.substr(colon_pos + 1);
     }
 
-    // Register collections early - the fan-out below looks the entry up.
-    // Track that this call created the registration so component-resolution
-    // failures can roll it back instead of leaving a broken entry behind.
+    const bool inline_collection = is_model_collection_recipe(actual_recipe) &&
+        model_data.contains("models") && model_data["models"].is_array() &&
+        model_data.contains("components") && model_data["components"].is_array();
+    std::vector<std::string> inline_components;
     bool collection_registered_this_call = false;
-    if (is_model_collection_recipe(actual_recipe) && is_user_model_name(model_name) && !model_registered) {
-        register_user_model(model_name, registration_data);
+    if (inline_collection) {
+        inline_components = collections_->register_components(model_data["components"], model_data["models"],
+            requested_registry_source(registration_data), allow_backend_args,
+            model_name, registration_data);
+        model_registered = true;
+    } else if (is_model_collection_recipe(actual_recipe) &&
+               is_user_model_name(model_name) && !model_registered) {
+        register_user_model(model_name, registration_data, "", allow_backend_args);
         model_registered = true;
         collection_registered_this_call = true;
     }
@@ -739,18 +750,27 @@ void ModelIngest::pull(const std::string& model_name,
                     const auto* runtime_config = RuntimeConfig::global();
                     defer_default_source = download_source.empty() && !is_model_collection_recipe(model_info.recipe) &&
                                            runtime_config && runtime_config->offline();
-                    const std::string default_source =
-                        remote_registry_source_name(download_source_for(ModelInfo{}));
-                    const std::string selected = download_source.empty() ? default_source : download_source;
+                    const bool automatic = deps_.automatic_model_source && deps_.automatic_model_source();
+                    // Auto's preference drifts with network weather; it must not orphan a
+                    // complete copy by re-fetching it from the other registry.
+                    const bool keep_downloaded = automatic && download_source.empty() &&
+                        !model_info.registry_source.empty() && model_info.downloaded &&
+                        (is_model_collection_recipe(model_info.recipe) || artifacts().complete(model_info));
+                    const std::string default_source = (automatic && !download_source.empty()) || keep_downloaded
+                        ? "" : remote_registry_source_name(download_source_for(ModelInfo{}));
+                    const std::string selected = !download_source.empty() ? download_source
+                        : keep_downloaded ? model_info.registry_source : default_source;
+                    const std::string source_policy = automatic ? "auto"
+                        : download_source.empty() ? "" : default_source;
                     if (!defer_default_source && (model_info.registry_source != selected ||
-                        (download_source.empty() && !model_info.pull_source_default.empty()))) {
+                        model_info.pull_source_default != source_policy)) {
                         {
                             ModelStore::Write write(*deps_.store);
                             if (auto it = write.draft().find(model_info.model_name);
                                 it != write.draft().end() && it->second.recipe == model_info.recipe &&
                                 it->second.checkpoints == model_info.checkpoints) {
                                 it->second.registry_source = selected;
-                                it->second.pull_source_default = download_source.empty() ? "" : default_source;
+                                it->second.pull_source_default = source_policy;
                                 write.invalidate_cache();
                             }
                         }
@@ -793,37 +813,18 @@ void ModelIngest::pull(const std::string& model_name,
         }
 
         auto info = requested_info ? *requested_info : require_info(model_name);
-        std::vector<std::string> components = info.components;
+        std::vector<std::string> components = inline_collection ? inline_components : info.components;
 
         try {
-            if (model_data.contains("models") && model_data["models"].is_array() &&
-                model_data.contains("components") && model_data["components"].is_array()) {
-                // Exported-collection format: `models` carries what `components` names.
-                components = collections_->register_components(model_data["components"], model_data["models"],
-                                                registry_source_of(info));
-
-                // Rewrite with canonical names; the bulky payload is dropped.
-                if (is_user_model_name(model_name) && !components.empty()) {
-                    json reg = registration_data;
-                    reg["components"] = components;
-                    register_user_model(model_name, reg);
-                }
-            } else if (!repo_id.empty() && (components.empty() || !do_not_upgrade)) {
-                // A non-empty checkpoint marks a registry-backed collection: the list
-                // lives in the registry, so fetch it. An explicit pull refreshes so a
-                // member added upstream since the last pull is picked up.
+            if (!inline_collection && !repo_id.empty() &&
+                (components.empty() || !do_not_upgrade)) {
                 components = collections_->resolve_from_manifest(
                     repo_id, registry_source_of(info), do_not_upgrade);
             }
-
             if (components.empty()) {
                 throw std::runtime_error("Collection '" + model_name + "' has no components defined");
             }
         } catch (...) {
-            // Roll back the early registration when component resolution fails,
-            // so a failed import does not persist a collection entry whose
-            // components were never resolved. Downloads below are not rolled
-            // back - a mid-download failure leaves a valid, re-pullable entry.
             if (collection_registered_this_call) {
                 LOG(WARNING, "ModelManager") << "Component resolution failed; unregistering "
                     << "collection: " << model_name << std::endl;
@@ -865,7 +866,7 @@ void ModelIngest::pull(const std::string& model_name,
             LOG(INFO, "ModelManager") << "Downloading component: " << component << std::endl;
             json comp_data = json::object();
             pull(component, comp_data, do_not_upgrade, forward, visited, false, false, false,
-                 cancel);
+                 cancel, allow_backend_args);
         }
 
         // A startup build saw no manifest and published an empty list with no
@@ -917,7 +918,7 @@ void ModelIngest::pull(const std::string& model_name,
     // otherwise an import that reports success would silently leave the old
     // checkpoints/options in place.
     if (is_user_model_name(model_name) && !model_registered) {
-        register_user_model(model_name, registration_data);
+        register_user_model(model_name, registration_data, "", allow_backend_args);
     }
 
     auto model_info = requested_info ? *requested_info : require_info(model_name);
@@ -935,7 +936,7 @@ void ModelIngest::pull(const std::string& model_name,
             merged[key] = value;
         }
         model_info.recipe_options = RecipeOptions(model_info.recipe, merged);
-        deps_.save_options(model_info);
+        deps_.save_options(model_info, allow_backend_args);
     }
 
     if (register_only) {
@@ -1023,7 +1024,17 @@ void ModelIngest::fetch_model(const ModelInfo& info, bool do_not_upgrade,
         if (!slot) slot = std::make_shared<std::mutex>();
         repo_lock = slot;
     }
-    std::lock_guard<std::mutex> download_lock(*repo_lock);
+    // A canceled job must not sit behind another request's download of the same repo.
+    std::unique_lock<std::mutex> download_lock(*repo_lock, std::defer_lock);
+    while (!download_lock.try_lock()) {
+        if (cancel.cancelled()) {
+            throw TransferError("Download cancelled", true);
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+    if (cancel.cancelled()) {
+        throw TransferError("Download cancelled", true);
+    }
 
     // The backend's ops own the download (shared registry engine by default; flm pulls
     // via the flm CLI; cloud is a no-op).
@@ -1089,7 +1100,13 @@ static bool user_entry_is_router_collection(const json& user_models,
 
 void ModelIngest::register_user_model(const std::string& model_name,
                                       const json& model_data,
-                                      const std::string& source) {
+                                      const std::string& source, bool allow_backend_args) {
+    register_user_models({{model_name, model_data}}, source, allow_backend_args);
+}
+
+static std::pair<std::string, json> user_model_entry(const std::string& model_name,
+                                                    const json& model_data,
+                                                    const std::string& source) {
     const std::string recipe = model_data.value("recipe", std::string());
 
     // Remove "user." prefix if present
@@ -1155,16 +1172,37 @@ void ModelIngest::register_user_model(const std::string& model_name,
         }
     }
 
-    // update_user re-reads the file, so a concurrent pull's entry survives this
-    // one — a lost registration is a hard "Model not found" on the next
-    // auto-load. The store write keeps save and invalidation one step.
-    bool overwrote_router_collection = false;
+    return {clean_name, model_entry};
+}
+
+void ModelIngest::register_user_models(
+    const std::vector<std::pair<std::string, json>>& models,
+    const std::string& source, bool allow_backend_args) {
+    if (models.empty()) return;
+    std::vector<std::pair<std::string, json>> entries;
+    for (const auto& [name, data] : models) {
+        entries.push_back(user_model_entry(name, data, source));
+    }
+    bool router_changed = false;
     {
         ModelStore::Write store_write(*deps_.store);
         deps_.registries->update_user([&](json& user_models) {
-            overwrote_router_collection =
-                user_entry_is_router_collection(user_models, clean_name);
-            user_models[clean_name] = model_entry;
+            for (const auto& [clean_name, model_entry] : entries) {
+                const json previous = user_models.contains(clean_name)
+                    ? row_recipe_options(user_models[clean_name]) : json::object();
+                if (!allow_backend_args &&
+                    utils::backend_arg_options(previous) !=
+                        utils::backend_arg_options(row_recipe_options(model_entry))) {
+                    throw BackendArgsAuthorizationError(
+                        "Admin authorization is required to change registered backend arguments");
+                }
+            }
+            for (const auto& [clean_name, model_entry] : entries) {
+                router_changed = router_changed ||
+                    user_entry_is_router_collection(user_models, clean_name) ||
+                    is_router_collection_recipe(model_entry.value("recipe", std::string()));
+                user_models[clean_name] = model_entry;
+            }
             return true;
         });
         store_write.invalidate_cache();
@@ -1173,7 +1211,7 @@ void ModelIngest::register_user_model(const std::string& model_name,
     // A router collection's policy also retires when a plain recipe replaces it, and
     // only a reconcile notices that. An ordinary model — the collection's own component
     // included — must not trigger one.
-    if (is_router_collection_recipe(recipe) || overwrote_router_collection) {
+    if (router_changed) {
         deps_.notifier->models_changed(deps_.store->current()->generation);
     }
 }

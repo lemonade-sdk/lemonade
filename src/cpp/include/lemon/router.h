@@ -165,10 +165,12 @@ public:
                                             const RecipeOptions& request_options) const;
 
     // Apply request intent to an already-live process without reloading it.
-    // Returns false when the requested model is not currently live.
+    // Returns false when the requested model is not currently live. A set `cancel`
+    // stops the wait for another load with "load cancelled"; that load goes on.
     bool ensure_loaded_model_residency(
         const std::string& model_name,
-        LoadPurpose load_purpose);
+        LoadPurpose load_purpose,
+        std::atomic<bool>* cancel = nullptr);
 
     // Record the authoritative set of routing-helper models the active policies
     // need resident (the union across all active policies, as policy-authored
@@ -241,6 +243,7 @@ public:
         const std::string& model_name, const std::string& response_format);
 
     json image_generations(const json& request, std::atomic<bool>* cancel = nullptr);
+    json video_generations(const json& request, std::atomic<bool>* cancel = nullptr);
     json image_edits(const json& request, std::atomic<bool>* cancel = nullptr);
     json image_variations(const json& request, std::atomic<bool>* cancel = nullptr);
 
@@ -356,7 +359,8 @@ private:
         ResidencyClass requested_residency_class);
     bool ensure_loaded_model_residency_canonical(
         const std::string& canonical_model_name,
-        LoadPurpose load_purpose);
+        LoadPurpose load_purpose,
+        std::atomic<bool>* cancel = nullptr);
     bool has_npu_server() const;
     WrappedServer* find_npu_server() const;
     WrappedServer* find_npu_server_by_recipe(const std::string& recipe) const;

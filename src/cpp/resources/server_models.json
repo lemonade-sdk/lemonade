@@ -1519,6 +1519,19 @@
         ],
         "size": 23.8
     },
+    "Inkling-2-Mini-GGUF": {
+        "checkpoint": "unsloth/Inkling-2-Mini-GGUF:Inkling-2-Mini-UD-Q4_K_XL.gguf",
+        "mmproj": "mmproj-F16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "vision",
+            "tool-calling",
+            "reasoning"
+        ],
+        "size": 18.3
+    },
     "Qwen3.6-27B-GGUF": {
         "checkpoint": "unsloth/Qwen3.6-27B-GGUF:Qwen3.6-27B-UD-Q4_K_XL.gguf",
         "mmproj": "mmproj-F16.gguf",
@@ -2096,6 +2109,29 @@
             "width": 1024,
             "height": 1024,
             "soft_pixel_cap": 2097152
+        }
+    },
+    "Wan2.1-T2V-1.3B": {
+        "checkpoints": {
+            "main": "Comfy-Org/Wan_2.1_ComfyUI_repackaged:split_files/diffusion_models/wan2.1_t2v_1.3B_fp16.safetensors",
+            "t5xxl": "city96/umt5-xxl-encoder-gguf:umt5-xxl-encoder-Q8_0.gguf",
+            "vae": "Comfy-Org/Wan_2.1_ComfyUI_repackaged:split_files/vae/wan_2.1_vae.safetensors"
+        },
+        "recipe": "sd-cpp",
+        "suggested": true,
+        "labels": [
+            "video"
+        ],
+        "size": 8.8,
+        "recipe_options": {
+            "steps": 20,
+            "cfg_scale": 6.0,
+            "width": 832,
+            "height": 480,
+            "sampling_method": "euler",
+            "flow_shift": 3.0,
+            "video_frames": 33,
+            "fps": 16
         }
     },
     "LMX-Omni-52B-Halo": {

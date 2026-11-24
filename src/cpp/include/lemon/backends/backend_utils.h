@@ -228,6 +228,13 @@ namespace lemon::backends {
                                             std::string& filename,
                                             size_t& bytes_total);
 
+        /** rocm_install_method for a new install. Under modelscope, "auto" means
+         *  "tarball": the mirror has no wheel index. */
+        static std::string effective_rocm_install_method();
+
+        /** The request's source, else LEMONADE_BACKEND_SOURCE, else the config key. */
+        static std::string effective_backend_source();
+
         /** Download and install TheRock ROCm tarball for the specified architecture (Linux only) */
         static void install_therock(const std::string& arch, const std::string& version,
                                    DownloadProgressCallback progress_cb = nullptr);
@@ -269,6 +276,14 @@ namespace lemon::backends {
 
         /** The image get_backend_image() gave at install time, or "" when none is installed. */
         static std::string get_installed_backend_image(const std::string& recipe, const std::string& backend);
+
+        /** Every image the installed pin can name: its digest under the descriptor's image, then under each of its former_images. Empty when none is installed. */
+        static std::vector<std::string> get_installed_backend_images(const std::string& recipe, const std::string& backend);
+
+        /** The get_installed_backend_images() the manager's container tool holds. */
+        static std::vector<std::string> get_present_installed_images(const utils::ContainerManager& manager,
+                                                                     const std::string& recipe,
+                                                                     const std::string& backend);
 
         /** Get the path where the version indicator is installed. Does not check existence. */
         static std::string get_installed_version_file(const BackendSpec& spec, const std::string& backend);

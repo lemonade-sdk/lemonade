@@ -85,6 +85,8 @@ struct ModelManagerConfig {
     // host. A test that wants to watch a download end to end answers here instead.
     std::function<std::unique_ptr<models::FetchableRepository>(const models::ArtifactRef& ref)>
         repository_for;
+    std::function<bool()> automatic_model_source;
+    std::function<std::string()> default_pull_source;
 };
 
 class ModelManager {
@@ -176,26 +178,27 @@ public:
     // Register a user model
     void register_user_model(const std::string& model_name,
                             const json& model_data,
-                            const std::string& source = "");
+                            const std::string& source, bool allow_backend_args);
 
     // Register or validate a model definition without downloading its files.
     // Uses the same registration path as download_model.
     void register_model(const std::string& model_name,
                        const json& model_data,
-                       bool allow_missing_checkpoint = false,
-                       bool replace_existing = false);
+                       bool allow_missing_checkpoint,
+                       bool replace_existing, bool allow_backend_args);
 
     // Register (if needed) and download a model
     void download_model(const std::string& model_name,
                        const json& model_data,
-                       bool do_not_upgrade = false,
-                       DownloadProgressCallback progress_callback = nullptr,
-                       const utils::CancelToken& cancel = utils::CancelToken());
+                       bool do_not_upgrade,
+                       DownloadProgressCallback progress_callback,
+                       const utils::CancelToken& cancel, bool allow_backend_args);
 
     // Download a model
     void download_registered_model(const ModelInfo& info,
                                 bool do_not_upgrade = false,
-                                DownloadProgressCallback progress_callback = nullptr);
+                                DownloadProgressCallback progress_callback = nullptr,
+                                const utils::CancelToken& cancel = utils::CancelToken());
 
     // Search a remote catalog. Throws std::runtime_error for a source that has
     // no search to give.
@@ -339,7 +342,8 @@ public:
 
     // Replace the model's recipe_options.json entry, returning the new entry.
     // An empty object erases the entry rather than persisting `{}`.
-    json replace_options(const std::string& name, const json& saved);
+    json replace_options(const std::string& name, const json& saved,
+                         bool allow_backend_args);
 
 
 private:
@@ -365,7 +369,7 @@ private:
 
     // Internal to the facade: called from its own mutating paths.
     void forget_registered_model(const std::string& canonical_model_name);
-    void save_model_options(const ModelInfo& info);
+    void save_model_options(ModelInfo& info, bool allow_backend_args);
     void start_directory_watcher();
 
     static json load_server_models();
@@ -380,7 +384,8 @@ private:
     // The authored layer of build_recipe_options()'s ladder, read from the
     // registry row. Takes no store lock.
     json registry_recipe_options(const std::string& cache_key);
-    json write_saved_model_options(const std::string& model_name, const json& options, bool merge);
+    json write_saved_model_options(const std::string& model_name, const json& options, bool merge,
+                                   bool allow_backend_args);
 
     // Cache management
     void build_cache();

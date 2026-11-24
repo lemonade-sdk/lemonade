@@ -78,6 +78,7 @@ inline const BackendDescriptor descriptor = {
             /*devices*/ {"/dev/dri", "/dev/kfd"},
             /*cap_add*/ {},
             /*user*/    lemon::utils::ContainerUser{1000, 1000},
+            /*former_images*/ {"docker.io/kyuz0/amd-strix-halo-toolboxes"},
         }},
 #endif
     },

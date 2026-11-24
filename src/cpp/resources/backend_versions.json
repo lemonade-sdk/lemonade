@@ -60,21 +60,386 @@
         }
       },
       "gufo-org/gufo": {
-        "v0.35.0": {
-          "gufo-v0.35.0-windows-x86_64.zip": "sha256:32c76bc1b1c6fda10b6786489fa454b42ec06ef19b1a374100ac95203a6dbbb5"
+        "v0.36.0": {
+          "gufo-v0.36.0-windows-x86_64.zip": "sha256:52ac553e83950d5e1c83096f07288344dee0b871ed0894f6a2fd63b415ed5b48"
+        }
+      }
+    },
+    "modelscope": {
+      "comment": "Generated; do not edit by hand. SHA-256 of every file backend_source=modelscope can download: checksums.modelscope.github.<owner/repo>.<tag>.<asset> from GitHub's published digests, checksums.modelscope.therock.<version>.<tarball> hashed from stable.repo.amd.com. A ModelScope download without an entry here (or in checksums.github) is refused; GitHub downloads ignore this section.",
+      "github": {
+        "ROCm/FastFlowLM": {
+          "v1.0.13": {
+            "HRX_fastflowlm_1.0.13_debian13_amd64.deb": "sha256:9ef55906fa435264e8875eb75a8e86d4c5d815f0aaa5e6ce816001a8bef904b9",
+            "HRX_fastflowlm_1.0.13_linux.tar.gz": "sha256:14f3f81fb5a46e10db29416890a99e01da859741d72ae8356a41bf1db11ddb03",
+            "HRX_fastflowlm_1.0.13_ubuntu24.04_amd64.deb": "sha256:39fd8abc57ab64bc0291bdfd4561e3beac1c629abf0249c8785c6ec2265e07f1",
+            "HRX_fastflowlm_1.0.13_ubuntu25.10_amd64.deb": "sha256:d92c962a54074963aff1436e7eee322258b42c88e894f92722611b183715ece4",
+            "HRX_fastflowlm_1.0.13_ubuntu26.04_amd64.deb": "sha256:e64fae81ae78ff8360d913caa0553cfc13b046474c2c0d4e15bc0abd04968f51",
+            "HRX_fastflowlm_1.0.13_windows_amd64.zip": "sha256:b3991d04bfc7efa317737ab70b7b5e0db14f9d488193c2a481ec1e734e57bcd9",
+            "fastflowlm_1.0.13_debian13_amd64.deb": "sha256:4a000939ac05e9a868b705cbe5f6c7689290a9e1fed461d8cc0eda7f15106879",
+            "fastflowlm_1.0.13_linux.tar.gz": "sha256:7c2ee388f23503f323d6c21beca8401e7ef675ce700a92f2c786ca6581322a72",
+            "fastflowlm_1.0.13_ubuntu24.04_amd64.deb": "sha256:48483a6757522be1dcdb33f85bbd41630f72819f5d1f2d81c79848cdd5902ea7",
+            "fastflowlm_1.0.13_ubuntu25.10_amd64.deb": "sha256:e602c2c564ddc54a6a1e164302e7b3f30f845b1db412f774c50d320bf31f2097",
+            "fastflowlm_1.0.13_ubuntu26.04_amd64.deb": "sha256:b7e5132e6053736776f726c24b69017625237278bc8a1f22d9e12ec13c15abc7",
+            "fastflowlm_1.0.13_windows_amd64.zip": "sha256:c174605585334103b912f703eb753fda37fb9257d1e7bfe40c62bcd6286517ba",
+            "flm-setup.msi": "sha256:33ddd35470b99659f3f52abdc91da8de53ed6829315ddacc89bd5abf7703e0f5"
+          }
+        },
+        "ROCm/ggml-staging-automation": {
+          "hrx-b129": {
+            "llama-hrx-b129-bin-manylinux-hrx-x64.tar.gz": "sha256:309e124c2c532980c5541cc2857f187a2a3f5cc82b781d01c05ebb498b524058"
+          }
+        },
+        "ggml-org/llama.cpp": {
+          "b12233": {
+            "cudart-llama-b12233-bin-ubuntu-cuda-12.8-x64.tar.gz": "sha256:ba3a71df281cab80eb8e4e76a5544a83b5d032b5f836729c56d0613dcf3f4015",
+            "cudart-llama-b12233-bin-ubuntu-cuda-13.5-arm64.tar.gz": "sha256:9fe0bcece3b3f5d9a16373a6cc16438812a1c197250bb494c3470e7800bf95b8",
+            "cudart-llama-b12233-bin-ubuntu-cuda-13.5-x64.tar.gz": "sha256:7aefb6713b609d0ee847abd89e43ddbe67569619d7c75d9cfe14c3e2095830c6",
+            "cudart-llama-bin-win-cuda-12.4-x64.zip": "sha256:8c79a9b226de4b3cacfd1f83d24f962d0773be79f1e7b75c6af4ded7e32ae1d6",
+            "cudart-llama-bin-win-cuda-13.5-arm64.zip": "sha256:f89e7b2457f627d052dd99f42205ddfd01964454809754cdc649cffc74320dca",
+            "cudart-llama-bin-win-cuda-13.5-x64.zip": "sha256:c2bf4cc202bfbaaa7a0b75f5082457c3811326947bb216059b72839d844e9cba",
+            "llama-b12233-bin-android-arm64-snapdragon.tar.gz": "sha256:9c7e524203caf19d452300e336a2b9ac44991645d0b1b139e1375268255f56c9",
+            "llama-b12233-bin-android-arm64.tar.gz": "sha256:cd27c742202d6bb2f2f21d76adce0ab8b6943a8576f6412cc238c09fd092c057",
+            "llama-b12233-bin-linux-arm64-snapdragon.tar.gz": "sha256:8de9acc365f351804333cb39009b8767537d8dc3fd0e575bd9a0fc74532bb1b1",
+            "llama-b12233-bin-macos-arm64.tar.gz": "sha256:822623c5a6b7520707f4ecd82edaa648b03908a345181f62bd2778ee55e75504",
+            "llama-b12233-bin-macos-x64.tar.gz": "sha256:8f243f949097f85823307f1a48fc9ec530e732861568f503c8eaca4c1cf5c6d4",
+            "llama-b12233-bin-ubuntu-26.04-s390x.tar.gz": "sha256:d592baddc7b881500c7c132a61c4ab775cc4b327336f8e151f1618ef3b81efb9",
+            "llama-b12233-bin-ubuntu-arm64.tar.gz": "sha256:0ffd7a08e01dd9c5563d8346b09f3b558c10787b7391827879dd93b5075f50ad",
+            "llama-b12233-bin-ubuntu-cuda-12.8-x64.tar.gz": "sha256:92315fbe31bf5d290a27b33d7093661b84221bf132f75dc61a4d928f2e6bcbf9",
+            "llama-b12233-bin-ubuntu-cuda-13.5-arm64.tar.gz": "sha256:04b942953b8b50e62153a46814779e7358c5c4a6e0eb2a1ba8c25175a96957ab",
+            "llama-b12233-bin-ubuntu-cuda-13.5-x64.tar.gz": "sha256:7f08727e9f0da330183f9d0b4029f9cff15cc6c78e58f718058118a60b7586fe",
+            "llama-b12233-bin-ubuntu-openvino-2026.4.1-x64.tar.gz": "sha256:8856be4ae4b8162b62f0e3063333048d4df359c60cfaf692c01ebed77aef4c2b",
+            "llama-b12233-bin-ubuntu-rocm-10.0-x64.tar.gz": "sha256:57b74b160bbe24a1563a14f73f573de32c7832d09fea122e509f935ff36c52c2",
+            "llama-b12233-bin-ubuntu-s390x.tar.gz": "sha256:3abf31a1eae44ef61a3f51cc7e06f498750d2553144dd6dfd0a39780aa02a937",
+            "llama-b12233-bin-ubuntu-sycl-fp16-x64.tar.gz": "sha256:83eadf4bf58d60028f16ab72b91342cd72015166ee235523ba4e04b08c099e93",
+            "llama-b12233-bin-ubuntu-sycl-fp32-x64.tar.gz": "sha256:5d9337ce22c1ad28f7058ea0c140e84aea794044b5dea265184032a82f482f80",
+            "llama-b12233-bin-ubuntu-vulkan-arm64.tar.gz": "sha256:e8167671a6d8481786b8567d26fa20781739cba7dd4d1832ffa02f4d191ad74d",
+            "llama-b12233-bin-ubuntu-vulkan-x64.tar.gz": "sha256:0f7cab530eb638c8f02c5440d7564c82a687685b91657db0b9657e08b426b991",
+            "llama-b12233-bin-ubuntu-x64.tar.gz": "sha256:9f4a78cc4e4c9f5a166102a43f1d8f8e4e9d75e76823eb9505d05bbba288abd5",
+            "llama-b12233-bin-ubuntu-zdnn-s390x.tar.gz": "sha256:c47a3cfdf346d2fa41a11c13584011fbe458e16feaa82c582d3e4f9056fd02ae",
+            "llama-b12233-bin-win-cpu-arm64.zip": "sha256:8b04cc3e05665c48fd3fa1637be7ef655318133e3eb26cc3346fdeaaa39b00da",
+            "llama-b12233-bin-win-cpu-x64.zip": "sha256:c582c7d2f5d4d905f4259b1b14bb002aaf8a0e8825c32f8eca68542433df103a",
+            "llama-b12233-bin-win-cuda-12.4-x64.zip": "sha256:c5c784229331f47b3287d9af15fe44947b94c62523d05ddeeb8f7bb3a7260488",
+            "llama-b12233-bin-win-cuda-13.5-arm64.zip": "sha256:51445be97efff31f00baef032743e1a50b3c968151b952aa5a1558699ea81f52",
+            "llama-b12233-bin-win-cuda-13.5-x64.zip": "sha256:6ec9a85242a34979b18667c468a255fd764cec375bab60b03e6e645a0ced88e3",
+            "llama-b12233-bin-win-opencl-adreno-arm64.zip": "sha256:f40cc2a2944e98641b1f33e9e42aede762325a2fba0a82c3e906324c6a32e561",
+            "llama-b12233-bin-win-openvino-2026.4.1-x64.zip": "sha256:29690062079a24b9994f818fb85e28620e342275c1b3e98bd3392b9466007bf1",
+            "llama-b12233-bin-win-rocm-10.0-x64.zip": "sha256:4ea9ac11c8d901e9a7de162db9721ef96854f4b61c628be4598524f3db83e183",
+            "llama-b12233-bin-win-sycl-x64.zip": "sha256:0f4794c9a114ef4331d7bc9bf24c37b3497554e218be5bb53ef5fc9780efc11f",
+            "llama-b12233-bin-win-vulkan-arm64.zip": "sha256:cc9f816408a474a80db6429244cb2626eed1ffd29d4a7936db869a9fe392459e",
+            "llama-b12233-bin-win-vulkan-x64.zip": "sha256:94ab0dc023ceac3142379526f32d0cdf744809ba92146c256e4452cb81f51438",
+            "llama-b12233-ui.tar.gz": "sha256:795c73ec62514aeddedf9c3a1ec9fd4c59587b250ba4b91c62170177871ccbdf",
+            "llama-b12233-xcframework.zip": "sha256:4a8b1e49ab8ab30f874e04b2a0c5ef304297e2d78c6555861b7f9e6a8eb19c5c"
+          }
+        },
+        "lemonade-sdk/Kokoros": {
+          "b21": {
+            "kokoros-darwin-arm64-metal-latest.tar.gz": "sha256:b6ec1368fb335e6ccd9aed639ab5b95ed1340eef5d85c33bb9d450fd9c74868e",
+            "kokoros-darwin-arm64-metal.tar.gz": "sha256:25c2729194dbddf8fb788bbda08089ad1548e21469516c5d69cb651d83eb46bb",
+            "kokoros-linux-x86_64.tar.gz": "sha256:7dc102345a7b6fd2ac58a4296101996521970857e634353f78bf1861fdc1c996",
+            "kokoros-windows-x86_64.tar.gz": "sha256:69fb6c321310be5fc5736d74ad37cf53de01f011ca0bcc3bdb9bf8a242dc7f42"
+          }
+        },
+        "lemonade-sdk/llama.cpp": {
+          "b12223": {
+            "checksums.txt": "sha256:482fc0ef789a7f81a492636a88469aa2a4376c65013af829d80ad68c7eacb7cf",
+            "llama-b12223-bin-ubuntu-22-openvino-2026.4.1-x64.tar.gz": "sha256:765af2d81d62eafe1e4dc13f66c20e49c980aba86ac848a9d18cc15bb388c0b9",
+            "llama-b12223-bin-ubuntu-24-openvino-2026.4.1-x64.tar.gz": "sha256:09f0dd5528d3d9fe9340d23db79e1680ab08e563e564ea5115b30931bb0801e6",
+            "llama-b12223-bin-ubuntu-rocm-10.0-x64.tar.gz": "sha256:799c23bcef13c4957e0de44bda1471a1b4416e1df227341fc0a8395ee34e1ae8",
+            "llama-b12223-bin-ubuntu-rocm-10.1-x64.tar.gz": "sha256:61ef7b74b1dfe03b6298c71cde383d3e2533448ce9a4272baac30061a8116887",
+            "llama-b12223-bin-ubuntu-rocm-7.14-x64.tar.gz": "sha256:dcf471272285906c617112a020747f5a7f980819a7a1771f27bcc0303edc8888",
+            "llama-b12223-bin-win-cpu-x64.zip": "sha256:7f139e79555eb28793119a1ca6551a9c932522eeed0222ad33979fa32766658a",
+            "llama-b12223-bin-win-rocm-10.0-x64.zip": "sha256:a8a27f305e32ea870a93c6f2742c0af923656bdb506a4f45e6f1fe8d576e9227",
+            "llama-b12223-bin-win-rocm-10.1-x64.zip": "sha256:531d4d75beb9c056cecf59d541f3fa1fa38772421093400a980a2975c69f9fc2",
+            "llama-b12223-bin-win-rocm-7.14-x64.zip": "sha256:e9977f29422adf2e94044860fa9d76fe8de98e53707a94743940c7b5b755eadf",
+            "llama-b12223-ubuntu-cuda-sm_100-arm64.tar.xz": "sha256:01147d863e704d8cc6ab1b6173823385d03df790f96cd65b6a58958d399ffa53",
+            "llama-b12223-ubuntu-cuda-sm_100-x64.tar.xz": "sha256:e95aec6904bc55a22fe6e8552aa4ed2064b8bfcc7b85575818c2dfe623e8a1ec",
+            "llama-b12223-ubuntu-cuda-sm_120-arm64.tar.xz": "sha256:b5b25d43b9c8375f77c6bce68470674a5880de5a9816c32a0e7034b61411c594",
+            "llama-b12223-ubuntu-cuda-sm_120-x64.tar.xz": "sha256:dddbfce16991be26eaa817520dc395e52b07f40bf7eaaf1b7eb841451ccebce7",
+            "llama-b12223-ubuntu-cuda-sm_121-arm64.tar.xz": "sha256:de7dc3b9ba1bb4440afae12a752f847dd7411e0708fbefef9ee57d34429643c2",
+            "llama-b12223-ubuntu-cuda-sm_121-x64.tar.xz": "sha256:261b634e4dd519707ca2c1b53187901408122b5817c7c4cfd1236380f3753d5e",
+            "llama-b12223-ubuntu-cuda-sm_75-arm64.tar.xz": "sha256:12902734e49e1bdb4d33e3ad3a8223621bfd7d3a15ecdcc09977968290121be9",
+            "llama-b12223-ubuntu-cuda-sm_75-x64.tar.xz": "sha256:bcdf6a99ae10450f51d630823ea1580c780d8e29b3de936a91100470e3f2c777",
+            "llama-b12223-ubuntu-cuda-sm_80-arm64.tar.xz": "sha256:ce81cfd4c64143a601b01f762a824f4729efbdec14cc811d32519f380ee093ab",
+            "llama-b12223-ubuntu-cuda-sm_80-x64.tar.xz": "sha256:9adec7d95365cfc8b815303049dd765e203ecd128e06d6964dca930f86cca0a3",
+            "llama-b12223-ubuntu-cuda-sm_86-arm64.tar.xz": "sha256:8f5f4b5f246b4eb728bd4e3d482b9f68292fcb2d854c853707700fd54e9d5c93",
+            "llama-b12223-ubuntu-cuda-sm_86-x64.tar.xz": "sha256:44c47618b0a687926c264915ad607a923732b86df1418b37a587d46fdbeddebd",
+            "llama-b12223-ubuntu-cuda-sm_89-arm64.tar.xz": "sha256:102a5d38f3ec00f680ac62019595072c494782706d555688f2b2d7e6d5b35133",
+            "llama-b12223-ubuntu-cuda-sm_89-x64.tar.xz": "sha256:8cda9b4b5de0bc9c95dc46046d908824f51dcfdf3e198f008127c2d1e78d4000",
+            "llama-b12223-ubuntu-cuda-sm_90-arm64.tar.xz": "sha256:2ee0132b2bfe8f1fbba5028111a975b41dc1e1e8b62f303c5d1bf94fb291504d",
+            "llama-b12223-ubuntu-cuda-sm_90-x64.tar.xz": "sha256:ad654fbbd19c9846fe1d42f3668427c8671a018a79fc97545c99ec28d9f7f67e",
+            "llama-b12223-windows-cuda-sm_100-x64.7z": "sha256:75803fa44be3fc011c53cfcdedb4af7191303f65836c78ffabda5b557a3e0c9d",
+            "llama-b12223-windows-cuda-sm_120-x64.7z": "sha256:077731bc3368652e53cf6644ce3ab877db514e6dd8f0f1d1993dc3e826d96fe1",
+            "llama-b12223-windows-cuda-sm_121-x64.7z": "sha256:6a6558335cbb30fad5845e0357c52bc853444d16e228bcd96604bf4bab8b2e4a",
+            "llama-b12223-windows-cuda-sm_75-x64.7z": "sha256:fc8c6f18536e0ae1d059ed92a67da4ef10ead55b03ef9ebeed4eefc1cb005992",
+            "llama-b12223-windows-cuda-sm_80-x64.7z": "sha256:8ff3c0fe43e1bb235f8a385c9406e370dd41bd3915b163974a98e90644587905",
+            "llama-b12223-windows-cuda-sm_86-x64.7z": "sha256:8257bbf834209372e6b7ecca5fb3abe6f68797a4311e66f92f24205698ea3315",
+            "llama-b12223-windows-cuda-sm_89-x64.7z": "sha256:136822badc380512b68e5b17a1142020b1a8fe8b37aa8d33182ae9f90aec5a8d",
+            "llama-b12223-windows-cuda-sm_90-x64.7z": "sha256:27c85b2e7cb6354f6ee72c50e1018d22ac8cfdd4e20f0d21290698255c376d3f",
+            "qualification-llama-b12223-bin-ubuntu-rocm-10.0-x64.json": "sha256:900eeeadb6c905fc58955e9a46e2b28902470f0802f0d64da2c89034c322c5c1",
+            "qualification-llama-b12223-bin-ubuntu-rocm-10.1-x64.json": "sha256:13f28a432f1f04e78a5647605ba12613b7d78d37f1b669cd35982f8224e3f459",
+            "qualification-llama-b12223-bin-ubuntu-rocm-7.14-x64.json": "sha256:fad7bb55e725ebd6cb48987df11175c68ec4bcd72c1d2fc7a7299f320de80559",
+            "qualification-llama-b12223-bin-win-rocm-10.0-x64.json": "sha256:a227e6d7e89f6848444591281f3badf6ba3aa78231516f2d70a3e6c5f27ecf15",
+            "qualification-llama-b12223-bin-win-rocm-10.1-x64.json": "sha256:5e94fad7bf6790a9fa1710189064fd773b59999591bcb46b1a5b1d3d4dd40f64",
+            "qualification-llama-b12223-bin-win-rocm-7.14-x64.json": "sha256:fbc51c05650e0e4b9d5e48dfd60bc403050ce85c33b8e08ddca079a74bc3cdc5",
+            "qualification-summary.json": "sha256:b064b5e172d09b042a9c11d1885e52d6dd03996e4f2ed0e63308cc54fbc47d96"
+          }
+        },
+        "lemonade-sdk/llamacpp-rocm": {
+          "b1372": {
+            "checksums.txt": "sha256:192ea7e27f54dc40ca86caa114798975d395d32ebd032be8cf343ff7a345bcc4",
+            "llama-b1372-ubuntu-rocm-gfx103X-x64.zip": "sha256:6d8e9d835e871a6beeab8b942b4652ba2ff1cc872f6ed2af065ce6311f1b8d61",
+            "llama-b1372-ubuntu-rocm-gfx110X-x64.zip": "sha256:a7d541b6c6361aef559b5c8408e49f81e7c6a30260a2f67780eb513a10d8ab31",
+            "llama-b1372-ubuntu-rocm-gfx1150-x64.zip": "sha256:eeb19dd0242e576ac36207a788161355c08e2df8cb836d9edb4c786e06b18022",
+            "llama-b1372-ubuntu-rocm-gfx1151-x64.zip": "sha256:2cde9cf51d5bd6801b3533766422507f2f770babfdbd97fd20cf7e96cffb3ddd",
+            "llama-b1372-ubuntu-rocm-gfx1152-x64.zip": "sha256:dd2b7fe37fd35dd854dc19925fa88a8fc239af06afdb92472950046dc8f858af",
+            "llama-b1372-ubuntu-rocm-gfx1153-x64.zip": "sha256:77fa49568716bec8aa2c50d5e4aa1d80df28d777825caed6f8322006a488ccf5",
+            "llama-b1372-ubuntu-rocm-gfx117X-x64.zip": "sha256:4d84f5878d1893ee1d48b630b1667a9cf7bbe067ef60c32b98c71b53965e87f2",
+            "llama-b1372-ubuntu-rocm-gfx120X-x64.zip": "sha256:ae3e826db53a20397059f89c729ee25b4e52e55331a0fabbbd50a73b273c7efa",
+            "llama-b1372-ubuntu-rocm-gfx908-x64.zip": "sha256:2ab0b5c8789449051e27b15ce7ac2c6e29a9a922981d09d2b5967d2a75b8564c",
+            "llama-b1372-ubuntu-rocm-gfx90a-x64.zip": "sha256:0ef74ec3542c3ab19310d062e67751cdaa6aa63f85245f84f21f4e6ffa7efebd",
+            "llama-b1372-windows-rocm-gfx103X-x64.zip": "sha256:c9163fc8e7d1b5c70db707ef1ff821020fc3c74c38cc43fb600507690d28ec50",
+            "llama-b1372-windows-rocm-gfx110X-x64.zip": "sha256:48ba544e013ff484c689a0affdede60e559e320e9a7ff31ab96e30d7e6dc12f9",
+            "llama-b1372-windows-rocm-gfx1150-x64.zip": "sha256:d5046d0877ff19f1b77332bd7049c5aff46fafac9cf5b9403a7869b5e95d52a9",
+            "llama-b1372-windows-rocm-gfx1151-x64.zip": "sha256:85a7e0a81697a3ef9cb092afa82ab88f304cfb69ee31906475985ca5fdebcc83",
+            "llama-b1372-windows-rocm-gfx1152-x64.zip": "sha256:cea57137645927d62d84427eb3548184ff41e193dd5ac6f8ff354b16ce47d7cf",
+            "llama-b1372-windows-rocm-gfx1153-x64.zip": "sha256:dce39ba3885da44468e06339b88b05109c18365425fc8a0a7ee8ac113f2542c1",
+            "llama-b1372-windows-rocm-gfx117X-x64.zip": "sha256:123ae16896dd661fc07be719d1b4b8759cdef4246a1cddfe3c15838ae863c97c",
+            "llama-b1372-windows-rocm-gfx120X-x64.zip": "sha256:a98bbeee2e130ccffe73bea94492e097ac1dc753dcd7b7c1a42479dbe29ba897",
+            "llama-b1372-windows-rocm-gfx908-x64.zip": "sha256:4d952106ba3d8a976890c5b471c70ea9b342a60cf2a69f6a3bf8415c51d52c85",
+            "llama-b1372-windows-rocm-gfx90a-x64.zip": "sha256:b510030c3ca5703eb53efd57f423906c4c9c1bc6a2d6a862a0235a8fe6129210",
+            "qualification-llama-b1372-ubuntu-rocm-gfx103X-x64.json": "sha256:7da74407041dd422e960825fd7a94964d180e1bfb1bf0a2216355feafbace758",
+            "qualification-llama-b1372-ubuntu-rocm-gfx110X-x64.json": "sha256:4c6e48cf56d9c49c490b442d63909462bba981aefd57fb1fc62228b2e17def1f",
+            "qualification-llama-b1372-ubuntu-rocm-gfx1150-x64.json": "sha256:2b3c2b8755067139cd34160b7c472663582e2f98c5c05c4ff915357a485cfab1",
+            "qualification-llama-b1372-ubuntu-rocm-gfx1151-x64.json": "sha256:2ee8b3148439af05557f1a227644f887f844ead37b8d7e3507bc4271a45ba383",
+            "qualification-llama-b1372-ubuntu-rocm-gfx1152-x64.json": "sha256:97db6b4deafaf61ad9e007d8fc522a13f40248276892f8f62c5bc447182c9355",
+            "qualification-llama-b1372-ubuntu-rocm-gfx1153-x64.json": "sha256:f1bed1ae19be7021844ea508c9fb292aaf31a50a5eb030f5adec772c5c23a9b2",
+            "qualification-llama-b1372-ubuntu-rocm-gfx117X-x64.json": "sha256:6534aae69d141f1886f7dc7f8aed745adea7b5c19f48067fb703cb91b2ba380e",
+            "qualification-llama-b1372-ubuntu-rocm-gfx120X-x64.json": "sha256:300c67ab49e2f220f63cdebc135e9864e1f1abc96bf6b3f57fd8868b803be8c5",
+            "qualification-llama-b1372-ubuntu-rocm-gfx908-x64.json": "sha256:e6ce26a0973b70fca0f20cba80250de6628e4ca8785779cc5ca2afd4c5b055c8",
+            "qualification-llama-b1372-ubuntu-rocm-gfx90a-x64.json": "sha256:ba329012d4055b0de9773e15039daf3530c52d1691c341e260f5d9dc0ba7a486",
+            "qualification-llama-b1372-windows-rocm-gfx103X-x64.json": "sha256:9b02b20733d8fea5a259b9921c5ed769933382053653251818d49c3c9f3f4f5e",
+            "qualification-llama-b1372-windows-rocm-gfx110X-x64.json": "sha256:cb2e470bc49c022d421337ed2c22e9030f255834af2a7931ec19cd90aa1c7a6c",
+            "qualification-llama-b1372-windows-rocm-gfx1150-x64.json": "sha256:7df8905d13e66a1722005e18e80c5d9c83dcb801dad93f5c54795e4b03d2d22d",
+            "qualification-llama-b1372-windows-rocm-gfx1151-x64.json": "sha256:2257cab45fc9de0d54ffc1eb0eeea4e1b7d0cc0d3d055fdb906c8b61dba02446",
+            "qualification-llama-b1372-windows-rocm-gfx1152-x64.json": "sha256:d6a15f58c89578942bf087cb8e191fe5139055b2b382c4ed75a196a9a8d07f26",
+            "qualification-llama-b1372-windows-rocm-gfx1153-x64.json": "sha256:6313eff048928f8afd20529a2f94258481c77474a7116db7b74efbc3f323a5e1",
+            "qualification-llama-b1372-windows-rocm-gfx117X-x64.json": "sha256:e664d7831a74b1d2a93e38c911999971cd826c2818ddd4368f119c80cb3b259a",
+            "qualification-llama-b1372-windows-rocm-gfx120X-x64.json": "sha256:a96ef098e6d200e677897d7ad61336d76b5338d631776f7c99b9d5b59e65f9c4",
+            "qualification-llama-b1372-windows-rocm-gfx908-x64.json": "sha256:420613bbe2e7366f236e64057bdaf7984e77a81532103d6acf9cf6312a897742",
+            "qualification-llama-b1372-windows-rocm-gfx90a-x64.json": "sha256:f05cd6001e37585137845794c49007bb876a8f1a3a72b308227ef9d0ee02ed79",
+            "qualification-summary.json": "sha256:9a0cd303d9d18939386702313b96fdf45edfad07cd23fa1fc510b51d99202eb3"
+          }
+        },
+        "lemonade-sdk/moonshine-server-rocm": {
+          "moonshine0.0.62": {
+            "moonshine-server-moonshine0.0.62-linux-arm64.tar.gz": "sha256:9a740497481d338f9bf42633f4fe4bfbeb54a6b4b8a192bd465d7da020723943",
+            "moonshine-server-moonshine0.0.62-linux-x64.tar.gz": "sha256:c19d6f333002af3209ee029be0e4f5967926edf29395de7401c83b5f9fc21191",
+            "moonshine-server-moonshine0.0.62-macos-arm64.tar.gz": "sha256:af673aebe8f010bbef01477fec2a411de9a02a8140e9dc5b47e80e843da26b01",
+            "moonshine-server-moonshine0.0.62-windows-x64.zip": "sha256:eb98b8d3a7b56e7f342b22e1a936b686528c0f3e5db2d76a5de96efb87fedd0c"
+          }
+        },
+        "lemonade-sdk/ort-server": {
+          "0.4.0": {
+            "ort-server-0.4.0-linux-arm64.tar.gz": "sha256:55a8bde25623109393f16a9eebd6fff257fc28a53f2b16edd52346dc0b20ad82",
+            "ort-server-0.4.0-linux-x64.tar.gz": "sha256:2480ad34c130c5260fa9e80f22d70a5e309a00ce40e85a9f5a1ee85cf1972c27",
+            "ort-server-0.4.0-macos-arm64.tar.gz": "sha256:2a64e7a53e0dba2e359054f94666b1a40ba58f4d75b610bd5acbca28f3b5317a",
+            "ort-server-0.4.0-windows-x64.zip": "sha256:55bcef49d5ca71568040cbc8007f4926cff6ce231c125d7315092fe944c452ef"
+          }
+        },
+        "lemonade-sdk/ryzenai-server": {
+          "v1.9.0": {
+            "ryzenai-server.zip": "sha256:fbafd130d05fb6b6428e927761c65085d672384dd5968d5230b8ee3df878b5f0"
+          }
+        },
+        "lemonade-sdk/stable-diffusion.cpp": {
+          "master-957-90e86d1": {
+            "cudart-sd-bin-win-cu12-x64.zip": "sha256:fe20366827d357c00797eebb58244dddab7fd9a348d70090c3871004c320f38d",
+            "sd-master-90e86d1-bin-Darwin-macOS-14.8.9-arm64.zip": "sha256:9a08ec6241e87761c0965fb7df3c79617a4b0cceefcbb44b52000a593592a1f0",
+            "sd-master-90e86d1-bin-Darwin-macOS-26.6.2-arm64.zip": "sha256:9175329c6bcc6c88da62d97e8988f9dc7c489161ec4cda37ed0948d4c0ee697e",
+            "sd-master-90e86d1-bin-Linux-Ubuntu-24.04-x86_64-rocm-10.0.0.zip": "sha256:4cf3958c97663de525af55a495be73dbe030b74f2c7fb795c3b68e6db93c098f",
+            "sd-master-90e86d1-bin-Linux-Ubuntu-24.04-x86_64-rocm-10.1.0.zip": "sha256:8c5605c92fc2605f1c96653d76e1ccb6c1a6aa998ba63d581de41143071ac720",
+            "sd-master-90e86d1-bin-Linux-Ubuntu-24.04-x86_64-vulkan.zip": "sha256:9af42e767d12b149648b9bdc44390921a91ac138c0873f8823296f3856cea965",
+            "sd-master-90e86d1-bin-Linux-Ubuntu-24.04-x86_64.zip": "sha256:763058cdf90250c0cd9d351b3c3c71d36962150d2e02d85948ac9bb40038527e",
+            "sd-master-90e86d1-bin-win-cpu-x64.zip": "sha256:13866a2abb996e51a5c083b6d0050bd94d4c242623ee18f1114a219444695c41",
+            "sd-master-90e86d1-bin-win-cuda12-x64.zip": "sha256:11ca78c914b8773696462fc0a8ed49cfaafe94a0b2b50a6884b48e078498a8d7",
+            "sd-master-90e86d1-bin-win-rocm-10.0.0-x64.zip": "sha256:1a9dc86f1c70dd513eb942c04564ded11d4408acba4161a5c3c1a836b2f9423b",
+            "sd-master-90e86d1-bin-win-rocm-10.1.0-x64.zip": "sha256:3a57673f50112e74f8c254e8193e6746129f7a5cac4d8ab36cd67a20b0401162",
+            "sd-master-90e86d1-bin-win-vulkan-x64.zip": "sha256:a3724e2e4567709afe71276ab5d5a931e3bb352e09e9a18c3312dc974e925463",
+            "sd-master-90e86d1-ubuntu-cuda-sm_100-x64.tar.xz": "sha256:50dba32391c64701fde3c365bc972966877cab847ca2b366fee8b9312223ef90",
+            "sd-master-90e86d1-ubuntu-cuda-sm_120-x64.tar.xz": "sha256:20b6e9136bf93b484c63340f3fca8f2256d5509f206d67ff67818df217b8612b",
+            "sd-master-90e86d1-ubuntu-cuda-sm_121-arm64.tar.xz": "sha256:f8bd0e18768af717294db9b9605670391a95f5b8f76797bbe17bd3431978fa41",
+            "sd-master-90e86d1-ubuntu-cuda-sm_121-x64.tar.xz": "sha256:216202b21427afa4b747f9d25ff79ebfa195f04a84aa1599ba8653985ecd2bbd",
+            "sd-master-90e86d1-ubuntu-cuda-sm_75-x64.tar.xz": "sha256:2f9f669e599152beac04f78b47fb06a9334bf1e6ddfef60766207d53d69a0c06",
+            "sd-master-90e86d1-ubuntu-cuda-sm_80-x64.tar.xz": "sha256:13fd656d22ee87d895712b55368d480293e7fa5036ca0eadd88c15f15b480d7d",
+            "sd-master-90e86d1-ubuntu-cuda-sm_86-x64.tar.xz": "sha256:4d9a4c4ba92c8cd2062170e51c589ce4cfb2f5826e5ea95f9bc60b36d37ff358",
+            "sd-master-90e86d1-ubuntu-cuda-sm_89-x64.tar.xz": "sha256:bd395f10cfb1dd8b401bac4c00dcd8fdffa09b68c1f0fe2b76a6e7d799e087c4",
+            "sd-master-90e86d1-ubuntu-cuda-sm_90-x64.tar.xz": "sha256:8ac73c3d35e545f6811a9ff5e6acc2a74043cbb30c24965e1c04f19a54137ad1",
+            "sd-master-90e86d1-windows-cuda-sm_100-x64.zip": "sha256:31657ff773d8384991fd28f1c240b205b07a26ab4299d5f4697ea4bf3a4c8689",
+            "sd-master-90e86d1-windows-cuda-sm_120-x64.zip": "sha256:6758b86947b9c06138ef6c33e276674dfb0059d93ea5ebba6b190a7302dd544b",
+            "sd-master-90e86d1-windows-cuda-sm_121-x64.zip": "sha256:1e10bbc36b9b2856a2add7154f6b4247d465256ddf1a1db1f96afd15fa227f6b",
+            "sd-master-90e86d1-windows-cuda-sm_75-x64.zip": "sha256:f1792dcdd0c233683178f635b67aade5e9b3b214bb0df23b48f2b07946c963c6",
+            "sd-master-90e86d1-windows-cuda-sm_80-x64.zip": "sha256:8c19d25cf5ea23ed5bb61bd3b3e54701e9cb0393962606e58d00e16a61f7b8ed",
+            "sd-master-90e86d1-windows-cuda-sm_86-x64.zip": "sha256:bd413181ff7320411a39d97d8e61028c7e7cccb6247e6e0ad37b7355a31da031",
+            "sd-master-90e86d1-windows-cuda-sm_89-x64.zip": "sha256:dd11df6f862b724ea7d44130e57b104bc9582a9e66482fe6d0e0c78a2e4f57a6",
+            "sd-master-90e86d1-windows-cuda-sm_90-x64.zip": "sha256:81e48afc9bb3fef6271db00ddef60e7aa9bd1d5db736efdf17fdd7e265b73b82"
+          }
+        },
+        "lemonade-sdk/thenoise": {
+          "thenoise-0.15.0-rocm10.1.0": {
+            "qualification-report-thenoise-0.15.0-rocm10.1.0-linux.json": "sha256:c7ff3497e5a864036715b1bcffad63cf9b514fe8e4fee7b048ddc57b0a247f04",
+            "qualification-report-thenoise-0.15.0-rocm10.1.0-windows.json": "sha256:37b3d9da7d35b50d657eae9078560dd2b60c481dbf6801e343f8c4ce5a51f9f1",
+            "thenoise-0.15.0-rocm10.1.0-cuda-x64.part01-of-02.tar.gz": "sha256:bb2e49d9804dc2fb10a069a048a63f42c652526a489c93c4aadbcf16257e7e46",
+            "thenoise-0.15.0-rocm10.1.0-cuda-x64.part02-of-02.tar.gz": "sha256:689ee6961907673e51a8650a184665dc9343baf664420907513aff4ee3561c48",
+            "thenoise-0.15.0-rocm10.1.0-cuda-x64.partcount": "sha256:53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
+            "thenoise-0.15.0-rocm10.1.0-cuda-x64.sha256": "sha256:50535af4209a7f574e1d7407ba4c32b1ee293e15a6a1721b3104c544d645838a",
+            "thenoise-0.15.0-rocm10.1.0-gfx103X-win-x64.part01-of-02.zip": "sha256:5d5f92ea64fc9d7d201c735874e9ab652ebc62c2891faf0290546ff765d770e1",
+            "thenoise-0.15.0-rocm10.1.0-gfx103X-win-x64.part02-of-02.zip": "sha256:c707f94b3faaa94676d6b85d3feb9c7975965b8c76596ede1d7732c54100544d",
+            "thenoise-0.15.0-rocm10.1.0-gfx103X-win-x64.partcount": "sha256:53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
+            "thenoise-0.15.0-rocm10.1.0-gfx103X-x64.part01-of-02.tar.gz": "sha256:c87218df829e8345b997b591b8098d691cd5fc429d5e60dbaa1be544ff6e27b1",
+            "thenoise-0.15.0-rocm10.1.0-gfx103X-x64.part02-of-02.tar.gz": "sha256:16b7be625151379358b90d648380a675e908a4a01254ae2dfe17f2d56863fe16",
+            "thenoise-0.15.0-rocm10.1.0-gfx103X-x64.partcount": "sha256:53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
+            "thenoise-0.15.0-rocm10.1.0-gfx110X-win-x64.part01-of-02.zip": "sha256:f0b59a8d988cf0faf6cb7fa3210f0c3efd5f586d6f363163a7077e878b507302",
+            "thenoise-0.15.0-rocm10.1.0-gfx110X-win-x64.part02-of-02.zip": "sha256:fe9b70b535608fad2c04c222b314eb1c67bf0844c9c48bfe0d79a5db6adff0e5",
+            "thenoise-0.15.0-rocm10.1.0-gfx110X-win-x64.partcount": "sha256:53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
+            "thenoise-0.15.0-rocm10.1.0-gfx110X-x64.part01-of-02.tar.gz": "sha256:6d349ad0982fa31103320ae973957a2be5d16cf1174531a762352081624b3c7e",
+            "thenoise-0.15.0-rocm10.1.0-gfx110X-x64.part02-of-02.tar.gz": "sha256:897e0eda2ed5cb72ef8911f986b3154078b6ad0e7bb69920e8e55527c5ce0e5e",
+            "thenoise-0.15.0-rocm10.1.0-gfx110X-x64.partcount": "sha256:53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
+            "thenoise-0.15.0-rocm10.1.0-gfx1150-win-x64.zip": "sha256:a83448d42bfcb0e200ef794588da31325a79025e0874370bda20d62d5a3ed1c3",
+            "thenoise-0.15.0-rocm10.1.0-gfx1150-x64.tar.gz": "sha256:b2ff79ab72094b345e1d606a6c975e495ce38e9de286a1caac3c42b10c89dede",
+            "thenoise-0.15.0-rocm10.1.0-gfx1151-win-x64.zip": "sha256:72cd15bfd6dd479a397e9febd826992d13a40da8433ce0958f0c93ca20f67544",
+            "thenoise-0.15.0-rocm10.1.0-gfx1151-x64.tar.gz": "sha256:cc467ea02582017fdf5afede2f1476abac83397b1502b1cff55abe2dc3fade84",
+            "thenoise-0.15.0-rocm10.1.0-gfx1152-win-x64.zip": "sha256:56987a82ecb61805c22b2dea68cdafc15213d42a0428c3eabc69b93d5023342f",
+            "thenoise-0.15.0-rocm10.1.0-gfx1152-x64.tar.gz": "sha256:d6018850fb1a117fc35e4b10f884d1286dda9e908b0113780495219d4d041042",
+            "thenoise-0.15.0-rocm10.1.0-gfx120X-win-x64.part01-of-02.zip": "sha256:0fe5f94f70f3a28bb3b94db4263cf1131830f6e7314426455bd8139c79182d94",
+            "thenoise-0.15.0-rocm10.1.0-gfx120X-win-x64.part02-of-02.zip": "sha256:44506847dfeb3b1a40f1f9a87b5fd415f26376a85fabe0ca5e8151b1f7710af9",
+            "thenoise-0.15.0-rocm10.1.0-gfx120X-win-x64.partcount": "sha256:53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
+            "thenoise-0.15.0-rocm10.1.0-gfx120X-x64.part01-of-02.tar.gz": "sha256:c392a9ba1a8c60c5766ed17a96a9d726d0cfd7caa7ca60f022771d27d5b1febd",
+            "thenoise-0.15.0-rocm10.1.0-gfx120X-x64.part02-of-02.tar.gz": "sha256:9da8f64d2fcea51394aeea59c244f8c85dc7503fb7a755315b9466b23be59567",
+            "thenoise-0.15.0-rocm10.1.0-gfx120X-x64.partcount": "sha256:53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3"
+          }
+        },
+        "lemonade-sdk/vllm-rocm": {
+          "vllm0.20.1-rocm7.12.0-gfx110X": {
+            "vllm0.20.1-rocm7.12.0-gfx110X-x64.part01-of-02.tar.gz": "sha256:cc39c42f6262cf850acd07670d1fb97f82fe11ca75608093c3e88ad7d5f6525c",
+            "vllm0.20.1-rocm7.12.0-gfx110X-x64.part02-of-02.tar.gz": "sha256:d0a1802c60d21b02a29371f3c1e3b4a62b787a0b65d31b2cebcfd9f75965aba9",
+            "vllm0.20.1-rocm7.12.0-gfx110X-x64.partcount": "sha256:53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3"
+          },
+          "vllm0.20.1-rocm7.12.0-gfx1150": {
+            "vllm0.20.1-rocm7.12.0-gfx1150-x64.part01-of-02.tar.gz": "sha256:34a618d10d5869ab04e1388ec8bb67dbde69b9ef3eef0810d4b14dc60ee82174",
+            "vllm0.20.1-rocm7.12.0-gfx1150-x64.part02-of-02.tar.gz": "sha256:354b8ffdf35c4eaea9a7db8513275e7e95da1d2d8e17195352ed9153f5294325",
+            "vllm0.20.1-rocm7.12.0-gfx1150-x64.partcount": "sha256:53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3"
+          },
+          "vllm0.20.1-rocm7.12.0-gfx1151": {
+            "vllm0.20.1-rocm7.12.0-gfx1151-x64.part01-of-02.tar.gz": "sha256:51c35040208aa7cd7ee59030d5a5a98c2360dd27df827947b18a5bb3a1c6d0c7",
+            "vllm0.20.1-rocm7.12.0-gfx1151-x64.part02-of-02.tar.gz": "sha256:a11b9b870a920ef06727b5137e05a6823ca82195a57e184909dcdfe3291bdf4e",
+            "vllm0.20.1-rocm7.12.0-gfx1151-x64.partcount": "sha256:53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3"
+          },
+          "vllm0.20.1-rocm7.12.0-gfx120X": {
+            "vllm0.20.1-rocm7.12.0-gfx120X-x64.part01-of-02.tar.gz": "sha256:402c8a5a84c668930ef82d0e5ecfec7a1ea13cdc9ff1a112f44793e3dbc43803",
+            "vllm0.20.1-rocm7.12.0-gfx120X-x64.part02-of-02.tar.gz": "sha256:415b391085e373138a11e353c0bd15508f833b4dea156011a2fe3b327ec377de",
+            "vllm0.20.1-rocm7.12.0-gfx120X-x64.partcount": "sha256:53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3"
+          }
+        },
+        "lemonade-sdk/whisper.cpp-rocm": {
+          "v1.8.4": {
+            "whisper-b4281-linux-musl-cpu-aarch64.tar.gz": "sha256:8cf426a09b2e9b66d2ba6e94b8589dadbcf7ef5cbd277295f16f35b8fe21b8d9",
+            "whisper-b4281-linux-musl-vulkan-x86_64.tar.gz": "sha256:a941286f177e4d5dc0fa6d23a78b25d24fc19b1b7d63cb2a0c59d763cc1479bb",
+            "whisper-v1.8.4-darwin-metal-arm64.tar.gz": "sha256:64b2a6fde765cd95edfc740817872d27d5122640787e0761a3504e23d4f72af9",
+            "whisper-v1.8.4-linux-cpu-x86_64.tar.gz": "sha256:88df3f571d58871cd3f43e4a028df5dfe1463b24f8fd7df5dc4b7a2fb068ea0d",
+            "whisper-v1.8.4-linux-rocm-gfx110X.tar.gz": "sha256:16a57d2a735ef795e91764b7531f68ce3b9a2cd83d83fbe0bf33a72d842627ef",
+            "whisper-v1.8.4-linux-rocm-gfx1150.tar.gz": "sha256:6fc0c151031bcbcf41469a531d585da8c63a6e782c33276404131f73da67a13a",
+            "whisper-v1.8.4-linux-rocm-gfx1151.tar.gz": "sha256:efe7690aa11557309df727b9a4663c1e5e9910f26f6755b9226fcdaa92657e74",
+            "whisper-v1.8.4-linux-rocm-gfx120X.tar.gz": "sha256:9d136701ceff188a6727ec7e80b005d77a464e1bc7dc4c2ea2815bebe3788290",
+            "whisper-v1.8.4-linux-vulkan-x86_64.tar.gz": "sha256:55d0bdf9be7092ed8148b27d26353f5755446381eb9e1e5b6b00d5c761d813b1",
+            "whisper-v1.8.4-windows-cpu-x64.zip": "sha256:2f494218bce1ea61dfcd88c318c4747b44e497789c993f2e7f81feabe94dfd8d",
+            "whisper-v1.8.4-windows-npu-x64.zip": "sha256:7e191e6dc9a2407b4cb55df49f2582afba51d417b3409edf22552047d4f9b177",
+            "whisper-v1.8.4-windows-rocm-gfx110X.zip": "sha256:8f0e8a7a1213d5206b26d7204e32230bec71e388bc6691d90ae1c4772fc6ed66",
+            "whisper-v1.8.4-windows-rocm-gfx1150.zip": "sha256:b2289835b6a36e4e9197695a09b761f035c52f66493870a8bb6b69f628727a0b",
+            "whisper-v1.8.4-windows-rocm-gfx1151.zip": "sha256:16ab9d3af19c4766f3c26493ad33028af430f439dc5de61f68437e7aee35bb6d",
+            "whisper-v1.8.4-windows-rocm-gfx120X.zip": "sha256:e7134ff766993c02d4759291dcd88454d0cedf3a52b6e702c3409a2f0bb9ff25",
+            "whisper-v1.8.4-windows-vulkan-x64.zip": "sha256:e0d20a0f92e31b98adc0faf71172efc810b701e6391a9d858ca045bff26f77cd"
+          }
+        },
+        "pwilkin/acestep.cpp": {
+          "v0.1.2": {
+            "acestep-cuda-linux-x64.tar.gz": "sha256:2f06f56d5fb0ab1a5eaa59f02133d5b9f83205cb4d36db11cc66fa2367c2d33d",
+            "acestep-cuda-windows-x64.zip": "sha256:85e21cfff9a7f58158bf7dfc8ce24d8d0ad5c9d5175f9dea4b96c77ca1d3910b",
+            "acestep-rocm-linux-x64.tar.gz": "sha256:38598b95652c1999ff3c36cc1dd858a71c3549375f0b411579285b85f517a1bf",
+            "acestep-rocm-windows-x64.zip": "sha256:ec08109028a64ab4a2f9c611542b09cd6cb3692bc4403a6bdbfa876029f5085b",
+            "acestep-vulkan-linux-x64.tar.gz": "sha256:fc9c4e4b6c9a31cf4844d1e05ee56bd68655fb3f70b8fe65049a5926a09672ff",
+            "acestep-vulkan-windows-x64.zip": "sha256:dcefdf54ebc33591b1aad334769698c9ab6ded8ec981acb806909438e1c50e79"
+          }
+        },
+        "pwilkin/openmoss": {
+          "v0.3.0": {
+            "moss-tts-cuda-linux-x64.tar.gz": "sha256:3a7a61852bd9fe16a14f262ff99e055739e7bc52c2727749d05f0b4664facb37",
+            "moss-tts-cuda-windows-x64.zip": "sha256:def68a7f35e6bd111ec4118f4e88835547f3af87efd5f3812ab1e505d1f38229",
+            "moss-tts-rocm-linux-x64.tar.gz": "sha256:0126df034ea8d18cb895ef39e639bf36a29c7a024a87ab9eaeadf1126ccfe80d",
+            "moss-tts-rocm-windows-x64.zip": "sha256:5b4f32862b6c52a52b01e937af11cf9f60f887da079bb0354cbb6ecc46e7fe72",
+            "moss-tts-vulkan-linux-x64.tar.gz": "sha256:1288a22295451d0e5d8bd707ef79ea324e1c7b5f1cd9bfbdab2167a388fe3af7",
+            "moss-tts-vulkan-windows-x64.zip": "sha256:709c5c67e76c4180a38c6516cf908665fa2df6613900298a7d2c58eba5914733"
+          }
+        },
+        "pwilkin/thinksound.cpp": {
+          "v0.1.2": {
+            "thinksound-cuda-linux-x64.tar.gz": "sha256:ac3875c6bba8cf0753708e749bdb606006ac6e001f7d78649ede78c5e96bd36a",
+            "thinksound-cuda-windows-x64.zip": "sha256:1261c1eadd91b8a4a62dd20e9e8d7e5320db671896337ea84ac23251df54b0d9",
+            "thinksound-rocm-linux-x64.tar.gz": "sha256:46379f969b4c097a357a0717077c41272eb3290494bd2acec08ce6591a2d778a",
+            "thinksound-rocm-windows-x64.zip": "sha256:3e27483cc88c4e10c68f485a9b1bae02381dd3a16a64cf5c44bae53f4fbb0d68",
+            "thinksound-vulkan-linux-x64.tar.gz": "sha256:913cb141ff0bcde488474fbba9e911437e2cbf58dd12a0a41251dbe4fa69e61f",
+            "thinksound-vulkan-windows-x64.zip": "sha256:e0af57c3cd2f4605cd0062939e8134f2ac60e197f95bbab347ed274002ffbfd2"
+          }
+        },
+        "pwilkin/trellis.cpp": {
+          "v0.8.1": {
+            "trellis-cuda-linux-x64.tar.gz": "sha256:5257d222a7a4becb9a125aa80b24328f91da22987777d86b312bad4ab237edae",
+            "trellis-cuda-windows-x64.zip": "sha256:d2ea7b57174d3bff438064faf0b5fbcc55c29c31e6bba5f41030936fa366ed48",
+            "trellis-cuda12-linux-x64.tar.gz": "sha256:00e7e459284af23bb529794d2fadffacb5905cd6400f2db43380c0f99f727656",
+            "trellis-cuda12-windows-x64.zip": "sha256:8b948b62fc857cab0e064d0962b9f7961a246620bddabbc8a0c00521db78dfb5",
+            "trellis-rocm-linux-x64.tar.gz": "sha256:128ec2abd7364186ca9b079855f3f4564d7589cef88ee0f62c380c644b4be884",
+            "trellis-rocm-windows-x64.zip": "sha256:87c3b3eaf14f241fdccc4618430329dd5c74033de191ced189cd889d1288f145",
+            "trellis-studio-linux-amd64.deb": "sha256:cbb85e70ef2b3b742333377e47e27adc8d5ea6538a283bc2081f2e9135b20a72",
+            "trellis-studio-linux-x86_64-portable.tar.gz": "sha256:4e13e661277ff252eb9cfa77cbee5966612cdf827ba407b9a734795be175143a",
+            "trellis-studio-linux-x86_64.AppImage": "sha256:98b6947ace822d6bfadcae0445f5420336fb2c2064c79ef8308c5005015455d0",
+            "trellis-studio-windows-x64-portable.zip": "sha256:f27d9fbb1dc3d3218625c61756b8089b652a66dada98af79a62d8f5639846b72",
+            "trellis-studio-windows-x64-setup.exe": "sha256:5d24637debc073f48bba718b6d7cb42675428693fe21134ca91f02bfe92f7a50",
+            "trellis-vulkan-linux-x64.tar.gz": "sha256:8c2ed7f76ab9f09d3e24dae82b1a52a75d308e853bdfd289e26d57b1f422f33b",
+            "trellis-vulkan-windows-x64.zip": "sha256:d6c70678635f5367f9aa93261e9310e7c0c327ca8395399cf2ef869ccc2e72ba"
+          }
+        }
+      },
+      "therock": {
+        "10.1.0": {
+          "therock-dist-windows-gfx101X-dgpu-10.1.0.tar.gz": "sha256:355d9a0fdb343c6579f89fd789a16ef24ee6879b4a66629f7f1986a32eeaacde",
+          "therock-dist-windows-gfx103X-all-10.1.0.tar.gz": "sha256:d8945ac33873bf3e443e9e5fc4f078ca03aa03bd75c8aec56850bdc95f6b067f",
+          "therock-dist-windows-gfx110X-all-10.1.0.tar.gz": "sha256:1313633026b05f8f6af2a6a16a2f323211dd81a904a808f0ee34d2bbfb8f8441",
+          "therock-dist-windows-gfx1150-10.1.0.tar.gz": "sha256:b58d79a319b1267940c8b6397b3d6d714698ed8c74e1f61175ae247a3c2abbc8",
+          "therock-dist-windows-gfx1151-10.1.0.tar.gz": "sha256:42698635d66eee273fd0ef580b68494aa2363a4fa6cf733db7806438863a8136",
+          "therock-dist-windows-gfx1152-10.1.0.tar.gz": "sha256:8dc00ff5ede61958f8badd5e0b9b0f70747e1f84a3829de36b3e6272f9ef9cf2",
+          "therock-dist-windows-gfx1153-10.1.0.tar.gz": "sha256:cea010785590aa78c0b3583e87e472e69c1c65bc179199bcdca6701462ea03bd",
+          "therock-dist-windows-gfx120X-all-10.1.0.tar.gz": "sha256:e8d5acd522aa106d685485707e5085d491ead7d0d84a79ef74dc5995941403b2",
+          "therock-dist-linux-gfx101X-dgpu-10.1.0.tar.gz": "sha256:702bbaa55f3eafd177ddeeed26c93f915dd23de418188cc79cde6dc00819938c",
+          "therock-dist-linux-gfx103X-all-10.1.0.tar.gz": "sha256:9fcf1764468bc75d2497b0b09165fef6f3e0bc01aec1fc76af7c8afd8f954d1e",
+          "therock-dist-linux-gfx110X-all-10.1.0.tar.gz": "sha256:0f5da124601786ab1b9fdbccfca83b931aae3bf7da9c604079ddb2dcfa65d717",
+          "therock-dist-linux-gfx1150-10.1.0.tar.gz": "sha256:515df1170721668427a602807043719e59937109863e0baa7566875e9fccf070",
+          "therock-dist-linux-gfx1151-10.1.0.tar.gz": "sha256:50deb993035bc2f6a5aba5e3de8d476d8c512a2eec2cbfd5aa569d71e0b8b337",
+          "therock-dist-linux-gfx1152-10.1.0.tar.gz": "sha256:ceed8714adb3db7885f6d25784060687fb772d3d9ed2449779ce7636d88827c0",
+          "therock-dist-linux-gfx1153-10.1.0.tar.gz": "sha256:a3282f3b2e806bf9d7379920a02070a7ad9b019c271e083ffd9a53112d41c27a",
+          "therock-dist-linux-gfx120X-all-10.1.0.tar.gz": "sha256:985b0f082698629a62bfd1759f4874b58b6163edfdeee14cf529719c9761ddaf"
         }
       }
     }
   },
   "llamacpp": {
-    "vulkan": "b12233",
-    "rocm-stable": "b12223",
-    "rocm-nightly": "b1372",
-    "cuda": "b12223",
-    "metal": "b12233",
-    "cpu": "b12233",
-    "nathanw": "vulkan-radv-performance@sha256:41018261e61b7e32fb38e4985ba569d0837804e727dcc62689c2fb1d73ec8f15",
-    "halobox": "rocm-10.0-strix-llama@sha256:015fddafc28bfdb1653a99905010e83a9327f072206cb1f882f1f9f922069f48"
+    "vulkan": "b12633",
+    "rocm-stable": "b12625",
+    "rocm-nightly": "b1385",
+    "cuda": "b12625",
+    "metal": "b12633",
+    "cpu": "b12633",
+    "nathanw": "vulkan-radv-performance@sha256:4cb3f2ecd8340b8a5928d3917969d256ea55e4a7346cd25deb2b470126c9ae0e",
+    "halobox": "rocm-10.0-strix-llama@sha256:a8d329920f1375352d0e7167ee17cbebe89257be5a51bed77a591077581a7ea1"
   },
   "llamacpp-hrx": {
     "hrx": "hrx-b129"
@@ -90,23 +455,23 @@
     "metal": "v1.8.4"
   },
   "sd-cpp": {
-    "cpu": "master-957-90e86d1",
-    "rocm-stable": "master-957-90e86d1",
-    "vulkan": "master-957-90e86d1",
-    "cuda": "master-957-90e86d1",
-    "metal": "master-957-90e86d1"
+    "cpu": "master-1106-b115a63",
+    "rocm-stable": "master-1106-b115a63",
+    "vulkan": "master-1106-b115a63",
+    "cuda": "master-1106-b115a63",
+    "metal": "master-1106-b115a63"
   },
   "rocmfpx": {
     "rocm": "rocm-10.0-rocmfpx@sha256:4df326e907a469f4acc6091fa7fb68fb275c2d5a7136bacd8e47e7339a5c49f7"
   },
   "halogen": {
-    "rocm": "0.19.1@sha256:7ab5c3dfd77acb2387603f1807069cac3494e678f413c0670745ba2df74c0f0e"
+    "rocm": "0.20.7@sha256:773073448dc9ff4a8c6b6c278802e254fd5f1546764e27531aeb3b77cb13482e"
   },
   "gufo": {
-    "rocm": "0.35.0@sha256:99e9b5471b7a9b007c686c2aa795afaf966744d64e753cb009c89541f9e9c2b6"
+    "rocm": "0.36.0@sha256:69a858b088658040ec9b81e7a0f32d663f775e90f78894943aea0ec7a4bf7d52"
   },
   "ds4": {
-    "rocm": "rocm-10.0@sha256:e14ad3edb88c9c2e80b1c1464ef9307bcc56c935f31c4df9fa8e980974f68c47"
+    "rocm": "rocm-10.0@sha256:686650eed951f80d861905642b3d1d4347b44c0369aa2de5d1db1033bb72813f"
   },
   "therock": {
     "version": "10.1.0",

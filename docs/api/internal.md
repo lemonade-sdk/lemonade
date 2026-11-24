@@ -185,6 +185,7 @@ Requires `LEMONADE_ADMIN_API_KEY` when it is set, otherwise `LEMONADE_API_KEY` w
 | `auto_evict` | No | Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `auto_evict_threshold_pct` | No | Defaults to `0.9`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `auto_update_models` | No | Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `backend_source` | No | Defaults to `"github"`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `broadcast` | No | Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `config_version` | No | Defaults to `2`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `ctx_size` | No | Defaults to `-1`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |

@@ -4,6 +4,7 @@
 
 #include <lemon/utils/aixlog.hpp>
 
+#include "lemon/jobs/job_manager.h"
 #include "lemon/router.h"
 #include "lemon/server.h"
 #include "lemon/server/api_route.h"
@@ -55,6 +56,7 @@ public:
 
         // Child processes (llama-server, etc.) must be gone before the caller proceeds,
         // or they outlive lemond as zombies.
+        ctx_.job_manager->shutdown();
         LOG(INFO, "Server") << "Unloading models and stopping backend servers..." << std::endl;
         try {
             ctx_.router->unload_model();

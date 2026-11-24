@@ -287,10 +287,15 @@ def _pull_model_streaming(model_name, port):
     Large models (10+ GB) exceed any fixed read timeout on the synchronous
     /pull; the progress events keep the connection alive so the timeout only
     applies between events, not to the whole download.
+
+    do_not_upgrade reuses a model that is already downloaded, as the CLI does by
+    default. Without it an FLM model is pulled with `flm pull --force`, which
+    re-downloads every file from Hugging Face on each call.
     """
     with requests.post(
         f"http://localhost:{port}/api/v1/pull",
-        json={"model_name": model_name, "stream": True},
+        json={"model_name": model_name, "stream": True, "do_not_upgrade": True},
+        headers=_auth_headers(),
         stream=True,
         timeout=TIMEOUT_MODEL_OPERATION,
     ) as response:
@@ -429,7 +434,7 @@ def _build_runtime_config(additional_server_args=None):
     # Map --wrapped-server + --backend to the correct recipe option key
     if wrapped_server == "llamacpp" and backend:
         config["llamacpp"] = {"backend": backend}
-    elif wrapped_server == "sd-cpp" and backend:
+    elif wrapped_server in ("sd-cpp", "sdcpp") and backend:
         config["sdcpp"] = {"backend": backend}
     elif wrapped_server == "thenoise" and backend:
         config["thenoise"] = {"backend": backend}
