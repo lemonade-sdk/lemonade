@@ -21,7 +21,8 @@ public:
         s.description =
             "Stops a queued or running video and keeps its record, which then reports `canceled`.";
         s.notes = {
-            "A clip still queued is cancelled straight away. stable-diffusion.cpp cannot stop a clip "
+            "A clip still queued is cancelled straight away. TheNoise cooperatively cancels its own "
+            "job and keeps the model loaded after inference has stopped. stable-diffusion.cpp cannot stop a clip "
             "once frames are being produced, so cancelling one stops its backend process; the video "
             "reports `canceled` once the process has exited, and the next request reloads the model.",
         };

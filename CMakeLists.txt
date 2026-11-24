@@ -4072,6 +4072,13 @@ if(BUILD_TESTING AND EXISTS "${_SDCPP_VIDEO_POLL_TEST_SRC}")
     add_cpp_ci_test(SdcppVideoPollTest CI ON COMMAND test_sdcpp_video_poll)
 endif()
 
+set(_THENOISE_VIDEO_POLL_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_thenoise_video_poll.cpp")
+if(BUILD_TESTING AND EXISTS "${_THENOISE_VIDEO_POLL_TEST_SRC}")
+    add_executable(test_thenoise_video_poll test/cpp/test_thenoise_video_poll.cpp)
+    target_link_libraries(test_thenoise_video_poll PRIVATE lemonade-server-core)
+    add_cpp_ci_test(TheNoiseVideoPollTest CI ON COMMAND test_thenoise_video_poll)
+endif()
+
 set(_STREAMING_HEARTBEAT_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_streaming_heartbeat.cpp")
 if(BUILD_TESTING AND EXISTS "${_STREAMING_HEARTBEAT_TEST_SRC}")
     add_executable(test_streaming_heartbeat test/cpp/test_streaming_heartbeat.cpp)

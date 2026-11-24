@@ -25,11 +25,11 @@ const RouteArg kVideoFrames{"video_frames", ArgIn::JsonBody,
                             {{"type", "integer"}, {"minimum", 1}, {"maximum", video_store::kMaxVideoFrames}}, false,
                             Support::Available,
                             "Number of frames to generate. Defaults to the model's `video_frames` recipe "
-                            "option, else `33`."};
+                            "option, else the backend default (`33` for stable-diffusion.cpp)."};
 const RouteArg kFps{"fps", ArgIn::JsonBody, {{"type", "integer"}, {"minimum", 1}, {"maximum", video_store::kMaxFps}},
                     false, Support::Available,
                     "Frames per second of the returned clip. Defaults to the model's `fps` recipe option, "
-                    "else `16`."};
+                    "else the backend default (`16` for stable-diffusion.cpp)."};
 const RouteArg kDuration{"duration", ArgIn::JsonBody,
                          {{"type", "number"}, {"minimum", 0}, {"maximum", video_store::kMaxDuration}}, false,
                          Support::Available,
@@ -54,9 +54,10 @@ const RouteArg kFlowShift{"flow_shift", ArgIn::JsonBody, {{"type", "number"}}, f
 const RouteArg kVideoSteps{"steps", ArgIn::JsonBody,
                            {{"type", "integer"}, {"minimum", 1}, {"maximum", video_store::kMaxSteps}}, false,
                            Support::Available, "Number of sampling steps. Defaults to the model's own."};
-const RouteArg kOutputFormat{"output_format", ArgIn::JsonBody, {{"enum", json::array({"webm", "webp", "avi"})}},
+const RouteArg kOutputFormat{"output_format", ArgIn::JsonBody, {{"enum", json::array({"webm", "webp", "avi", "mp4"})}},
                              false, Support::Available,
-                             "Container format of the clip: `webm`, `webp` or `avi`. Defaults to `webm`."};
+                             "Container format: `webm` (default), `webp` or `avi` (stable-diffusion.cpp), "
+                             "or `mp4` (TheNoise)."};
 
 class VideosCreateRoute : public ApiRoute {
 public:
@@ -74,8 +75,8 @@ public:
             "runs for minutes, so it is a job rather than a held connection: poll "
             "[`GET /v1/videos/{id}`](#get-v1videosid), then fetch the clip from "
             "[`GET /v1/videos/{id}/content`](#get-v1videosidcontent). It serves "
-            "[stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) video models such "
-            "as `Wan2.1-T2V-1.3B` and is a Lemonade extension.";
+            "[stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) and "
+            "[TheNoise](https://github.com/lemonade-sdk/thenoise) video models and is a Lemonade extension.";
         s.notes = {
             "The model loads when the job starts, not during this request.",
             "The clip is kept on disk under the cache directory. Generating another video deletes the clips of deleted or evicted jobs.",

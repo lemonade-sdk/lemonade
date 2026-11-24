@@ -205,7 +205,10 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `cfg_scale` | — | SIZE | 7.0 | CFG scale (<= 1.0 disables CFG) |
 | `width` | — | SIZE | 512 | Output image width |
 | `height` | — | SIZE | 512 | Output image height |
-| `sampler` | — | ARGS | "" | Denoising solver (euler \| er_sde) |
+| `sampler` | — | ARGS | "" | Denoising solver (e.g. euler, er_sde, unipc) |
+| `video_frames` | — | SIZE | 33 | Number of video frames |
+| `fps` | — | SIZE | 16 | Video frames per second |
+| `flow_shift` | — | SIZE | 0.0 | Video flow shift (0 = model default) |
 | `negative_prompt` | — | ARGS | "" | Negative prompt |
 | `qwen_vae_enhance` | — | BOOL | false | Nyquist notch post-filter (removes 2px grid artifacts) |
 | `film_grain` | — | SIZE | 0.0 | Film grain strength (0.0-10.0) |

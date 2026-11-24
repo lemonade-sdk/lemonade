@@ -223,7 +223,8 @@ lemon::jobs::OpProviders JobOps::build(ServerContext& ctx) {
     };
     // generate_video does not take the router's exclusive slot, so a clip does not
     // hold up other models; the slot is also what records job-owned models, so
-    // the op unloads a model it loaded itself when it is interrupted.
+    // the op unloads a model it loaded itself when interrupted, unless the
+    // backend confirms its job settled cooperatively and can be reused.
     providers.video_op = [router, model_loader, model_manager](const lemon::jobs::json& params,
                                                                const std::string& job_id,
                                                                lemon::jobs::CancelFlag& cancel)
@@ -273,15 +274,21 @@ lemon::jobs::OpProviders JobOps::build(ServerContext& ctx) {
         }
         nlohmann::json response = router->video_generations(request, &cancel);
         if (response.contains("error")) {
-            unload_if_interrupted();
-            std::string msg = "video generation failed";
             const auto& err = response["error"];
+            const bool settled = err.is_object() && err.contains("details") &&
+                err["details"].is_object() && err["details"].contains("backend_job_settled") &&
+                err["details"]["backend_job_settled"] == true;
+            if (!settled) unload_if_interrupted();
+            if (cancel.load()) throw lemon::jobs::JobError(499, "interrupted");
+            std::string msg = "video generation failed";
             if (err.is_object() && err.contains("message") && err["message"].is_string())
                 msg = err["message"].get<std::string>();
             else if (err.is_string())
                 msg = err.get<std::string>();
             throw lemon::jobs::JobError(424, msg);
         }
+        // Completion may race with cancel. Do not publish a canceled clip.
+        if (cancel.load()) throw lemon::jobs::JobError(499, "interrupted");
         if (response.contains("b64_json") && response["b64_json"].is_string()) {
             video_store::write(file, utils::JsonUtils::base64_decode(response["b64_json"].get<std::string>()));
             published = true;
