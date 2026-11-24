@@ -98,7 +98,12 @@ struct QuickStart {
     std::vector<std::string> args;
 };
 
+// Throws when `info` records no Quick start for `target`, or one Lemonade does not allow.
 QuickStart quick_start(const json& info, const std::string& target);
+
+// Whether `info` records a Quick start for `target` at all (a bundle fetched
+// before cards recorded one does not).
+bool records_quick_start(const json& info, const std::string& target);
 
 // --parameter_mode=preload: reads the weights into host memory first, which
 // avoids ROCm/hrx-system#3332 (the default parameter mode fails under the stock

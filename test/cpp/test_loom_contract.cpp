@@ -345,6 +345,11 @@ void check_card_metadata() {
           loom::serve_args(small, true, "--workers=4") == small.args);
     check("Preload is not added when the card omits it",
           loom::serve_args(small, true, "") == small.args);
+    check("A bundle reports whether it records a Quick start for a GPU",
+          loom::records_quick_start(cards, loom::kStrixHaloTarget) &&
+              !loom::records_quick_start(cards, "gfx1150") &&
+              !loom::records_quick_start(json::object(), loom::kStrixHaloTarget) &&
+              !loom::records_quick_start(json(), loom::kStrixHaloTarget));
     check("A GPU without a recorded Quick start is refused",
           throws_exception([&] { (void)loom::quick_start(cards, "gfx1150"); }) &&
               throws_exception([&] { (void)loom::quick_start(json::object(), loom::kStrixHaloTarget); }));

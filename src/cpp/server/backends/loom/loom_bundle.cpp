@@ -265,6 +265,14 @@ PresetLimits preset_limits(const json& card, const std::string& preset) {
     return {};
 }
 
+bool records_quick_start(const json& info, const std::string& target) {
+    const auto devices = info.is_object() ? info.find("devices") : info.end();
+    if (devices == info.end() || !devices->is_object()) return false;
+    const auto entry = devices->find(target);
+    return entry != devices->end() && entry->is_object() && entry->contains("quick_start") &&
+           (*entry)["quick_start"].is_object();
+}
+
 QuickStart quick_start(const json& info, const std::string& target) {
     const auto devices = info.is_object() ? info.find("devices") : info.end();
     const json entry = devices != info.end() && devices->is_object()

@@ -184,6 +184,10 @@ bool bundle_complete(const std::string& checkpoint) {
     return !bundle_dir(checkpoint).empty();
 }
 
+json read_info_file(const fs::path& dir) {
+    return fs::exists(dir / loom::kInfoFile) ? read_json_file(dir / loom::kInfoFile) : json();
+}
+
 // The download re-hashes a file it finds in place, but takes one the listing
 // gives no hash for as complete whatever its size.
 void drop_if_resized(const fs::path& path, std::uint64_t size) {
@@ -422,12 +426,22 @@ void LoomServer::load(const std::string& model_name, const ModelInfo& model_info
     backend_manager_->install_backend(loom::descriptor.recipe, kBackend);
 
     const std::string checkpoint = model_info.checkpoint();
-    if (!bundle_complete(checkpoint)) {
+    const auto fetch = [&] {
         const models::ArtifactRef ref =
             bundle_ref(checkpoint, model_manager_->download_source_for(model_info));
         BundleFetcher(model_manager_->resolver().repository_for(ref, {}), nullptr, {}, target).run();
+    };
+    if (!bundle_complete(checkpoint)) fetch();
+    fs::path dir = bundle_dir(checkpoint);
+    // A bundle downloaded before its card recorded a Quick start for this GPU:
+    // fetch the card's current revision once; quick_start() below refuses it if
+    // that still records none.
+    if (!dir.empty() && !loom::records_quick_start(read_info_file(dir), target)) {
+        LOG(INFO, "Loom") << checkpoint << " records no Quick start for " << target
+                          << "; fetching its current card" << std::endl;
+        fetch();
+        dir = bundle_dir(checkpoint);
     }
-    const fs::path dir = bundle_dir(checkpoint);
     if (dir.empty()) throw std::runtime_error("The Loom bundle for " + model_name + " is incomplete");
     const json card = read_json_file(dir / loom::kCardFile);
     const loom::BundlePlan plan = loom::plan_bundle(card, read_json_file(dir / loom::kLockFile));
@@ -438,7 +452,7 @@ void LoomServer::load(const std::string& model_name, const ModelInfo& model_info
     }
     served_model_id_ = plan.model_id;
 
-    const json info = fs::exists(dir / loom::kInfoFile) ? read_json_file(dir / loom::kInfoFile) : json();
+    const json info = read_info_file(dir);
     if (!loom::bundle_supports_target(info, target)) {
         throw std::runtime_error(model_name + " is not supported on this GPU (" + target + ")");
     }
