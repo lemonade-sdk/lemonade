@@ -38,6 +38,7 @@ import uuid
 
 from utils.server_base import _auth_headers, set_server_config, wait_for_server
 from utils.test_models import (
+    DELETE_TEST_MODEL,
     ENDPOINT_TEST_MODEL,
     ENDPOINT_TEST_MODEL_CTX_SIZE,
     MULTI_REPO_MODEL_A_CACHE_DIR,
@@ -2834,8 +2835,9 @@ sys.exit(0)
 
     def test_090_delete_model(self):
         """Test delete command with model name."""
+        run_cli_pull_command_with_retry(["pull", DELETE_TEST_MODEL])
         result = run_cli_command(
-            ["delete", ENDPOINT_TEST_MODEL],
+            ["delete", DELETE_TEST_MODEL],
             timeout=TIMEOUT_DEFAULT,
         )
         print(f"Delete model exit code: {result.returncode}")

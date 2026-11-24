@@ -44,6 +44,7 @@ from utils.server_base import (
 )
 from utils.test_models import (
     PORT,
+    DELETE_TEST_MODEL,
     ENDPOINT_TEST_MODEL,
     MULTI_MODEL_QUATERNARY,
     MULTI_MODEL_TERTIARY,
@@ -1097,7 +1098,7 @@ class EndpointTests(ServerTestBase):
         # First delete model if it exists to ensure we're actually testing pull
         delete_response = requests.post(
             f"{self.base_url}/delete",
-            json={"model_name": ENDPOINT_TEST_MODEL},
+            json={"model_name": DELETE_TEST_MODEL},
             timeout=TIMEOUT_DEFAULT,
         )
         # 200 = deleted, 422 = not found (both are acceptable)
@@ -1110,13 +1111,13 @@ class EndpointTests(ServerTestBase):
         models_data = models_response.json()
         model_ids = [m["id"] for m in models_data["data"]]
         self.assertNotIn(
-            ENDPOINT_TEST_MODEL, model_ids, "Model should be deleted before pull test"
+            DELETE_TEST_MODEL, model_ids, "Model should be deleted before pull test"
         )
 
         # Now pull the model
         response = requests.post(
             f"{self.base_url}/pull",
-            json={"model_name": ENDPOINT_TEST_MODEL, "stream": False},
+            json={"model_name": DELETE_TEST_MODEL, "stream": False},
             timeout=TIMEOUT_MODEL_OPERATION,
         )
         self.assertEqual(response.status_code, 200)
@@ -1132,10 +1133,10 @@ class EndpointTests(ServerTestBase):
         models_data = models_response.json()
         model_ids = [m["id"] for m in models_data["data"]]
         self.assertIn(
-            ENDPOINT_TEST_MODEL, model_ids, "Model should be downloaded after pull"
+            DELETE_TEST_MODEL, model_ids, "Model should be downloaded after pull"
         )
 
-        print(f"[OK] Pull (non-streaming): model={ENDPOINT_TEST_MODEL}")
+        print(f"[OK] Pull (non-streaming): model={DELETE_TEST_MODEL}")
 
     def test_007a_pull_keeps_cost_metadata(self):
         """Cost fields sent with /pull are saved with the model it registers."""
@@ -1187,7 +1188,7 @@ class EndpointTests(ServerTestBase):
         # First delete model to ensure we're actually testing pull
         delete_response = requests.post(
             f"{self.base_url}/delete",
-            json={"model_name": ENDPOINT_TEST_MODEL},
+            json={"model_name": DELETE_TEST_MODEL},
             timeout=TIMEOUT_DEFAULT,
         )
         self.assertIn(delete_response.status_code, [200, 422])
@@ -1195,7 +1196,7 @@ class EndpointTests(ServerTestBase):
         # Pull with streaming
         response = requests.post(
             f"{self.base_url}/pull",
-            json={"model_name": ENDPOINT_TEST_MODEL, "stream": True},
+            json={"model_name": DELETE_TEST_MODEL, "stream": True},
             timeout=TIMEOUT_MODEL_OPERATION,
             stream=True,
         )
@@ -1229,7 +1230,7 @@ class EndpointTests(ServerTestBase):
         models_data = models_response.json()
         model_ids = [m["id"] for m in models_data["data"]]
         self.assertIn(
-            ENDPOINT_TEST_MODEL,
+            DELETE_TEST_MODEL,
             model_ids,
             "Model should be downloaded after streaming pull",
         )
@@ -3234,20 +3235,20 @@ class EndpointTests(ServerTestBase):
 
     def test_016_delete_model(self):
         """Test deleting a model removes it from local storage."""
-        # Model should already be pulled from setUpClass or pull tests
+        pull_model_with_retry(DELETE_TEST_MODEL)
         models_response = requests.get(
             f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT
         )
         models_data = models_response.json()
         model_ids = [m["id"] for m in models_data["data"]]
         self.assertIn(
-            ENDPOINT_TEST_MODEL, model_ids, "Model should exist before delete test"
+            DELETE_TEST_MODEL, model_ids, "Model should exist before delete test"
         )
 
         # Delete the model
         response = requests.post(
             f"{self.base_url}/delete",
-            json={"model_name": ENDPOINT_TEST_MODEL},
+            json={"model_name": DELETE_TEST_MODEL},
             timeout=TIMEOUT_DEFAULT,
         )
         self.assertEqual(response.status_code, 200)
@@ -3261,16 +3262,9 @@ class EndpointTests(ServerTestBase):
         )
         models_data = models_response.json()
         model_ids = [m["id"] for m in models_data["data"]]
-        self.assertNotIn(ENDPOINT_TEST_MODEL, model_ids)
+        self.assertNotIn(DELETE_TEST_MODEL, model_ids)
 
-        # Re-pull for subsequent tests (stats test needs a model)
-        requests.post(
-            f"{self.base_url}/pull",
-            json={"model_name": ENDPOINT_TEST_MODEL},
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
-
-        print(f"[OK] Deleted and re-pulled model: {ENDPOINT_TEST_MODEL}")
+        print(f"[OK] Deleted model: {DELETE_TEST_MODEL}")
 
     def test_017_delete_nonexistent_model(self):
         """Test that deleting a non-existent model returns error."""
