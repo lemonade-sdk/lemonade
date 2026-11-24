@@ -169,6 +169,16 @@ assert.match(
   'a video job the chat lost track of must stay on the message so it can be resumed',
 );
 assert.match(sources.chat, /api\.resumeVideoGeneration\(job, control\)/);
+assert.match(
+  sources.chat,
+  /const stillHere = \(\) => activeIdRef\.current === convoId\s*&& modelSelectionEpochRef\.current === selectionEpoch\s*&& \(!job \|\| api\.baseUrl === job\.baseUrl\);/,
+  'the reload after a stop must skip a newer model selection and another server',
+);
+assert.match(
+  sources.chat,
+  /if \(stillHere\(\)\) \{\s*await loadModelForChat\([\s\S]{0,160}if \(stillHere\(\)\) onModelSelect\(model\.name/,
+  'a model picked while the reload runs must not be overwritten by it',
+);
 assert.match(sources.chat, /api\.cancelVideoJob\(job\)/, 'deleting a conversation cancels its retained video jobs');
 
 console.log('UI regression contract checks passed.');

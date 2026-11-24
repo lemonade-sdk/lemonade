@@ -2978,7 +2978,12 @@ ${finalText}`
       // back so the next prompt stays in video mode instead of falling back
       // to whatever chat model is still loaded, unless the user has moved to
       // another conversation or model since.
-      const stillHere = () => activeIdRef.current === convoId && modelSelectionEpochRef.current === selectionEpoch;
+      // The reload goes to the selected server, which is not the job's after a
+      // connection change, and loading there could evict an unrelated model.
+      const api = await getApiClient();
+      const stillHere = () => activeIdRef.current === convoId
+        && modelSelectionEpochRef.current === selectionEpoch
+        && (!job || api.baseUrl === job.baseUrl);
       try {
         if (stillHere()) {
           await loadModelForChat(model.name, findModelInfoByName(knownModelInfos, model.name) || null);
