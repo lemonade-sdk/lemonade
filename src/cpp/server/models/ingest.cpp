@@ -739,18 +739,27 @@ void ModelIngest::pull(const std::string& model_name,
                     const auto* runtime_config = RuntimeConfig::global();
                     defer_default_source = download_source.empty() && !is_model_collection_recipe(model_info.recipe) &&
                                            runtime_config && runtime_config->offline();
-                    const std::string default_source =
-                        remote_registry_source_name(download_source_for(ModelInfo{}));
-                    const std::string selected = download_source.empty() ? default_source : download_source;
+                    const bool automatic = deps_.automatic_model_source && deps_.automatic_model_source();
+                    // Auto's preference drifts with network weather; it must not orphan a
+                    // complete copy by re-fetching it from the other registry.
+                    const bool keep_downloaded = automatic && download_source.empty() &&
+                        !model_info.registry_source.empty() && model_info.downloaded &&
+                        (is_model_collection_recipe(model_info.recipe) || artifacts().complete(model_info));
+                    const std::string default_source = (automatic && !download_source.empty()) || keep_downloaded
+                        ? "" : remote_registry_source_name(download_source_for(ModelInfo{}));
+                    const std::string selected = !download_source.empty() ? download_source
+                        : keep_downloaded ? model_info.registry_source : default_source;
+                    const std::string source_policy = automatic ? "auto"
+                        : download_source.empty() ? "" : default_source;
                     if (!defer_default_source && (model_info.registry_source != selected ||
-                        (download_source.empty() && !model_info.pull_source_default.empty()))) {
+                        model_info.pull_source_default != source_policy)) {
                         {
                             ModelStore::Write write(*deps_.store);
                             if (auto it = write.draft().find(model_info.model_name);
                                 it != write.draft().end() && it->second.recipe == model_info.recipe &&
                                 it->second.checkpoints == model_info.checkpoints) {
                                 it->second.registry_source = selected;
-                                it->second.pull_source_default = download_source.empty() ? "" : default_source;
+                                it->second.pull_source_default = source_policy;
                                 write.invalidate_cache();
                             }
                         }

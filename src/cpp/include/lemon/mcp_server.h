@@ -20,8 +20,10 @@ using json = nlohmann::json;
 class McpServer {
 public:
     using EnsureLoadedFn = std::function<void(const std::string&)>;
+    using ServerToolFn = std::function<json(const std::string&, const json&)>;
 
-    McpServer(Router* router, ModelManager* model_manager, EnsureLoadedFn ensure_loaded);
+    McpServer(Router* router, ModelManager* model_manager,
+              EnsureLoadedFn ensure_loaded, ServerToolFn server_tool);
     ~McpServer();
 
     // Returns the JSON-RPC reply, or an empty string when every message was a
@@ -76,6 +78,7 @@ private:
     Router* router_;
     ModelManager* model_manager_;
     EnsureLoadedFn ensure_loaded_;
+    ServerToolFn server_tool_;
     std::vector<McpTool> tools_;
 };
 

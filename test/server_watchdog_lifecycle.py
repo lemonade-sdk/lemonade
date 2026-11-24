@@ -29,10 +29,11 @@ import requests
 
 from utils.capabilities import (
     get_current_config,
+    get_test_model,
     set_current_config,
     skip_if_unsupported,
 )
-from utils.server_base import ServerTestBase, run_server_tests
+from utils.server_base import ServerTestBase, pull_model_with_retry, run_server_tests
 from utils.test_models import PORT, TIMEOUT_DEFAULT, TIMEOUT_MODEL_OPERATION
 
 WATCHDOG_WAIT_SECONDS = int(os.environ.get("LEMONADE_TEST_WATCHDOG_WAIT_SECONDS", "60"))
@@ -66,6 +67,11 @@ class WatchdogLifecycleTests(ServerTestBase):
                 "llm",
             )
         super().setUpClass()
+        # A cold /load would download the model inside its 500 s timeout, so a
+        # slow Hugging Face day fails the first test before any watchdog check.
+        pull_model_with_retry(
+            os.environ.get("LEMONADE_TEST_MODEL") or get_test_model("llm")
+        )
 
     @classmethod
     def tearDownClass(cls):

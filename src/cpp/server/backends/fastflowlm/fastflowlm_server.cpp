@@ -173,13 +173,18 @@ void FastFlowLMServer::load(const std::string& model_name,
             "\nVisit " + DRIVER_INSTALL_URL + " for driver installation instructions.");
     }
 
-    if (model_manager_ == nullptr) {
-        throw std::runtime_error("Model manager is unavailable while resolving the download source for: " +
-                                 model_info.checkpoint());
+    // Resolving the source can wait on a registry probe in auto mode, so an installed
+    // model must load without it.
+    const auto installed = fastflowlm::flm_installed_checkpoints();
+    if (!do_not_upgrade ||
+        std::find(installed.begin(), installed.end(), model_info.checkpoint()) == installed.end()) {
+        if (model_manager_ == nullptr) {
+            throw std::runtime_error("Model manager is unavailable while resolving the download source for: " +
+                                     model_info.checkpoint());
+        }
+        const RegistryId source = model_manager_->download_source_for(model_info);
+        download_model(model_info.checkpoint(), do_not_upgrade, source);
     }
-    const RegistryId source = model_manager_->download_source_for(model_info);
-
-    download_model(model_info.checkpoint(), do_not_upgrade, source);
 
     port_ = choose_port();
 

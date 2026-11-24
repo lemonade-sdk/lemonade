@@ -498,6 +498,18 @@ def main():
         timeout = LIVE_PULL_TIMEOUT if model != TINY_MODEL else 600
         pull_model(base_url, model, timeout=timeout)
 
+    result = _post(
+        mcp_url, {"jsonrpc": "2.0", "id": 319, "method": "tools/list"}, timeout=30
+    )
+    result.raise_for_status()
+    names = {tool["name"] for tool in result.json()["result"]["tools"]}
+    expected = {
+        "lemonade_get_model_info",
+        "lemonade_load_model",
+        "lemonade_unload_model",
+    }
+    assert expected.issubset(names), f"Missing MCP hub tools: {expected - names}"
+
     # ----- Tests ----------------------------------------------------------
     results = []  # list of (name, status, elapsed_s, err_or_none)
     for i, (name, fn) in enumerate(smokes, 1):
