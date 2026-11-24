@@ -514,6 +514,8 @@ def main():
         "lemonade_get_system_info",
         "lemonade_list_backends",
         "lemonade_install_backend",
+        "lemonade_generate_audio",
+        "lemonade_text_to_speech",
     }
     assert expected.issubset(names), f"Missing MCP hub tools: {expected - names}"
 
