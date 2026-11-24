@@ -54,6 +54,7 @@ public:
         std::string repo;
         std::string filename;
         std::string version;
+        std::string archive_subdir;
     };
 
     // Unlike the enrichment helpers above, this returns the repo and lets

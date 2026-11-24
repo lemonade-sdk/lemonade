@@ -22,6 +22,9 @@ namespace lemon::backends {
         std::string repo;      // GitHub "org/repo"
         std::string filename;  // Release asset filename
         std::string version_override;  // If set, use this as the release tag instead of backend_versions.json value
+        // If set, only this directory of the extracted archive is installed, as
+        // the install root (e.g. a wheel's <name>.data/scripts).
+        std::string archive_subdir;
     };
 
     struct BackendSpec {
@@ -117,7 +120,13 @@ namespace lemon::backends {
                                         const std::string& repo,
                                         const std::string& filename,
                                         const std::string& backend,
-                                        DownloadProgressCallback progress_cb = nullptr);
+                                        DownloadProgressCallback progress_cb = nullptr,
+                                        const std::string& archive_subdir = "");
+
+        /** Replace `staging_dir` with its `subdir`, so only that part of an
+         *  extracted archive is installed. Throws when `subdir` escapes the
+         *  tree or is not a directory in it. */
+        static void keep_archive_subdir(const std::string& staging_dir, const std::string& subdir);
 
         /** Get the latest version number for the given recipe/backend */
         static std::string get_backend_version(const std::string& recipe, const std::string& backend);
