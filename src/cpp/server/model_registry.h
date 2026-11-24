@@ -22,7 +22,7 @@ RegistrySearchResponse search_registry_models(
     RegistryId source,
     const std::string& query,
     std::size_t limit = 12,
-    bool gguf_only = false);
+    RegistrySearchFormat format = RegistrySearchFormat::Any);
 
 class ModelRegistry {
 public:

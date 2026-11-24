@@ -1191,7 +1191,8 @@ jobs:
             runner: [Windows, X64, stx-halo, lemon-prod]
             suites: >-
               [{"name":"whisper","script":"server_whisper.py","extra_args":"--wrapped-server whispercpp","backends":"cpu npu rocm"},
-               {"name":"thenoise","script":"server_thenoise.py","extra_args":"--wrapped-server thenoise","backends":"rocm"}]
+               {"name":"thenoise","script":"server_thenoise.py","extra_args":"--wrapped-server thenoise","backends":"rocm"},
+               {"name":"loom","script":"server_llm.py","extra_args":"--wrapped-server loom","backends":"hrx"}]
           - name: vulkan-stx-halo
             runner: [Windows, X64, vulkan, stx-halo, lemon-prod]
             suites: >-
@@ -1561,11 +1562,12 @@ jobs:
         if: always()
         uses: ./.github/actions/cleanup-processes-linux
 
-  # Container backends run on Devlab Dispatch's ephemeral Strix Halo Linux
-  # runners, which have the memory and scratch disk for DS4 and Halogen models.
+  # Container backends run on Devlab Dispatch's ephemeral Linux runners. Strix
+  # Halo is the default because it has the memory and scratch disk for DS4 and
+  # Halogen models; entries can set `runner` to target another GPU class.
   test-container-backends:
     name: Test container backend - ${{ matrix.name }}
-    runs-on: [self-hosted, Linux, devlab-dispatch, strix-halo]
+    runs-on: [self-hosted, Linux, devlab-dispatch, "${{ matrix.runner || 'strix-halo' }}"]
     needs: build-lemonade-deb
     if: >-
       !startsWith(github.ref, 'refs/tags/') &&
@@ -1602,6 +1604,11 @@ jobs:
             install: "gufo:rocm"
             script: server_llm.py
             extra_args: "--wrapped-server gufo --backend rocm"
+          - name: loom
+            runner: radeon-r9700
+            install: "loom:hrx"
+            script: server_llm.py
+            extra_args: "--wrapped-server loom --backend hrx"
     env:
       LEMONADE_CI_MODE: "True"
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
@@ -1615,6 +1622,12 @@ jobs:
 
       - name: Print the Docker version
         run: docker --version
+
+      # The .deb needs libcpp-httplib0.26, which 24.04 has only in this PPA, and
+      # the R9700 runner image does not ship with it.
+      - name: Add the Lemonade PPA
+        if: matrix.runner == 'radeon-r9700'
+        run: sudo add-apt-repository -y ppa:lemonade-team/bleeding-edge
 
       - name: Install Lemonade (.deb)
         uses: ./.github/actions/install-lemonade-deb
