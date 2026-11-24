@@ -63,7 +63,7 @@ class WebSocketAuthTests(unittest.TestCase):
         cls.port = find_free_port()
 
         env = os.environ.copy()
-        env.pop("LEMONADE_ADMIN_API_KEY", None)
+        env["LEMONADE_ADMIN_API_KEY"] = ""
         env["LEMONADE_API_KEY"] = API_KEY
 
         cls.log_path = os.path.join(cls.temp_dir, "lemond.log")
@@ -113,6 +113,22 @@ class WebSocketAuthTests(unittest.TestCase):
             import shutil
 
             shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def test_000_empty_admin_key_does_not_bypass_http_auth(self):
+        """An explicitly empty admin key must fall back to the regular API key."""
+        valid_headers = {"Authorization": f"Bearer {API_KEY}"}
+        for path in ("/api/v1/health", "/internal/routes"):
+            url = f"http://localhost:{self.port}{path}"
+            with self.subTest(path=path):
+                for headers in (
+                    {},
+                    {"Authorization": "Bearer "},
+                    {"Authorization": "Bearer wrong-key"},
+                ):
+                    res = requests.get(url, headers=headers, timeout=5)
+                    self.assertEqual(res.status_code, 401, res.text[:500])
+                res = requests.get(url, headers=valid_headers, timeout=5)
+                self.assertEqual(res.status_code, 200, res.text[:500])
 
     # --- realtime -----------------------------------------------------------
 

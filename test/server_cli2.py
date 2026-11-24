@@ -27,6 +27,7 @@ import os
 import platform
 import re
 import requests
+import shlex
 import shutil
 import subprocess
 import sys
@@ -163,7 +164,16 @@ def parse_cli_args():
     return args
 
 
-def run_cli_command(args, timeout=60, check=False, env=None, input_text=None):
+def run_cli_command(
+    args,
+    timeout=60,
+    check=False,
+    env=None,
+    input_text=None,
+    *,
+    inject_runner_key=True,
+    cwd=None,
+):
     """
     Run a CLI command and return the result.
 
@@ -176,12 +186,14 @@ def run_cli_command(args, timeout=60, check=False, env=None, input_text=None):
         check: If True, raise CalledProcessError on non-zero exit
         env: Optional environment override for subprocess
         input_text: Optional stdin text for interactive prompts
+        inject_runner_key: Whether to prepend the runner's API key (default: yes)
+        cwd: Optional working directory for subprocess
 
     Returns:
         subprocess.CompletedProcess result
     """
     cli_args = list(args)
-    if _config["cli_api_key"]:
+    if inject_runner_key and _config["cli_api_key"]:
         cli_args = ["--api-key", _config["cli_api_key"]] + cli_args
     cli_binary = get_cli_binary()
     if os.path.isabs(cli_binary):
@@ -191,7 +203,7 @@ def run_cli_command(args, timeout=60, check=False, env=None, input_text=None):
     else:
         resolved_cli_binary = shutil.which(cli_binary) or cli_binary
 
-    cmd = [resolved_cli_binary] + args
+    cmd = [resolved_cli_binary] + cli_args
     print(f"Running: {' '.join(cmd)}")
 
     result = subprocess.run(
@@ -203,6 +215,7 @@ def run_cli_command(args, timeout=60, check=False, env=None, input_text=None):
         encoding="utf-8",
         errors="replace",
         env=env,
+        cwd=cwd,
     )
 
     if result.stdout:
@@ -380,9 +393,12 @@ sys.exit(0)
         return self._build_stubbed_agent_env(stub_dir)
 
     def _build_missing_agent_env(self, stub_dir):
-        """Build env that guarantees agent binary lookup fails deterministically on all OSes."""
+        """Build env with isolated PATH, HOME, and Windows npm lookup roots."""
         env = self._build_stubbed_agent_env(stub_dir)
         env["PATH"] = stub_dir
+        if IS_WINDOWS:
+            env["APPDATA"] = stub_dir
+            env["USERPROFILE"] = stub_dir
         return env
 
     # =============================================================================
@@ -618,6 +634,29 @@ sys.exit(0)
         """Test backends uninstall."""
         result = self.assertCommandSucceeds(["backends", "uninstall", "llamacpp:cpu"])
         print(f"Backends uninstall exit code: {result.returncode}")
+
+    def test_043_backends_info(self):
+        """Test backends info prints the backend's author, publisher and license."""
+        result = self.assertCommandSucceeds(["backends", "info", "llamacpp:rocm"])
+        output = result.stdout
+        self.assertIn("llamacpp:rocm", output)
+        self.assertRegex(output, r"Author\s+ggml-org")
+        self.assertRegex(output, r"Publisher\s+lemonade-sdk")
+        self.assertRegex(output, r"License\s+MIT")
+
+        response = requests.get(
+            f"http://localhost:{PORT}/api/v1/system-info",
+            headers=_auth_headers(),
+            timeout=10,
+        )
+        self.assertEqual(response.status_code, 200)
+        rocm = response.json()["recipes"]["llamacpp"]["backends"]["rocm"]
+        for key in ("description", "author", "publisher", "license", "project_url"):
+            self.assertTrue(rocm.get(key), f"/system-info is missing {key}")
+
+    def test_044_backends_info_unknown_backend(self):
+        """Test backends info rejects a backend the recipe does not have."""
+        self.assertCommandFails(["backends", "info", "llamacpp:no-such-backend"])
 
     # =============================================================================
     # Cloud Tests
@@ -1753,6 +1792,205 @@ sys.exit(0)
         self.assertNotEqual(result.returncode, 0)
         output = result.stdout + result.stderr
         self.assertIn("Agent binary not found", output)
+
+    def test_116a_launch_missing_codex_command_quotes_arguments(self):
+        """A missing Codex prints a command that preserves config and user argv."""
+        if not IS_WINDOWS and os.access("/usr/local/bin/codex", os.X_OK):
+            self.skipTest("Codex installed in a non-isolatable fixed fallback path")
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            env = self._build_missing_agent_env(temp_dir)
+            env.pop("LEMONADE_ADMIN_API_KEY", None)
+            env.pop("LEMONADE_API_KEY", None)
+            result = run_cli_command(
+                [
+                    "launch",
+                    "codex",
+                    "--model",
+                    ENDPOINT_TEST_MODEL,
+                    "--api-key",
+                    "shellTest-synthetic-key-a",
+                    "--agent-args",
+                    "--custom 'a b'",
+                ],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+                inject_runner_key=False,
+                cwd=temp_dir,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            output = result.stdout + result.stderr
+            self.assertIn("Agent binary not found", output)
+            self.assertIn("Environment variables:", output)
+            self.assertNotIn("Loading model in background", output)
+            command = output.split("Command:\n", 1)[1].splitlines()[0].strip()
+            if IS_WINDOWS:
+                self.assertIn("Manual launch (PowerShell):", output)
+                self.assertTrue(command.startswith("& 'codex.cmd' "))
+                self.assertIn("'a b'", command)
+                self.assertIn("''Lemonade''", command)
+                self.assertIn("'-c'", command)
+                self.assertIn("'-m'", command)
+                self.assertIn("'--custom' 'a b'", command)
+            else:
+                self.assertIn("Manual launch (POSIX shell):", output)
+                argv = shlex.split(command)
+                self.assertEqual(argv[0], "codex")
+                self.assertIn("a b", argv)
+                self.assertIn('model_provider="lemonade"', argv)
+                self.assertIn(ENDPOINT_TEST_MODEL, argv)
+                pairs = list(zip(argv, argv[1:]))
+                self.assertIn(("-c", 'model_provider="lemonade"'), pairs)
+                self.assertIn(("-m", ENDPOINT_TEST_MODEL), pairs)
+                self.assertIn(("--custom", "a b"), pairs)
+                self.assertTrue(
+                    any(a.startswith("model_providers.lemonade={ ") for a in argv)
+                )
+
+    def test_116b_launch_missing_agent_does_not_print_api_key(self):
+        """Manual launch must redact a key in exports and custom agent arguments."""
+        if not IS_WINDOWS and os.access("/usr/local/bin/claude", os.X_OK):
+            self.skipTest("Claude installed in a non-isolatable fixed fallback path")
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            env = self._build_missing_agent_env(temp_dir)
+            env.pop("LEMONADE_ADMIN_API_KEY", None)
+            env.pop("LEMONADE_API_KEY", None)
+            secret = "shellTest-synthetic-key-b"
+            result = run_cli_command(
+                [
+                    "launch",
+                    "claude",
+                    "--model",
+                    ENDPOINT_TEST_MODEL,
+                    "--api-key",
+                    secret,
+                    "--agent-args",
+                    "--token=x" + secret + "y",
+                ],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+                inject_runner_key=False,
+                cwd=temp_dir,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            output = result.stdout + result.stderr
+            self.assertIn("Agent binary not found", output)
+            self.assertNotIn(secret, output)
+            self.assertIn("Set LEMONADE_API_KEY securely", output)
+            command = output.split("Command:\n", 1)[1].splitlines()[0].strip()
+            if IS_WINDOWS:
+                self.assertIn(
+                    "$env:ANTHROPIC_AUTH_TOKEN = $env:LEMONADE_API_KEY", output
+                )
+                self.assertIn("'--token=x' + $env:LEMONADE_API_KEY + 'y'", command)
+            else:
+                self.assertIn(
+                    'export ANTHROPIC_AUTH_TOKEN="${LEMONADE_API_KEY}"', output
+                )
+                self.assertIn("export LEMONADE_API_KEY\n", output)
+                self.assertIn("'--token=x'\"${LEMONADE_API_KEY}\"'y'", command)
+
+    def test_116c_launch_missing_pi_does_not_bypass_config_sync(self):
+        """A missing Pi must not print a key-bearing command before guarded sync."""
+        if not IS_WINDOWS and os.access("/usr/local/bin/pi", os.X_OK):
+            self.skipTest("Pi installed in a non-isolatable fixed fallback path")
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            env = self._build_missing_agent_env(temp_dir)
+            env.pop("LEMONADE_ADMIN_API_KEY", None)
+            env.pop("LEMONADE_API_KEY", None)
+            secret = "shellTest-synthetic-key-c"
+            result = run_cli_command(
+                [
+                    "launch",
+                    "pi",
+                    "--model",
+                    ENDPOINT_TEST_MODEL,
+                    "--api-key",
+                    secret,
+                ],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+                inject_runner_key=False,
+                cwd=temp_dir,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            output = result.stdout + result.stderr
+            self.assertIn("Agent binary not found", output)
+            self.assertIn("rerun your original", output)
+            self.assertNotIn("Command:", output)
+            self.assertNotIn(secret, output)
+
+    def test_116e_launch_missing_opencode_sync_failure_has_no_manual_command(self):
+        """A stale provider must not be used when config sync failed."""
+        if not IS_WINDOWS and os.access("/usr/local/bin/opencode", os.X_OK):
+            self.skipTest("OpenCode installed in a fixed fallback path")
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            env = self._build_missing_agent_env(temp_dir)
+            env.pop("LEMONADE_ADMIN_API_KEY", None)
+            env.pop("LEMONADE_API_KEY", None)
+            config_path = os.path.join(temp_dir, ".config", "opencode", "opencode.json")
+            os.makedirs(os.path.dirname(config_path), exist_ok=True)
+            with open(config_path, "w", encoding="utf-8") as file:
+                file.write("{ invalid json")
+            result = run_cli_command(
+                [
+                    "launch",
+                    "opencode",
+                    "--model",
+                    ENDPOINT_TEST_MODEL,
+                    "--api-key",
+                    "shellTest-synthetic-key-e",
+                ],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+                inject_runner_key=False,
+                cwd=temp_dir,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            output = result.stdout + result.stderr
+            self.assertIn("Failed to sync opencode config", output)
+            self.assertIn("Agent binary not found", output)
+            self.assertIn("Agent provider config could not be updated", output)
+            self.assertNotIn("Command:", output)
+
+    def test_116f_launch_missing_claude_admin_key_precedence(self):
+        """Manual recovery uses the same admin-key precedence as normal launch."""
+        if not IS_WINDOWS and os.access("/usr/local/bin/claude", os.X_OK):
+            self.skipTest("Claude installed in a non-isolatable fixed fallback path")
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            env = self._build_missing_agent_env(temp_dir)
+            regular_key = "shellTest-regular-key-f"
+            admin_key = "shellTest-admin-key-f"
+            env["LEMONADE_API_KEY"] = regular_key
+            env["LEMONADE_ADMIN_API_KEY"] = admin_key
+            result = run_cli_command(
+                ["launch", "claude", "--model", ENDPOINT_TEST_MODEL],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+                inject_runner_key=False,
+                cwd=temp_dir,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            output = result.stdout + result.stderr
+            self.assertIn("Agent binary not found", output)
+            self.assertNotIn(admin_key, output)
+            self.assertNotIn(regular_key, output)
+            self.assertIn("Set LEMONADE_ADMIN_API_KEY", output)
+            if IS_WINDOWS:
+                self.assertIn(
+                    "$env:ANTHROPIC_AUTH_TOKEN = $env:LEMONADE_ADMIN_API_KEY", output
+                )
+                self.assertIn(
+                    "$env:LEMONADE_API_KEY = $env:LEMONADE_ADMIN_API_KEY", output
+                )
+            else:
+                self.assertIn(
+                    'export ANTHROPIC_AUTH_TOKEN="${LEMONADE_ADMIN_API_KEY}"',
+                    output,
+                )
+                self.assertIn(
+                    'export LEMONADE_API_KEY="${LEMONADE_ADMIN_API_KEY}"',
+                    output,
+                )
 
     def test_117_launch_opencode_with_fake_binary(self):
         """Launch should execute fake opencode binary with -m Lemonade/MODEL."""

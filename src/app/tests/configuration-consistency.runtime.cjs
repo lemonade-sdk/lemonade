@@ -224,7 +224,9 @@ assert.doesNotMatch(detailSource, /const baseValue = serverEffectiveRecipeOption
 // The draft is seeded once, into the fields the recipe's option list names, so
 // the options fetch waits for the system-info that carries that list.
 assert.match(detailSource, /if \(!systemInfoSettled\) return;/);
-assert.match(detailSource, /\}, \[name, systemInfoSettled\]\);/);
+assert.match(detailSource, /\}, \[name, systemInfoSettled, serverUrl\]\);/);
+assert.match(detailSource, /\}, \[isActive, serverUrl\]\);/);
+assert.match(detailSource, /api\.onServerChange\(/);
 assert.match(detailSource, /\.finally\(\(\) => \{ if \(alive\) setSystemInfoSettled\(true\); \}\);/);
 assert.doesNotMatch(detailSource, /seededRef/,
   'a late option list must not be reconciled into a draft that was seeded without it');
@@ -282,7 +284,7 @@ assert.match(backendManagerSource,
   'final #3183 per-backend args safety rule must remain intact');
 assert.doesNotMatch(detailSource, /IMAGE_RECIPE_KEYS|recipeKeysForRecipe\(|fallbackBackendsForRecipe\(/,
   'Model Configuration must not map an unknown recipe onto a frontend recipe table');
-assert.match(detailSource, /recipeOptionNames\(info, recipe\)/,
+assert.match(detailSource, /recipe(?:Configurable)?OptionNames\(info, recipe[),]/,
   'Model Configuration fields must come from recipes[].options[]');
 assert.match(detailSource, /recipeBackendOptionName\(systemInfo, activeRecipe\)/,
   'device options must resolve their owning backend field from recipe metadata');

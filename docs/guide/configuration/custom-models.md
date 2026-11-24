@@ -544,7 +544,10 @@ This file contains a JSON object where each key is a model name and each value d
 | `components` | Yes** | Array | Components for a collection. Required when `recipe: "collection.omni"`. See [Collections](#collections). |
 | `size` | No | Number | Model size in GB. Informational only — displayed in the UI and used for RAM filtering. |
 | `mmproj` | No | String | Filename of the multimodal projector file for llamacpp vision models (must be in the same registry repo as the checkpoint). This is a **top-level field**, not inside `checkpoints`. |
-| `image_defaults` | No | Object | Default image generation parameters for `sd-cpp` models. See [Image defaults](#image-defaults). |
+| `cost_tier` | No | String | Price band: `free`, `low`, `medium` or `high`. See [Cost metadata](#cost-metadata). |
+| `cost_input_per_million` | No | Number | Price in USD per million input tokens. |
+| `cost_output_per_million` | No | Number | Price in USD per million output tokens. |
+| `latency_ms_hint` | No | Number | Your estimate of the model's latency, in milliseconds. |
 
 \* Either `checkpoint` or `checkpoints` is required, but not both.
 \*\* Required only when `recipe: "collection.omni"`. Collections do not use `checkpoint`/`checkpoints`.
@@ -581,6 +584,7 @@ Supported checkpoint keys:
 |-----|---------|-------------|
 | `main` | All | Primary model file |
 | `npu_cache` | whispercpp | NPU-accelerated encoder cache |
+| `lora` | llamacpp | GGUF LoRA adapter applied over `main` with `--lora` |
 | `text_encoder` | sd-cpp | Text encoder for image generation models |
 | `vae` | sd-cpp | VAE for image generation models |
 
@@ -601,13 +605,10 @@ Components must already be registered (built-in models, or other `user.*` entrie
 
 The equivalent CLI registration is shown in [Pull an Omni Collection](#pull-an-omni-collection).
 
-### Image defaults
+### Image generation options
 
-For image models (including `sd-cpp` and `thenoise`), you can specify default generation parameters.
-The optional `soft_pixel_cap` limits the **inferred output area** of `/images/edits` when
-`size` is omitted; Lemonade preserves the input aspect ratio. If this field is
-missing or zero, the global 4,194,304-pixel (~4 MP) fallback applies.
-Explicitly requested output sizes are not subject to this soft cap:
+An image model (`sd-cpp` or `thenoise`) sets its own generation parameters through
+`recipe_options`:
 
 ```json
 {
@@ -615,7 +616,7 @@ Explicitly requested output sizes are not subject to this soft cap:
         "checkpoint": "org/repo:model.safetensors",
         "recipe": "sd-cpp",
         "size": 5.2,
-        "image_defaults": {
+        "recipe_options": {
             "steps": 20,
             "cfg_scale": 7.0,
             "width": 512,
@@ -625,6 +626,46 @@ Explicitly requested output sizes are not subject to this soft cap:
     }
 }
 ```
+
+`soft_pixel_cap` limits the **inferred output area** of `/images/edits` when `size`
+is omitted; Lemonade preserves the input aspect ratio. Missing or zero falls back to
+4,194,304 pixels (~4 MP). An explicit `size` is not subject to the cap.
+
+An entry written by an older version keeps these keys in an `image_defaults` block.
+It is still read, and `recipe_options` wins any key both name.
+
+### Cost metadata
+
+Four optional fields describe what a model costs to run:
+
+```json
+{
+  "Qwen3-8B-GGUF": {
+    "checkpoint": "unsloth/Qwen3-8B-GGUF:Q4_K_M",
+    "recipe": "llamacpp",
+    "cost_tier": "free",
+    "cost_input_per_million": 0.0,
+    "cost_output_per_million": 0.0,
+    "latency_ms_hint": 90
+  }
+}
+```
+
+They are reported, not acted on. `GET /v1/models` lists them on the model, and
+when a `collection.router` policy picks the model, the routing decision carries
+them as `outputs.estimated_cost` (see [Router API](../../api/router.md)). The
+figures are yours, not a bill: Lemonade does not meter tokens or measure
+latency, and routing does not choose a candidate by price.
+
+Cloud models get their prices from the provider and need none of this. When a
+cloud model's entry also sets a price, the provider's price wins.
+
+A value Lemonade cannot use, such as a `cost_tier` outside the four bands or a
+price that is negative or not a number, is saved as given, logged as a warning
+when the model is registered, and left out of what is reported.
+
+Registering a model again replaces its whole entry, so a registration that
+leaves these fields out removes them.
 
 ### Model naming
 

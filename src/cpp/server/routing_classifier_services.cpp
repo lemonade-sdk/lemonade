@@ -1,5 +1,6 @@
 #include "lemon/routing_classifier_services.h"
 
+#include "lemon/models/model_info.h"
 #include "lemon/thinking_controls.h"
 
 #include <cmath>
@@ -7,7 +8,6 @@
 #include <optional>
 #include <stdexcept>
 #include <utility>
-#include <lemon/utils/aixlog.hpp>
 
 namespace lemon {
 namespace {
@@ -627,10 +627,6 @@ std::optional<double> extras_get_nonneg(const std::map<std::string, json>& extra
     return std::nullopt;
 }
 
-bool is_allowed_cost_tier(const std::string& tier) {
-    return tier == "free" || tier == "low" || tier == "medium" || tier == "high";
-}
-
 } // namespace
 
 CostInfo resolve_cost_info(std::optional<double> cost_input_per_million,
@@ -641,28 +637,31 @@ CostInfo resolve_cost_info(std::optional<double> cost_input_per_million,
     if (cost_input_per_million) {
         out.cost_input_per_million = cost_input_per_million;
     } else {
-        out.cost_input_per_million = extras_get_nonneg(extras, "cost_input_per_million");
+        out.cost_input_per_million = extras_get_nonneg(extras, kCostInputPerMillionKey);
     }
 
     if (cost_output_per_million) {
         out.cost_output_per_million = cost_output_per_million;
     } else {
-        out.cost_output_per_million = extras_get_nonneg(extras, "cost_output_per_million");
+        out.cost_output_per_million = extras_get_nonneg(extras, kCostOutputPerMillionKey);
     }
 
-    const std::string tier = extras_get<std::string>(extras, "cost_tier", "");
-    if (!tier.empty()) {
-        if (is_allowed_cost_tier(tier)) {
-            out.cost_tier = tier;
-        } else {
-            LOG(DEBUG, "Routing") << "Ignoring unrecognized cost_tier '" << tier
-                                  << "' (expected free|low|medium|high)" << std::endl;
-        }
+    const std::string tier = extras_get<std::string>(extras, kCostTierKey, "");
+    if (is_cost_tier(tier)) {
+        out.cost_tier = tier;
     }
 
-    out.latency_ms_hint = extras_get_nonneg(extras, "latency_ms_hint");
+    out.latency_ms_hint = extras_get_nonneg(extras, kLatencyMsHintKey);
 
     return out;
+}
+
+CostInfo resolve_model_cost_info(const ModelInfo& info) {
+    const auto known = [](double price) {
+        return price >= 0.0 ? std::optional<double>{price} : std::nullopt;
+    };
+    return resolve_cost_info(known(info.cost_input_per_million),
+                             known(info.cost_output_per_million), info.extras);
 }
 
 } // namespace lemon

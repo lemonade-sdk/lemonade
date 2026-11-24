@@ -6,6 +6,7 @@
 #include <lemon/routing_policy.h>
 #include <lemon/routing_policy_parser.h>
 #include <lemon/canonical_id.h>
+#include <lemon/cost_metadata.h>
 #include <lemon/models/model_errors.h>
 #include <lemon/models/model_info.h>
 #include <lemon/models/registry_types.h>
@@ -118,6 +119,15 @@ bool collection_component_def_is_valid(const json& def) {
 }
 
 namespace {
+
+static bool all_checkpoints_local(const ArtifactSourceResolver& resolver, const ModelInfo& info) {
+    if (info.checkpoints.empty()) return false;
+    for (const auto& [type, checkpoint] : info.checkpoints) {
+        (void)checkpoint;
+        if (resolver.source_for(info, type)->kind() != ArtifactKind::Local) return false;
+    }
+    return true;
+}
 
 static std::string join_conflict_parts(const std::vector<std::string>& parts) {
     std::string result;
@@ -261,8 +271,10 @@ void ModelIngest::download_from_registry(const ModelInfo& info,
         const bool exists = std::any_of(listing.files.begin(), listing.files.end(),
             [&](const RegistryFile& file) { return !file.directory && file.path == ref.variant; });
         if (!exists) {
-            throw std::runtime_error("Additional checkpoint file not found on " +
-                                     source_display + ": " + ref.repo_id + ":" + ref.variant);
+            throw MissingCheckpointError("Additional checkpoint file not found on " +
+                                             source_display + ": " + ref.repo_id + ":" +
+                                             ref.variant,
+                                         ref.checkpoint_type);
         }
     }
 
@@ -535,6 +547,18 @@ void ModelIngest::pull(const std::string& model_name,
 
     std::string actual_recipe = model_data.value("recipe", "");
 
+    // The resolver already reads an untagged path that exists as a local file, but
+    // the store resolves a checkpoint by its source, so record what the path is.
+    if (!model_data.contains("source") && !model_data.contains("registry_source") &&
+        !is_model_collection_recipe(actual_recipe) &&
+        actual_checkpoint.find("://") == std::string::npos) {
+        const fs::path path = path_from_utf8(actual_checkpoint);
+        std::error_code ec;
+        if (!actual_checkpoint.empty() && path.has_root_directory() && fs::exists(path, ec)) {
+            registration_data["source"] = local_origin::path;
+        }
+    }
+
     // Either field means the caller is defining an entry, which needs the namespace.
     if (!actual_checkpoint.empty() || !actual_recipe.empty()) {
         if (!is_user_model_name(model_name)) {
@@ -700,6 +724,11 @@ void ModelIngest::pull(const std::string& model_name,
                 ModelInfo original;
                 parse_model_source_fields(original, authored);
                 parse_checkpoints(original, authored);
+                // model_info carries the checkpoints its row implies, so the
+                // authored row must too, or the two never compare equal.
+                original.recipe = model_info.recipe;
+                original.labels = model_info.labels;
+                backends::ops_for(original.recipe)->add_implied_checkpoints(original);
                 if (original.source.empty() && original.registry_source.empty() &&
                     original.checkpoints == model_info.checkpoints &&
                     authored.value("recipe", "") == model_info.recipe) {
@@ -895,8 +924,8 @@ void ModelIngest::pull(const std::string& model_name,
     }
 
     if (model_data.contains("recipe_options")) {
-        // On top of the 3-level merge, so an import's own overrides win without
-        // discarding the layers underneath (e.g. sdcpp_args).
+        // On top of everything the model already resolves to, so an import's own
+        // overrides win without discarding the layers underneath (e.g. sdcpp_args).
         json merged = model_info.recipe_options.to_json();
         for (auto& [key, value] : model_data["recipe_options"].items()) {
             merged[key] = value;
@@ -909,11 +938,13 @@ void ModelIngest::pull(const std::string& model_name,
         return;
     }
 
-    LOG(INFO, "ModelManager") << "Downloading model: " << repo_id;
-    if (!variant.empty()) {
-        LOG(INFO, "ModelManager") << " (variant: " << variant << ")";
+    if (deps_.resolver == nullptr || !all_checkpoints_local(*deps_.resolver, model_info)) {
+        LOG(INFO, "ModelManager") << "Downloading model: " << repo_id;
+        if (!variant.empty()) {
+            LOG(INFO, "ModelManager") << " (variant: " << variant << ")";
+        }
+        LOG(INFO, "ModelManager") << std::endl;
     }
-    LOG(INFO, "ModelManager") << std::endl;
 
     // Check if offline mode
     if (auto* cfg = RuntimeConfig::global()) {
@@ -955,6 +986,25 @@ void ModelIngest::pull(const std::string& model_name,
 void ModelIngest::fetch_model(const ModelInfo& info, bool do_not_upgrade,
                                  DownloadProgressCallback progress_callback,
                                  const utils::CancelToken& cancel) {
+    // The registry download reads every checkpoint as `repo:file`, so a path on
+    // this machine would become a repository named after its drive or folder.
+    if (deps_.resolver != nullptr && all_checkpoints_local(*deps_.resolver, info)) {
+        for (const auto& [type, checkpoint] : info.checkpoints) {
+            (void)checkpoint;
+            if (backends::ops_for(info.recipe)->acquires_lazily(type)) continue;
+            const Presence presence = deps_.resolver->source_for(info, type)->present();
+            if (!presence.complete) {
+                throw MissingCheckpointError("model '" + info.model_name + "' uses files on this "
+                                             "machine, and its '" + type + "' file is unusable: " +
+                                             presence.reason,
+                                             type);
+            }
+        }
+        LOG(INFO, "ModelManager") << "Model " << info.model_name
+                                  << " uses files on this machine; nothing to download" << std::endl;
+        return;
+    }
+
     // Serialize downloads per checkpoint repo. A second request for the same
     // repo (e.g. a client that timed out and retried /pull while the first
     // download is still running) must wait for the in-flight download instead
@@ -1013,12 +1063,16 @@ void ModelIngest::fetch_model(const ModelInfo& info, bool do_not_upgrade,
 }
 
 
-static const std::vector<std::string> USER_DEFINED_MODEL_PROPS = std::vector<std::string>{
-    "checkpoints", "checkpoint", "recipe", "mmproj", "size",
-    "image_defaults", "audio_defaults", "components", "recipe_options",
-    "routing", "system_prompt", "version", "source", "registry_source",
-    "auto_update"
-};
+static const std::vector<std::string> USER_DEFINED_MODEL_PROPS = [] {
+    std::vector<std::string> props{
+        "checkpoints", "checkpoint", "recipe", "mmproj", "size",
+        "components", "recipe_options",
+        "routing", "system_prompt", "version", "source", "registry_source",
+        "auto_update"
+    };
+    props.insert(props.end(), kCostMetadataKeys.begin(), kCostMetadataKeys.end());
+    return props;
+}();
 
 static bool user_entry_is_router_collection(const json& user_models,
                                             const std::string& key) {
@@ -1047,6 +1101,13 @@ void ModelIngest::register_user_model(const std::string& model_name,
             model_entry[prop] = model_data[prop];
         }
     }
+
+    // A registration may still carry a retired option block; rows this server
+    // writes name only `recipe_options`.
+    if (const json authored = row_recipe_options(model_data); authored.is_object()) {
+        model_entry["recipe_options"] = authored;
+    }
+
     // Every registration path funnels through here — direct registration, an
     // imported collection's inline components, re-registration — so this is the
     // one gate that refuses an illegal set of mode labels. Loading an
@@ -1057,6 +1118,17 @@ void ModelIngest::register_user_model(const std::string& model_name,
     std::set<std::string> labels = normalized_definition_labels(model_data, &illegal);
     if (!illegal.empty()) {
         throw InvalidModelDefinitionError(describe_illegal_labels(model_name, illegal));
+    }
+
+    // Unusable values are saved as given and only dropped when read, which
+    // would otherwise go unnoticed.
+    for (const std::string& key : unusable_cost_metadata(model_entry)) {
+        LOG(WARNING, "ModelManager") << "Model '" << model_name << "': " << key << " = "
+                                     << model_entry[key].dump()
+                                     << " is ignored by routing (expected "
+                                     << (key == kCostTierKey ? "free, low, medium or high"
+                                                             : "a non-negative number")
+                                     << ")" << std::endl;
     }
 
     model_entry["labels"] = labels;

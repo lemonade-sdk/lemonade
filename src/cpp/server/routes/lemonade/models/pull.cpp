@@ -66,8 +66,9 @@ const RouteArg kCheckpoint{"checkpoint", ArgIn::JsonBody, {{"type", "string"}}, 
                            "`owner/repo` and selects its registry."};
 const RouteArg kCheckpoints{"checkpoints", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Available,
                             "Checkpoints by role, for multi-checkpoint models: `main`, plus `mmproj` for vision, "
-                            "`draft` for dflash, eagle and multi-token prediction, and `text_encoder` and `vae` for "
-                            "image generation, each when `main` does not embed it."};
+                            "`draft` for dflash, eagle and multi-token prediction, `lora` for a llama.cpp GGUF LoRA "
+                            "adapter, and `text_encoder` and `vae` for image generation, each when `main` does not "
+                            "embed it."};
 const RouteArg kReasoning{"reasoning", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
                           "`true` adds the `reasoning` label, for a reasoning model such as DeepSeek. Defaults "
                           "to `false`."};

@@ -129,6 +129,77 @@ inline std::string identify_cuda_arch_from_name(const std::string& device_name) 
     return "";
 }
 
+// Splits a dotted numeric version ("576.02", "575.51.03") into its parts. Empty
+// when any part is not a plain decimal number, so "Unknown" or "N/A" never compares.
+inline std::vector<int> parse_numeric_version(const std::string& version) {
+    std::vector<int> parts;
+    std::string part;
+    std::stringstream ss(version);
+    while (std::getline(ss, part, '.')) {
+        if (part.empty() || part.size() > 9 ||
+            !std::all_of(part.begin(), part.end(),
+                         [](unsigned char c) { return std::isdigit(c) != 0; })) {
+            return {};
+        }
+        parts.push_back(std::stoi(part));
+    }
+    return parts;
+}
+
+// True only when both versions parse and `installed` sorts before `minimum`. An
+// unreadable version is never treated as too old, so detection gaps cannot block a
+// working driver.
+inline bool nvidia_driver_older_than(const std::string& installed,
+                                     const std::string& minimum) {
+    const auto have = parse_numeric_version(installed);
+    const auto want = parse_numeric_version(minimum);
+    if (have.empty() || want.empty()) {
+        return false;
+    }
+    const size_t n = std::max(have.size(), want.size());
+    for (size_t i = 0; i < n; ++i) {
+        const int a = i < have.size() ? have[i] : 0;
+        const int b = i < want.size() ? want[i] : 0;
+        if (a != b) {
+            return a < b;
+        }
+    }
+    return false;
+}
+
+// Windows reports NVIDIA drivers in the Windows driver-store format, whose last five
+// digits are NVIDIA's own version: 32.0.15.7602 -> 576.02. Versions that are not in
+// that four-part form are returned unchanged.
+inline std::string nvidia_driver_version_from_windows(const std::string& version) {
+    const auto parts = parse_numeric_version(version);
+    if (parts.size() != 4) {
+        return version;
+    }
+    char buf[32];
+    std::snprintf(buf, sizeof(buf), "%d%04d", parts[2], parts[3]);
+    const std::string digits(buf);
+    if (digits.size() < 5) {
+        return version;
+    }
+    const std::string tail = digits.substr(digits.size() - 5);
+    return std::to_string(std::stoi(tail.substr(0, 3))) + "." + tail.substr(3);
+}
+
+// Oldest NVIDIA driver that can run a backend's CUDA binaries. Empty when no minimum
+// is enforced. llamacpp:cuda is built with CUDA 12.9 (lemonade-sdk/llama.cpp release
+// workflow), and CUDA minor-version compatibility lets any 12.x build run on the
+// CUDA 12.0 driver floor, so these are that floor rather than the 12.9 toolkit's own
+// minimum. They must move if the build switches CUDA major versions.
+inline std::string cuda_min_driver_version(const std::string& recipe,
+                                           const std::string& backend,
+                                           const std::string& os) {
+    if (recipe == "llamacpp" && backend == "cuda") {
+        if (os == "windows") return "528.33";
+        if (os == "linux") return "525.60.13";
+    }
+    return "";
+}
+
 // KFD publishes a GPU's ISA as packed decimal (110501 -> gfx1151), where the minor and
 // step fields are hex nibbles. Empty when the value is not a decimal integer; the CPU
 // node's 0 yields the unmatchable "gfx000" rather than an error.
@@ -259,11 +330,19 @@ inline bool rocm_device_memory_from_sysfs(const std::filesystem::path& kfd_nodes
     return true;
 }
 
-// HIP numbers GPUs in KFD node order, skipping the CPU node, so a container given all
-// of /dev/kfd needs this index to run on the GPU it was sized for. Empty when no GPU
-// satisfies `runs_on`.
-inline std::string hip_visible_device(const std::filesystem::path& kfd_nodes_dir,
-                                      const std::function<bool(const std::string& arch)>& runs_on) {
+struct KfdGpuNode {
+    long node_id = -1;
+    int hip_index = -1;
+    std::string gfx_target_version;
+    std::string drm_render_minor;
+    uint64_t unique_id = 0;
+    uint32_t domain = 0;
+    uint32_t location_id = 0;
+};
+
+// HIP numbers GPUs in KFD node order, skipping the CPU node. Directory iteration
+// order is unspecified, so nodes are sorted by their numeric id first.
+inline std::vector<KfdGpuNode> kfd_gpu_nodes(const std::filesystem::path& kfd_nodes_dir) {
     namespace fs = std::filesystem;
 
     std::error_code ec;
@@ -277,25 +356,108 @@ inline std::string hip_visible_device(const std::filesystem::path& kfd_nodes_dir
     }
     std::sort(nodes.begin(), nodes.end());
 
-    int index = 0;
+    std::vector<KfdGpuNode> gpus;
     for (const auto& node : nodes) {
         std::ifstream props(node.second / "properties");
+        KfdGpuNode gpu;
+        gpu.node_id = node.first;
         std::string key;
         std::string value;
-        std::string gfx_target_version;
         while (props >> key >> value) {
-            if (key == "gfx_target_version") {
-                gfx_target_version = value;
-                break;
+            try {
+                if (key == "gfx_target_version") gpu.gfx_target_version = value;
+                else if (key == "drm_render_minor") gpu.drm_render_minor = value;
+                else if (key == "unique_id") gpu.unique_id = std::stoull(value);
+                else if (key == "domain") gpu.domain = static_cast<uint32_t>(std::stoul(value));
+                else if (key == "location_id") gpu.location_id = static_cast<uint32_t>(std::stoul(value));
+            } catch (const std::exception&) {
             }
         }
-        if (gfx_target_version.empty() || gfx_target_version == "0") {
+        if (gpu.gfx_target_version.empty() || gpu.gfx_target_version == "0") {
             continue;
         }
-        if (runs_on(gfx_target_version_to_arch(gfx_target_version))) {
-            return std::to_string(index);
+        gpu.hip_index = static_cast<int>(gpus.size());
+        gpus.push_back(std::move(gpu));
+    }
+    return gpus;
+}
+
+inline std::string pci_bus_id(uint32_t domain, uint32_t bus, uint32_t device, uint32_t function) {
+    char text[16];
+    std::snprintf(text, sizeof(text), "%04x:%02x:%02x.%x", domain & 0xffff, bus & 0xff,
+                  device & 0x1f, function & 0x7);
+    return text;
+}
+
+// KFD packs the PCI address as location_id = bus << 8 | device << 3 | function.
+inline std::string kfd_pci_bus_id(const KfdGpuNode& gpu) {
+    return pci_bus_id(gpu.domain, gpu.location_id >> 8, (gpu.location_id >> 3) & 0x1f,
+                      gpu.location_id & 0x7);
+}
+
+// The UUID ROCr reports and ROCR_VISIBLE_DEVICES accepts: "GPU-" and unique_id as 16
+// hex digits. Empty for a GPU without one, which ROCr reports as "GPU-XX".
+inline std::string rocm_uuid(uint64_t unique_id) {
+    if (unique_id == 0) return "";
+    char text[24];
+    std::snprintf(text, sizeof(text), "GPU-%016llx", static_cast<unsigned long long>(unique_id));
+    return text;
+}
+
+struct HipProbeDevice {
+    int hip_index = -1;
+    std::string pci_bus_id;
+    std::string name;
+};
+
+// The internal HIP probe prints one "index<TAB>pci_bus_id<TAB>name" line per device.
+inline std::vector<HipProbeDevice> parse_hip_probe_output(const std::string& output) {
+    std::vector<HipProbeDevice> devices;
+    std::istringstream lines(output);
+    std::string line;
+    while (std::getline(lines, line)) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        const size_t first = line.find('\t');
+        const size_t second = first == std::string::npos ? first : line.find('\t', first + 1);
+        if (second == std::string::npos) continue;
+        HipProbeDevice device;
+        try {
+            device.hip_index = std::stoi(line.substr(0, first));
+        } catch (const std::exception&) {
+            continue;
         }
-        ++index;
+        device.pci_bus_id = line.substr(first + 1, second - first - 1);
+        device.name = line.substr(second + 1);
+        devices.push_back(std::move(device));
+    }
+    return devices;
+}
+
+// Matches on bus, device and function only: Windows reports no PCI domain.
+inline int hip_index_for_pci_bus_id(const std::vector<HipProbeDevice>& devices,
+                                    const std::string& pci_bus_id) {
+    auto without_domain = [](std::string id) {
+        std::transform(id.begin(), id.end(), id.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        const size_t colon = id.find(':');
+        return colon != std::string::npos && id.find(':', colon + 1) != std::string::npos
+            ? id.substr(colon + 1) : id;
+    };
+    const std::string wanted = without_domain(pci_bus_id);
+    for (const auto& device : devices) {
+        if (!wanted.empty() && without_domain(device.pci_bus_id) == wanted) return device.hip_index;
+    }
+    return -1;
+}
+
+// A container given all of /dev/kfd needs this index to run on the GPU it was sized
+// for. Empty when no GPU satisfies `runs_on`.
+inline std::string hip_visible_device(const std::filesystem::path& kfd_nodes_dir,
+                                      const std::function<bool(const std::string& arch)>& runs_on) {
+    for (const auto& gpu : kfd_gpu_nodes(kfd_nodes_dir)) {
+        if (runs_on(gfx_target_version_to_arch(gpu.gfx_target_version))) {
+            return std::to_string(gpu.hip_index);
+        }
     }
     return "";
 }

@@ -111,6 +111,17 @@ new Function('exports', 'module', detectorCompiled.outputText)(
   detectorModule.exports, detectorModule,
 );
 
+// Exercise the real direct image follow-up helper in this streaming harness.
+const directAnalysisPath = path.join(root, 'src/features/images/directImageAnalysis.ts');
+const directAnalysisCompiled = ts.transpileModule(fs.readFileSync(directAnalysisPath, 'utf8'), {
+  fileName: directAnalysisPath,
+  compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS },
+});
+const directAnalysisModule = { exports: {} };
+new Function('module', 'exports', directAnalysisCompiled.outputText)(
+  directAnalysisModule, directAnalysisModule.exports,
+);
+
 /* ── Module wiring ───────────────────────────────────────────────────────── */
 
 const originalWindow = global.window;
@@ -132,6 +143,7 @@ new Function('exports', 'require', 'module', '__filename', '__dirname', compiled
     if (request === 'react') return reactStub;
     if (request === '../api') return apiStub;
     if (request === './toolLoopDetector') return detectorModule.exports;
+    if (request === '../features/images/directImageAnalysis') return directAnalysisModule.exports;
     throw new Error(`Unexpected dependency while loading useChatStreaming: ${request}`);
   },
   hookModule,

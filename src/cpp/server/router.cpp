@@ -14,6 +14,7 @@
 #include "lemon/server_capabilities.h"
 #include "lemon/streaming_proxy.h"
 #include "lemon/error_types.h"
+#include "lemon/model_types.h"
 #include "lemon/recipe_options.h"
 #include "lemon/auto_tune.h"
 #include "telemetry.h"
@@ -23,6 +24,7 @@
 #include <lemon/model_manager.h>
 #include <mutex>
 #include <queue>
+#include <stdexcept>
 #include <thread>
 #include "lemon/utils/aixlog.hpp"
 #include "lemon/global_vram_monitor.h"
@@ -161,6 +163,8 @@ WrappedServer* Router::find_server_by_model_name(const std::string& model_name) 
 std::string Router::resolve_model_name(const std::string& model_name) const {
     return model_name.empty() ? model_name : model_manager_->resolve_model_name(model_name);
 }
+
+std::uint64_t Router::models_generation() const { return model_manager_->models_generation(); }
 
 std::optional<ModelInfo> Router::try_get_model_info(const std::string& model_name) const {
     if (model_name.empty()) {
@@ -850,6 +854,10 @@ void Router::load_model(const std::string& model_name,
                         std::optional<bool> pinned,
                         LoadPurpose load_purpose,
                         std::atomic<bool>* cancel_flag) {
+    if (!is_router_collection_recipe(model_info.recipe) &&
+        has_label(model_info.labels, "on-demand")) {
+        throw ModelLoadRefusedException("On-demand models do not support persistent loading");
+    }
     const std::string canonical_model_name = resolve_model_name(model_name);
     const ResidencyClass requested_residency_class =
         residency_class_for_load_purpose(load_purpose);
@@ -1138,6 +1146,11 @@ void Router::load_model(const std::string& model_name,
             new_server->set_load_duration_ms(std::chrono::duration_cast<std::chrono::milliseconds>(load_end - load_start).count());
             LOG(DEBUG, "Router") << "Backend started successfully in " << new_server->get_load_duration_ms() << "ms" << std::endl;
         } catch (const ConfigurationException& e) {
+            error_message = e.what();
+            load_success = false;
+            unrecoverable_config = true;
+            LOG(ERROR, "Router") << "Backend load failed: " << error_message << std::endl;
+        } catch (const std::invalid_argument& e) {
             error_message = e.what();
             load_success = false;
             unrecoverable_config = true;
@@ -2404,7 +2417,11 @@ AudioFormatMetadata Router::audio_speech_format_metadata(
                       : AudioFormatMetadata{};
 }
 
-json Router::image_generations(const json& request) {
+json Router::image_generations(const json& request, std::atomic<bool>* cancel) {
+    std::optional<WrappedServer::RequestCancelScope> cancel_scope;
+    if (cancel) {
+        cancel_scope.emplace(utils::RequestCancelToken{cancel});
+    }
     return execute_inference(request, [&](WrappedServer* server) {
         auto image_server = dynamic_cast<IImageServer*>(server);
         if (!image_server) {
@@ -2416,7 +2433,11 @@ json Router::image_generations(const json& request) {
     });
 }
 
-json Router::image_edits(const json& request) {
+json Router::image_edits(const json& request, std::atomic<bool>* cancel) {
+    std::optional<WrappedServer::RequestCancelScope> cancel_scope;
+    if (cancel) {
+        cancel_scope.emplace(utils::RequestCancelToken{cancel});
+    }
     return execute_inference(request, [&](WrappedServer* server) {
         auto image_server = dynamic_cast<IImageServer*>(server);
         if (!image_server) {
@@ -2428,7 +2449,11 @@ json Router::image_edits(const json& request) {
     });
 }
 
-json Router::image_variations(const json& request) {
+json Router::image_variations(const json& request, std::atomic<bool>* cancel) {
+    std::optional<WrappedServer::RequestCancelScope> cancel_scope;
+    if (cancel) {
+        cancel_scope.emplace(utils::RequestCancelToken{cancel});
+    }
     return execute_inference(request, [&](WrappedServer* server) {
         auto image_server = dynamic_cast<IImageServer*>(server);
         if (!image_server) {

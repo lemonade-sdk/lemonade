@@ -29,6 +29,10 @@ inline const BackendDescriptor descriptor = {
         {"cpu", BackendTier::Experimental, BackendFormat::Native, {"linux"}, {{"cpu", {"x86_64", "arm64"}}}, "x86_64/arm64 CPU"},
         {"cpu", BackendTier::Experimental, BackendFormat::Native, {"macos"}, {{"cpu", {"arm64"}}}, "arm64 CPU"},
     },
+    /*about*/ {
+        {"cpu", {"Microsoft's ONNX Runtime on the CPU, serving the small classifiers the router uses.",
+                 "Microsoft", "lemonade-sdk", "MIT", "https://github.com/microsoft/onnxruntime"}},
+    },
     /*supported_modes*/ {"classification"},
     /*required_checkpoints*/ {"main"},
     /*default_capabilities*/ {},

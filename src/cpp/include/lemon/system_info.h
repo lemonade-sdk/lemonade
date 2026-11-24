@@ -27,13 +27,20 @@ struct CPUInfo : DeviceInfo {
 
 struct GPUInfo : DeviceInfo {
     int index = -1;  // Physical device index, when available
-    std::string uuid;  // NVIDIA only: stable GPU UUID from nvidia-smi (preferred for CUDA_VISIBLE_DEVICES)
+    // NVIDIA: UUID from nvidia-smi, for CUDA_VISIBLE_DEVICES. AMD on Linux: the ROCr
+    // agent UUID, for ROCR_VISIBLE_DEVICES.
+    std::string uuid;
+    // AMD only: the ordinal HIP gives this GPU, which need not follow the order of
+    // devices.amd_gpu (iGPU first). -1 when it could not be determined.
+    int hip_index = -1;
+    std::string pci_bus_id;  // AMD only: "0000:c3:00.0", when known
     std::string driver_version;
     // Human-readable name for display. Empty when no better name than `name` is
     // available; `name` itself stays machine-readable because the ROCm arch lookup
     // reads it.
     std::string display_name;
     std::string compute_capability;  // NVIDIA only: "MAJOR.MINOR" from nvidia-smi (e.g. "8.6")
+    bool driver_missing = false;  // NVIDIA only: hardware found, but the NVIDIA driver is not bound to it
     double vram_gb = 0.0;
     double vram_used_gb = -1.0;  // -1 when per-device usage is unavailable
     double virtual_gb = 0.0;

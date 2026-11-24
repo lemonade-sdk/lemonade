@@ -65,8 +65,6 @@ private:
     std::vector<std::pair<std::string, std::string>> env_vars_;
     std::shared_mutex request_mutex_;
     std::atomic<bool> process_swap_in_progress_{false};
-    std::atomic<int> pcm_sample_rate_{0};
-    std::atomic<int> pcm_channels_{0};
 };
 
 namespace openmoss {

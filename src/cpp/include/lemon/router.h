@@ -10,6 +10,7 @@
 #include <mutex>
 #include <set>
 #include <condition_variable>
+#include <cstdint>
 #include <thread>
 #include <unordered_map>
 #include <vector>
@@ -239,9 +240,9 @@ public:
     AudioFormatMetadata audio_speech_format_metadata(
         const std::string& model_name, const std::string& response_format);
 
-    json image_generations(const json& request);
-    json image_edits(const json& request);
-    json image_variations(const json& request);
+    json image_generations(const json& request, std::atomic<bool>* cancel = nullptr);
+    json image_edits(const json& request, std::atomic<bool>* cancel = nullptr);
+    json image_variations(const json& request, std::atomic<bool>* cancel = nullptr);
 
     void audio_generations(const json& request, httplib::DataSink& sink);
     std::vector<std::string> audio_generation_supported_formats(const std::string& model_name);
@@ -279,6 +280,8 @@ public:
     // Registry lookup for seams that need ModelInfo without owning ModelManager
     // (e.g. routing CostServices). Returns nullopt when the name is unknown.
     std::optional<ModelInfo> try_get_model_info(const std::string& model_name) const;
+    // ModelManager::models_generation(), for caches keyed on registry contents.
+    std::uint64_t models_generation() const;
 
     // Test hooks
     void simulate_vram_pressure(double pct);

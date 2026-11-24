@@ -17,12 +17,22 @@ inline const BackendDescriptor descriptor = {
     /*uses_ctx_size*/   false,
     /*dynamic_models*/  false,
     /*options*/ {
+        {"openmoss_device", "--openmoss-device", "", "DEVICES",
+         "GPU to use: CUDA0, CUDA1, ... or a GPU's uuid from system-info; auto selects automatically", "Text-to-Speech Options"},
         {"openmoss_backend", "--openmoss", "", "BACKEND",
          "OpenMOSS TTS backend to use", "Text-to-Speech Options"},
+        {"pcm_sample_rate", "", 0, "SIZE", "Sample rate of the PCM this model emits, reported as X-MOSS-Sample-Rate (0 omits the header)", "Text-to-Speech Options", false},
+        {"pcm_channels", "", 0, "SIZE", "Channel count of the PCM this model emits, reported as X-MOSS-Channels (0 omits the header)", "Text-to-Speech Options", false},
     },
     /*support*/ {
         {"cuda", BackendTier::Experimental, BackendFormat::Native, {"linux", "windows"}, {{"nvidia_gpu", {}}}, "NVIDIA GPUs"},
         {"vulkan", BackendTier::Experimental, BackendFormat::Native, {"linux", "windows"}, {{"cpu", {"x86_64"}}, {"amd_gpu", {}}, {"nvidia_gpu", {}}}, "Vulkan-capable GPUs"},
+    },
+    /*about*/ {
+        {"cuda", {"MOSS speech and sound-effect models in C++/GGML on top of llama.cpp, on NVIDIA GPUs.",
+                  "Piotr Wilkin (pwilkin)", "Piotr Wilkin (pwilkin)", "Apache-2.0", "https://github.com/pwilkin/openmoss"}},
+        {"vulkan", {"MOSS speech and sound-effect models in C++/GGML on top of llama.cpp, on Vulkan-capable GPUs.",
+                    "Piotr Wilkin (pwilkin)", "Piotr Wilkin (pwilkin)", "Apache-2.0", "https://github.com/pwilkin/openmoss"}},
     },
     /*supported_modes*/ {"tts", "audio-generation"},
     /*required_checkpoints*/ {"main"},
@@ -37,6 +47,10 @@ inline const BackendDescriptor descriptor = {
     /*arg_variants*/    {},
     /*bin_variants*/    {"vulkan", "cuda"},
     /*config_extra*/    nlohmann::json::object(),
+    /*streams_model_from_storage*/ false,
+    /*containers*/      {},
+    /*mode_capability_requirements*/ {},
+    /*common_gpu_visibility*/ true,
 };
 
 }  // namespace openmoss

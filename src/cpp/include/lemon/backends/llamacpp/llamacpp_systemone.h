@@ -11,13 +11,6 @@ namespace lemon {
 namespace backends {
 namespace llamacpp {
 
-// /v1/classify with `labels` -> a /v1/systemone body that asks one `choice`
-// question whose options are those labels, in their order. Throws
-// std::invalid_argument unless `labels` is a non-empty array of distinct,
-// non-blank strings.
-nlohmann::ordered_json build_systemone_classify_request(const std::string& text,
-                                                        const nlohmann::json& labels);
-
 // What lemond can say about a cut of `text` by a model of this decision type:
 // false when llama-server keeps it whole or refuses it, empty when it may cut
 // without saying so (lfm2-d1-omni, a long text on h2o-lightning, an unknown type).
@@ -47,21 +40,14 @@ std::vector<LayaQuestionText> laya_question_texts(const nlohmann::ordered_json& 
 std::string laya_cut(const LayaQuestionText& text, const std::vector<size_t>& option_tokens,
                      size_t question_tokens, int64_t max_head_tokens);
 
-// The /v1/systemone response to that body -> the /v1/classify shape
-// {"labels": {label: probability}, "truncated": ...}, keeping the `top_k`
-// highest when top_k > 0; `truncated` comes from the answer when it has one.
-// Throws std::runtime_error unless the answer scores exactly the given labels.
-nlohmann::json systemone_classify_response(const nlohmann::json& response,
-                                           const nlohmann::json& labels,
-                                           int top_k);
-
 // llama-server caps an encoder decision model's slot at its trained window, so
 // a larger context buys nothing.
 int encoder_decision_ctx_size(int requested, int64_t trained_window);
 
 // Which of -b and -ub lemond adds, and at what size, given the flags in
 // `user_args`; and the longest input then accepted. Without flags the batch
-// stops at 4096 tokens; -b / -ub raise it.
+// stops at 4096 tokens; -b / -ub raise it, and -np above 1 without --kv-unified
+// lowers it to one slot's share of the context.
 struct SingleBatchPlan {
     bool add_batch_size = false;
     bool add_ubatch_size = false;

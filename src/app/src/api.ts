@@ -199,7 +199,7 @@ function modelInfoKey(model: ModelInfo | null | undefined): string {
 }
 
 
-function blobFromDataUrl(dataUrl: string): Blob {
+export function blobFromDataUrl(dataUrl: string): Blob {
   const match = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(dataUrl);
   if (!match) throw new Error('Expected an image data URL for editing.');
   const mime = match[1] || 'image/png';
@@ -504,12 +504,24 @@ export interface StatsData {
   };
 }
 
+export interface SystemGpuStats {
+  id: string;
+  vendor: string;
+  name: string;
+  memory_type: 'dedicated' | 'shared' | 'unknown';
+  gpu_percent: number | null;
+  memory_total_gb: number | null;
+  memory_used_gb: number | null;
+}
+
 export interface SystemStatsData {
   cpu_percent: number | null;
   memory_gb: number | null;
   gpu_percent: number | null;
   vram_gb: number | null;
   npu_percent: number | null;
+  primary_gpu_id?: string | null;
+  gpus?: SystemGpuStats[];
 }
 
 export interface SlotTimings {
@@ -558,7 +570,7 @@ export interface SlotData {
   temperature: number;
   top_k: number;
   top_p: number;
-  cache_tokens: number[] | number;
+  cache_tokens?: number[] | number;
   n_cache_tokens?: number;
   timings?: SlotTimings;
   prompt: string;
@@ -566,13 +578,6 @@ export interface SlotData {
   stopped_eos: boolean;
   stopped_word: boolean;
   stopped_limit: boolean;
-}
-
-/** Get usable cache token count — prefers n_cache_tokens (number) over cache_tokens array length */
-export function getCacheTokenCount(s: SlotData): number {
-  if (typeof s.n_cache_tokens === 'number') return s.n_cache_tokens;
-  if (typeof s.cache_tokens === 'number') return s.cache_tokens;
-  return Array.isArray(s.cache_tokens) ? s.cache_tokens.length : 0;
 }
 
 export interface LogEntry {
@@ -801,6 +806,8 @@ class LemonadeAPI {
   private _systemInfoListeners = new Set<(info: Record<string, unknown>) => void>();
   private _systemInfoInFlight: Promise<Record<string, unknown>> | null = null;
   private _systemInfoGeneration = 0;
+  private _systemInfoServer: string | null = null;
+  private _serverChangeListeners = new Set<() => void>();
   private _modelStateSnapshot: ModelStateSnapshot = {
     status: 'disconnected',
     health: null,
@@ -857,9 +864,24 @@ class LemonadeAPI {
   }
 
   set baseUrl(url: string) {
+    const previous = this.baseUrl;
     const normalized = normalizeBaseUrl(url);
     this._hostBaseUrl = normalized;
     safeSetLocalStorage(LS_BASE_URL, normalized);
+    this._noteServerChange(previous);
+  }
+
+  onServerChange(fn: () => void): () => void {
+    this._serverChangeListeners.add(fn);
+    return () => { this._serverChangeListeners.delete(fn); };
+  }
+
+  private _noteServerChange(previous: string): void {
+    if (this.baseUrl === previous) return;
+    this._systemInfoGeneration++;
+    this._systemInfoInFlight = null;
+    this._systemInfoFetchedAt = 0;
+    this._serverChangeListeners.forEach(fn => { try { fn(); } catch {} });
   }
 
   get apiKey(): string {
@@ -929,8 +951,10 @@ class LemonadeAPI {
           : '';
         const resolvedUrl = baseUrl.trim() || fallbackUrl;
         if (resolvedUrl) {
+          const previous = this.baseUrl;
           this._hostBaseUrl = normalizeBaseUrl(resolvedUrl);
           safeSetLocalStorage(LS_BASE_URL, this._hostBaseUrl);
+          this._noteServerChange(previous);
         }
         // The lemond browser shim stores settings in localStorage. Remove any
         // key saved by an earlier GUI version, but preserve non-secret settings.
@@ -947,8 +971,10 @@ class LemonadeAPI {
       if (hostApi.getServerBaseUrl) {
         const baseUrl = await hostApi.getServerBaseUrl();
         if (typeof baseUrl === 'string' && baseUrl.trim()) {
+          const previous = this.baseUrl;
           this._hostBaseUrl = normalizeBaseUrl(baseUrl);
           safeSetLocalStorage(LS_BASE_URL, this._hostBaseUrl);
+          this._noteServerChange(previous);
         }
       }
       if (hostApi.getServerAPIKey && !hostApi.isWebApp) {
@@ -965,10 +991,12 @@ class LemonadeAPI {
   }
 
   async saveConnectionSettings(baseUrl: string, apiKey: string, rememberApiKey: boolean): Promise<ConnectionSettingsSaveResult> {
+    const previous = this.baseUrl;
     const normalized = normalizeBaseUrl(baseUrl);
     this._hostBaseUrl = normalized;
     this._sessionApiKey = apiKey;
     safeSetLocalStorage(LS_BASE_URL, normalized);
+    this._noteServerChange(previous);
 
     const hostApi = await waitForHostSettingsApi();
     if (!hostApi || hostApi.isWebApp) {
@@ -1001,12 +1029,14 @@ class LemonadeAPI {
   }
 
   async clearConnectionSettings(): Promise<void> {
+    const previous = this.baseUrl;
     this._hostBaseUrl = null;
     this._sessionApiKey = '';
     this._sessionAdminApiKey = '';
     this._apiKeyPersisted = false;
     safeRemoveLocalStorage(LS_BASE_URL);
     safeRemoveLocalStorage(LS_API_KEY);
+    this._noteServerChange(previous);
 
     const hostApi = await waitForHostSettingsApi();
     if (hostApi?.getSettings && hostApi?.saveSettings) {
@@ -1053,7 +1083,9 @@ class LemonadeAPI {
   get healthData(): HealthData | null { return this._healthData; }
   get highSecurity(): boolean | undefined { return this._healthData?.high_security; }
   get modelsData(): ModelsData | null { return this._modelsData; }
-  get systemInfoData(): Record<string, unknown> | null { return this._systemInfoData; }
+  get systemInfoData(): Record<string, unknown> | null {
+    return this._systemInfoServer === this.baseUrl ? this._systemInfoData : null;
+  }
   get modelStateSnapshot(): ModelStateSnapshot { return this._modelStateSnapshot; }
 
   get loadedModels(): LoadedModel[] {
@@ -1256,10 +1288,20 @@ class LemonadeAPI {
     url.pathname = path.startsWith('/') ? path : `/${path}`;
 
     const params = new URLSearchParams(query);
-    if (this.apiKey) params.set('api_key', this.apiKey);
     params.set('client_session_id', this.clientSessionId);
     url.search = params.toString();
     return url.toString();
+  }
+
+  private _webSocketProtocols(): string[] | undefined {
+    const apiKey = this.apiKey;
+    if (!apiKey) return undefined;
+    let binary = '';
+    for (const byte of new TextEncoder().encode(apiKey)) {
+      binary += String.fromCharCode(byte);
+    }
+    const credential = btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    return ['lemonade-realtime', `bearer.${credential}`];
   }
 
   private _openRealtimeSocket(
@@ -1271,7 +1313,7 @@ class LemonadeAPI {
     return new Promise((resolve, reject) => {
       let opened = false;
       let settled = false;
-      const socket = new WebSocket(wsUrl);
+      const socket = new WebSocket(wsUrl, this._webSocketProtocols());
       const send = (msg: object) => {
         if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(msg));
       };
@@ -1360,7 +1402,7 @@ class LemonadeAPI {
     return new Promise((resolve, reject) => {
       let opened = false;
       let settled = false;
-      const socket = new WebSocket(wsUrl);
+      const socket = new WebSocket(wsUrl, this._webSocketProtocols());
       const timer = window.setTimeout(() => {
         if (settled) return;
         settled = true;
@@ -1538,7 +1580,7 @@ class LemonadeAPI {
     const { recipeOptionsForModel } = await import(
       /* webpackChunkName: "model-configuration" */ './modelConfiguration'
     );
-    const stagedOptions = recipeOptionsForModel(modelName, cachedModelInfo, recipeOptions as RecipeOptions | undefined, this._systemInfoData);
+    const stagedOptions = recipeOptionsForModel(modelName, cachedModelInfo, recipeOptions as RecipeOptions | undefined, this.systemInfoData);
     // A load carries whatever the panel currently shows, saved or not, so it must
     // not write those options back as the model's stored defaults.
     const body: Record<string, unknown> = {
@@ -1567,7 +1609,7 @@ class LemonadeAPI {
   }
 
   private _refreshBackendStatusAfterLoad(recipe: string, options: Record<string, unknown>): void {
-    const recipes = (this._systemInfoData as any)?.recipes;
+    const recipes = (this.systemInfoData as any)?.recipes;
     if (!isObject(recipes)) return;
     const recipeInfo = recipes[recipe];
     if (!isObject(recipeInfo) || !isObject(recipeInfo.backends)) return;
@@ -1650,11 +1692,13 @@ class LemonadeAPI {
     // Several views use the same expensive system-info endpoint. A workspace
     // preload and the view's first effect can overlap, so share the in-flight
     // request instead of making the server do the same discovery twice.
-    if (options.maxAgeMs !== undefined && this._systemInfoData
+    const cached = this.systemInfoData;
+    if (options.maxAgeMs !== undefined && cached
       && Date.now() - this._systemInfoFetchedAt < options.maxAgeMs) {
-      return this._systemInfoData;
+      return cached;
     }
     const generation = this._systemInfoGeneration;
+    const server = this.baseUrl;
     if (options.afterPending && this._systemInfoInFlight) {
       await this._systemInfoInFlight.catch(() => undefined);
       if (generation !== this._systemInfoGeneration) {
@@ -1667,8 +1711,9 @@ class LemonadeAPI {
       '/api/v1/system-info',
       { cache: 'no-store' } as LemonadeRequestInit,
     ).then(data => {
-      if (generation !== this._systemInfoGeneration) return data;
+      if (generation !== this._systemInfoGeneration || server !== this.baseUrl) return data;
       this._systemInfoData = data;
+      this._systemInfoServer = server;
       this._systemInfoFetchedAt = Date.now();
       this._systemInfoListeners.forEach(fn => { try { fn(data); } catch {} });
       return data;
@@ -1916,9 +1961,13 @@ class LemonadeAPI {
     return { blob, url: URL.createObjectURL(blob) };
   }
 
-  async imageEdit(model: string, prompt: string, imageDataUrl: string, opts: Record<string, unknown> = {}): Promise<string[]> {
+  async imageEdit(
+    model: string, prompt: string, source: string | Blob | readonly (string | Blob)[],
+    opts: Record<string, unknown> = {},
+  ): Promise<string[]> {
     const requestedSize = typeof opts.size === 'string' && opts.size.trim() ? opts.size.trim() : '';
-    const imageBlob = blobFromDataUrl(imageDataUrl);
+    const sources: readonly (string | Blob)[] = typeof source === 'string' || source instanceof Blob ? [source] : source;
+    if (sources.length === 0) throw new Error('Image edit requires at least one source image.');
     const form = new FormData();
     form.append('model', model);
     form.append('prompt', prompt);
@@ -1931,7 +1980,25 @@ class LemonadeAPI {
         form.append(key, String(value));
       }
     });
-    form.append('image', imageBlob, 'image.png');
+    const maxRequestBytes = 128 * 1024 * 1024;
+    let requestBytes = 0;
+    const fieldName = sources.length === 1 ? 'image' : 'image[]';
+    sources.forEach((sourceImage, index) => {
+      const blob = typeof sourceImage === 'string' ? blobFromDataUrl(sourceImage) : sourceImage;
+      if (!(blob instanceof Blob) || !blob.type.startsWith('image/') || blob.size === 0) {
+        throw new Error(`Invalid image edit reference ${index + 1}.`);
+      }
+      requestBytes += blob.size;
+      if (requestBytes > maxRequestBytes) {
+        throw new Error('Image edit source images exceed the 128 MiB per-request limit.');
+      }
+      const extension = ({
+        'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp',
+        'image/gif': 'gif', 'image/bmp': 'bmp', 'image/avif': 'avif',
+      } as Record<string, string>)[blob.type.toLowerCase()] || 'img';
+      const filename = blob instanceof File && blob.name ? blob.name : `reference-${index + 1}.${extension}`;
+      form.append(fieldName, blob, filename);
+    });
 
     const data = await this._json<Record<string, any>>('/api/v1/images/edits', {
       method: 'POST',
@@ -2705,7 +2772,9 @@ class LemonadeAPI {
     model: string,
     messages: ChatMessage[],
     params: Record<string, unknown> = {},
+    signal?: AbortSignal,
   ): Promise<string> {
+    if (signal?.aborted) throw new DOMException('Chat completion was cancelled.', 'AbortError');
     const { samplingForModel } = await import(
       /* webpackChunkName: "model-configuration" */ './modelConfiguration'
     );
@@ -2713,6 +2782,7 @@ class LemonadeAPI {
       method: 'POST',
       body: { model, messages, stream: false, ...samplingForModel(model, this.allModels.find(candidate => modelInfoKey(candidate).toLowerCase() === model.trim().toLowerCase()) || null), ...params },
       includeSessionHeaders: true,
+      signal,
     });
     if (data.error) {
       throw new Error(data.error?.message || 'Chat completion failed');

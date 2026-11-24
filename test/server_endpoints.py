@@ -147,9 +147,23 @@ def _running_lemond(config=None, cache_prefix="lemond_test_", extra_env=None):
             try:
                 proc.wait(timeout=10)
             except subprocess.TimeoutExpired:
+                _print_log_tail(log_path, "lemond did not exit within 10s of terminate")
                 proc.kill()
-                proc.wait(timeout=10)
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    print(f"WARNING: lemond (pid {proc.pid}) not reaped 10s after kill")
         shutil.rmtree(cache_dir, ignore_errors=True)
+
+
+def _print_log_tail(log_path, reason, lines=40):
+    print(f"WARNING: {reason}; last {lines} lines of {log_path}:")
+    try:
+        with open(log_path, encoding="utf-8", errors="replace") as f:
+            for line in f.readlines()[-lines:]:
+                print(f"    {line.rstrip()}")
+    except OSError as e:
+        print(f"    (could not read log: {e})")
 
 
 def _wait_until_healthy(proc, port, headers, timeout_s=60):
@@ -333,13 +347,67 @@ class EndpointTests(ServerTestBase):
             )
             self.assertEqual(models_response.status_code, 200, models_response.text)
             entry = next(
-                model
-                for model in models_response.json()["data"]
-                if model["id"] == public_name
+                (
+                    model
+                    for model in models_response.json()["data"]
+                    if model["id"] == public_name
+                ),
+                None,
             )
+            self.assertIsNotNone(entry, f"{public_name} missing from /models")
             self.assertEqual(entry.get("checkpoint"), checkpoint)
             self.assertEqual(entry.get("recipe"), "llamacpp")
             self.assertFalse(entry.get("downloaded"))
+        finally:
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": canonical_name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+
+    def test_000b_register_keeps_cost_metadata(self):
+        """Cost fields sent at registration are saved and listed on /models.
+        /pull registers through the same path before it downloads."""
+        canonical_name = f"user.CostMetadata-{uuid.uuid4().hex[:8]}"
+        cost = {
+            "cost_tier": "low",
+            "cost_input_per_million": 0.25,
+            "cost_output_per_million": 1.5,
+            "latency_ms_hint": 120,
+        }
+        try:
+            response = requests.post(
+                f"{self.base_url}/models/register",
+                json={
+                    "model_name": canonical_name,
+                    "recipe": "llamacpp",
+                    "checkpoint": "example/cost-metadata-test:Q4_K_M",
+                    **cost,
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            public_name = response.json()["model_name"]
+
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(models_response.status_code, 200, models_response.text)
+            entry = next(
+                (
+                    model
+                    for model in models_response.json()["data"]
+                    if model["id"] == public_name
+                ),
+                None,
+            )
+            self.assertIsNotNone(entry, f"{public_name} missing from /models")
+            for key, value in cost.items():
+                self.assertEqual(entry.get(key), value, f"{key} in {entry}")
         finally:
             try:
                 requests.post(
@@ -1068,6 +1136,51 @@ class EndpointTests(ServerTestBase):
         )
 
         print(f"[OK] Pull (non-streaming): model={ENDPOINT_TEST_MODEL}")
+
+    def test_007a_pull_keeps_cost_metadata(self):
+        """Cost fields sent with /pull are saved with the model it registers."""
+        canonical_name = f"user.CostPull-{uuid.uuid4().hex[:8]}"
+        cost = {
+            "cost_tier": "medium",
+            "cost_input_per_million": 0.5,
+            "cost_output_per_million": 2.0,
+            "latency_ms_hint": 300,
+        }
+        try:
+            response = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": canonical_name,
+                    "recipe": "llamacpp",
+                    "checkpoint": USER_MODEL_TE_CHECKPOINT,
+                    "stream": False,
+                    **cost,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(models_response.status_code, 200, models_response.text)
+            entry = next(
+                model
+                for model in models_response.json()["data"]
+                if model["id"] in (canonical_name, canonical_name.removeprefix("user."))
+            )
+            for key, value in cost.items():
+                self.assertEqual(entry.get(key), value, f"{key} in {entry}")
+        finally:
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": canonical_name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
 
     def test_008_pull_model_streaming(self):
         """Test pulling a model with streaming progress events."""
@@ -3464,12 +3577,10 @@ class EndpointTests(ServerTestBase):
         print(f"[OK] Pull (multicheckpoint): model={USER_MODEL_NAME}")
 
     def test_021a_pull_sdcpp_import_preserves_merged_recipe_options(self):
-        """Test /pull keeps image_defaults + recipe_options visible immediately.
+        """Test /pull folds a retired image_defaults block into recipe_options.
 
-        This exercises the import/warm-cache path for user models:
-        add_model_to_cache() builds merged recipe options from image_defaults and
-        JSON recipe_options, and download_model() must not overwrite that merged
-        state with only the import recipe_options payload.
+        A payload naming the same key in both blocks resolves to the
+        recipe_options one, and the persisted row carries only recipe_options.
         """
         if platform.system() == "Darwin":
             self.skipTest("sd-cpp pull tests are skipped on macOS in this suite")
@@ -3486,6 +3597,7 @@ class EndpointTests(ServerTestBase):
             "flow_shift": 1.25,
         }
         recipe_options = {
+            "steps": 40,
             "sd-cpp_backend": "cpu",
             "sdcpp_args": "--diffusion-fa 1 --offload-to-cpu 1",
         }
@@ -3522,12 +3634,19 @@ class EndpointTests(ServerTestBase):
             self.assertIn("recipe_options", model_data)
 
             actual_options = model_data["recipe_options"]
+            self.assertNotIn(
+                "image_defaults",
+                model_data,
+                "A pull should persist only the recipe_options key",
+            )
             for key, value in image_defaults.items():
                 self.assertIn(
                     key,
                     actual_options,
                     f"Expected image_defaults key '{key}' in recipe_options after pull",
                 )
+                if key in recipe_options:
+                    continue
                 self.assertEqual(
                     actual_options[key],
                     value,
@@ -7042,13 +7161,17 @@ class EndpointTests(ServerTestBase):
             self.assertEqual(files_response.status_code, 200)
             files = files_response.json()["files"]
             main_files = [f for f in files if f["role"] == "main"]
-            self.assertEqual(len(main_files), 1)
-            self.assertEqual(main_files[0]["name"], os.path.basename(shard1))
             self.assertEqual(
-                main_files[0]["size_bytes"],
-                shard1_bytes,
-                "/files must report the individual file size, not the shard total",
+                [file["name"] for file in main_files],
+                [os.path.basename(shard1), os.path.basename(shard2)],
             )
+            for file, expected_bytes in zip(main_files, [shard1_bytes, shard2_bytes]):
+                self.assertTrue(file["exists"])
+                self.assertEqual(
+                    file["size_bytes"],
+                    expected_bytes,
+                    "/files must report the individual file size, not the shard total",
+                )
 
             print("[OK] sharded size sums shards while /files stays per-file")
 
@@ -8292,6 +8415,29 @@ class EndpointTests(ServerTestBase):
         self.assertIn("not compatible with llama.cpp", error)
         self.assertIn("does not declare a model architecture", error)
         print("[OK] Incompatible GGUF checkpoint was rejected before download")
+
+    @unittest.skipUnless(
+        os.environ.get("LEMONADE_INTEGRATION_TESTS") == "1",
+        "Skipped: set LEMONADE_INTEGRATION_TESTS=1 to run live HuggingFace tests",
+    )
+    def test_033_pull_variants_rejects_repo_without_supported_files(self):
+        """A repository with no GGUF, ONNX or Omni files is a 400, not a server error."""
+        checkpoint = "Qwen/Qwen1.5-0.5B-Chat"
+        response = requests.get(
+            f"{self.base_url}/pull/variants",
+            params={"checkpoint": checkpoint, "source": "huggingface"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            response.status_code,
+            400,
+            f"Expected 400 for a repository without supported files, got "
+            f"{response.status_code}: {response.text}",
+        )
+        self.assertIn(
+            "No supported model files found", response.json().get("error", "")
+        )
+        print("[OK] Repository without supported files was rejected with 400")
 
     def test_035_second_lemond_on_busy_port_exits_nonzero(self):
         """A second lemond on an in-use port must refuse to start and exit non-zero.

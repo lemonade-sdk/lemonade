@@ -284,7 +284,6 @@ The JSON file must contain the following fields:
 |-------|------|-------------|
 | `labels` | array | Array of label strings (e.g., `["reasoning", "coding"]`) |
 | `recipe_options` | object | Recipe-specific options (e.g., `{"ctx-size": 8192, "llamacpp": "vulkan"}`) |
-| `image_defaults` | object | Image generation defaults for image models |
 | `size` | string | Model size description |
 
 **Notes:**
@@ -407,6 +406,7 @@ The following options are available depending on the recipe being used:
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--sdcpp BACKEND` | SD.cpp backend to use | Auto-detected |
+| `--sdcpp-device DEVICES` | GPU to use: ROCm0, CUDA1, Vulkan0, ... or a GPU's uuid or pci_bus_id from system-info; empty selects automatically | `""` |
 | `--sdcpp-args ARGS` | Custom arguments to pass to sd-server (must not conflict with managed args) | `""` |
 
 #### FastFlowLM NPU (`flm` recipe)
@@ -435,6 +435,7 @@ The following options are available depending on the recipe being used:
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--thenoise BACKEND` | TheNoise backend to use | Auto-detected |
+| `--thenoise-device DEVICES` | GPU to use: ROCm0, CUDA1, ... or a GPU's uuid or pci_bus_id from system-info; empty selects automatically | `""` |
 
 #### DwarfStar4 (`ds4` recipe)
 
@@ -450,7 +451,7 @@ The following options are available depending on the recipe being used:
 | `--ctx-size SIZE` | Context size for the model | auto |
 | `--rocmfpx-args ARGS` | Custom arguments to pass to the ROCm FPX llama-server | `""` |
 
-#### Halogen Flash (`halogen` recipe)
+#### Halogen (`halogen` recipe)
 
 | Option | Description | Default |
 |--------|-------------|---------|
@@ -467,12 +468,14 @@ The following options are available depending on the recipe being used:
 
 | Option | Description | Default |
 |--------|-------------|---------|
+| `--thinksound-device DEVICES` | GPU to use: ROCm0, CUDA1, ... or a GPU's uuid or pci_bus_id from system-info; auto selects automatically | `""` |
 | `--thinksound BACKEND` | ThinkSound backend to use | Auto-detected |
 
 #### ACE-Step (`acestep` recipe)
 
 | Option | Description | Default |
 |--------|-------------|---------|
+| `--acestep-device DEVICES` | GPU to use: ROCm0, CUDA1, ... or a GPU's uuid or pci_bus_id from system-info; auto selects automatically | `""` |
 | `--acestep BACKEND` | ACE-Step backend to use | Auto-detected |
 
 #### ONNX Runtime (`onnxruntime` recipe)
@@ -485,6 +488,7 @@ The following options are available depending on the recipe being used:
 
 | Option | Description | Default |
 |--------|-------------|---------|
+| `--trellis-device DEVICES` | GPU to use: ROCm0, CUDA1, ... or a GPU's uuid or pci_bus_id from system-info; auto selects automatically | `""` |
 | `--trellis BACKEND` | Trellis backend to use | Auto-detected |
 | `--trellis-args ARGS` | Custom arguments to pass to trellis-server | `""` |
 
@@ -492,6 +496,7 @@ The following options are available depending on the recipe being used:
 
 | Option | Description | Default |
 |--------|-------------|---------|
+| `--openmoss-device DEVICES` | GPU to use: CUDA0, CUDA1, ... or a GPU's uuid from system-info; auto selects automatically | `""` |
 | `--openmoss BACKEND` | OpenMOSS TTS backend to use | Auto-detected |
 <!-- END GENERATED: cli-recipe-options -->
 **Notes:**
@@ -627,11 +632,12 @@ lemonade update-models Gemma-4-E4B-it -w
 
 ## Options for backends
 
-The `backends` command lists supported recipes and their backends. Use `--all` to list all available backends or use the `install` and `uninstall` subcommands to manage them:
+The `backends` command lists supported recipes and their backends. Use `--all` to list all available backends, `info` to learn what one is and who made it, or the `install` and `uninstall` subcommands to manage them:
 
 ```bash
 lemonade backends
 lemonade backends --all
+lemonade backends info SPEC
 lemonade backends install SPEC [--force]
 lemonade backends uninstall SPEC
 ```
@@ -640,6 +646,7 @@ lemonade backends uninstall SPEC
 |--------|-------------|
 | `lemonade backends` | List supported recipes and backends |
 | `lemonade backends --all` | List all available recipes and backends |
+| `lemonade backends info SPEC` | Show a backend's description, author, publisher, license, project page and status. Format: `recipe:backend` (e.g., `llamacpp:nathanw`) |
 | `lemonade backends install SPEC` | Install a backend. Format: `recipe:backend` (e.g., `llamacpp:vulkan`) |
 | `lemonade backends uninstall SPEC` | Uninstall a backend. Format: `recipe:backend` (e.g., `llamacpp:cpu`) |
 | `lemonade backends install SPEC --force` | Bypass hardware filtering and attempt the install anyway |
@@ -648,6 +655,7 @@ lemonade backends uninstall SPEC
 - Supported backends depend on your system and the recipe
 - Use `lemonade backends --all` to list all available recipes and backends
 - Each backend lists its tier and format. See [Backend Tiers and Formats](../api/lemonade.md#backend-tiers-and-formats) for what each value means.
+- A backend's author wrote the engine; its publisher builds what Lemonade installs. They differ when, for example, `lemonade-sdk` builds ggml-org's llama.cpp for ROCm, or Donato Capitella (kyuz0) packages NathanW's llama.cpp fork as a container image.
 
 **Examples:**
 
@@ -657,6 +665,9 @@ lemonade backends
 
 # List all available recipes and backends
 lemonade backends --all
+
+# See what the nathanw llamacpp backend is and who made it
+lemonade backends info llamacpp:nathanw
 
 # Install Vulkan backend for llamacpp
 lemonade backends install llamacpp:vulkan

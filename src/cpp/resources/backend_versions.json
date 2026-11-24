@@ -3,6 +3,11 @@
   "checksums": {
     "comment": "Expected SHA-256 of downloaded GitHub release assets, verified after download (see BackendUtils::lookup_expected_asset_hash). Keyed by checksums.github.<owner/repo>.<tag>.<asset>. Values are the sha256:<hex> digests GitHub publishes for each asset. Update alongside the matching version pin below.",
     "github": {
+      "lemonade-sdk/ryzenai-server": {
+        "v1.9.0": {
+          "ryzenai-server.zip": "sha256:fbafd130d05fb6b6428e927761c65085d672384dd5968d5230b8ee3df878b5f0"
+        }
+      },
       "pwilkin/openmoss": {
         "v0.3.0": {
           "moss-tts-vulkan-linux-x64.tar.gz": "sha256:1288a22295451d0e5d8bd707ef79ea324e1c7b5f1cd9bfbdab2167a388fe3af7",
@@ -44,24 +49,29 @@
         }
       },
       "ROCm/ggml-staging-automation": {
-        "hrx-b99": {
-          "llama-hrx-b99-bin-manylinux-hrx-x64.tar.gz": "sha256:02c88d96d39c607aefbb982e8b4f630785ec43c4416583834912ceaa63fd7624"
+        "hrx-b129": {
+          "llama-hrx-b129-bin-manylinux-hrx-x64.tar.gz": "sha256:309e124c2c532980c5541cc2857f187a2a3f5cc82b781d01c05ebb498b524058"
+        }
+      },
+      "gufo-org/gufo": {
+        "v0.35.0": {
+          "gufo-v0.35.0-windows-x86_64.zip": "sha256:32c76bc1b1c6fda10b6786489fa454b42ec06ef19b1a374100ac95203a6dbbb5"
         }
       }
     }
   },
   "llamacpp": {
-    "vulkan": "b11846",
-    "rocm-stable": "b11836",
-    "rocm-nightly": "b1353",
-    "cuda": "b11836",
-    "metal": "b11846",
-    "cpu": "b11846",
+    "vulkan": "b12233",
+    "rocm-stable": "b12223",
+    "rocm-nightly": "b1372",
+    "cuda": "b12223",
+    "metal": "b12233",
+    "cpu": "b12233",
     "nathanw": "vulkan-radv-performance@sha256:41018261e61b7e32fb38e4985ba569d0837804e727dcc62689c2fb1d73ec8f15",
-    "halobox": "rocm-10.0-strix-llama@sha256:7d3844524fda1865a2ae60cc73eb232589626ccca245cc3c7bd2afb153bd9bd6"
+    "halobox": "rocm-10.0-strix-llama@sha256:015fddafc28bfdb1653a99905010e83a9327f072206cb1f882f1f9f922069f48"
   },
   "llamacpp-hrx": {
-    "hrx": "hrx-b99"
+    "hrx": "hrx-b129"
   },
   "whispercpp": {
     "cpu": "v1.8.4",
@@ -81,13 +91,13 @@
     "rocm": "rocm-10.0-rocmfpx@sha256:4df326e907a469f4acc6091fa7fb68fb275c2d5a7136bacd8e47e7339a5c49f7"
   },
   "halogen": {
-    "rocm": "0.18.22@sha256:273714ccb64dabb7fac0418ee1b6dd83eb57d2fd44cf286eb68a7c694a27c203"
+    "rocm": "0.19.1@sha256:7ab5c3dfd77acb2387603f1807069cac3494e678f413c0670745ba2df74c0f0e"
   },
   "gufo": {
-    "rocm": "rocm-10.0-gufo@sha256:67aa0b040993fedfd4e300242c5cb48f8add5874454a7486993668e74185e7a9"
+    "rocm": "0.35.0@sha256:99e9b5471b7a9b007c686c2aa795afaf966744d64e753cb009c89541f9e9c2b6"
   },
   "ds4": {
-    "rocm": "rocm-10.0@sha256:31b4e7e3584684768ee060e3dfeb62c1d716219da468090f3483977fdf6dfb47"
+    "rocm": "rocm-10.0@sha256:e14ad3edb88c9c2e80b1c1464ef9307bcc56c935f31c4df9fa8e980974f68c47"
   },
   "therock": {
     "version": "10.1.0",
@@ -104,6 +114,8 @@
       "gfx1151",
       "gfx1152",
       "gfx1153",
+      "gfx1170",
+      "gfx1171",
       "gfx1200",
       "gfx1201",
       "gfx1010",
@@ -134,6 +146,8 @@
       "gfx1151": "gfx1151",
       "gfx1152": "gfx1152",
       "gfx1153": "gfx1153",
+      "gfx1170": "gfx117X-all",
+      "gfx1171": "gfx117X-all",
       "gfx1200": "gfx120X-all",
       "gfx1201": "gfx120X-all",
       "gfx1010": "gfx101X-dgpu",
@@ -149,10 +163,10 @@
     }
   },
   "ryzenai-llm": {
-    "npu": "v1.7.0"
+    "npu": "v1.9.0"
   },
   "flm": {
-    "npu": "v1.0.7"
+    "npu": "v1.0.13"
   },
   "kokoro": {
     "cpu": "b21",
@@ -168,8 +182,8 @@
   },
   "thenoise": {
     "comment": "TheNoise shared release: ROCm uses <tag>-gfxNNNN-x64.tar.gz; Linux CUDA uses <tag>-cuda-x64.tar.gz.",
-    "rocm": "thenoise-0.12.1-rocm10.1.0",
-    "cuda": "thenoise-0.12.1-rocm10.1.0"
+    "rocm": "thenoise-0.15.0-rocm10.1.0",
+    "cuda": "thenoise-0.15.0-rocm10.1.0"
   },
   "rocm_asset_families": {
     "comment": "Maps a concrete ROCm ISA (as detected on the device) to the family target name the GitHub release repos publish assets under. ISAs not listed here (e.g. gfx908, gfx90a, which ship as individual assets) are used verbatim. Add a new GPU's ISA here when its release asset is published under a family name.",

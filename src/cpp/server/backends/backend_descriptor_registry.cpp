@@ -41,8 +41,10 @@ const std::vector<std::string>& supported_modes_for(const std::string& recipe) {
 bool recipe_gates_mode_on(const std::string& recipe, const std::string& label) {
     const BackendDescriptor* d = descriptor_for(recipe);
     if (d == nullptr) return false;
-    for (const auto& requirement : d->mode_capability_requirements) {
-        if (requirement.second == label) return true;
+    for (const auto& [mode, capabilities] : d->mode_capability_requirements) {
+        for (const std::string& capability : capabilities) {
+            if (capability == label) return true;
+        }
     }
     return false;
 }
@@ -133,18 +135,27 @@ std::string illegal_deployment_labels(const std::vector<std::string>& labels,
         if (deploys_as.empty() && !modes.empty()) {
             deployment_mode_of(modes.front(), deployed);
         }
-        for (const auto& [mode, capability] : d->mode_capability_requirements) {
+        for (const auto& [mode, capabilities] : d->mode_capability_requirements) {
             ModelType gated = ModelType::LLM;
             if (!deployment_mode_of(mode, gated)) continue;
-            const bool has_capability = has_label(labels, capability);
-            if (gated == deployed && !has_capability) {
-                return "recipe '" + recipe + "' cannot serve '" + mode +
-                       "' without the '" + capability + "' label. Add that label, or omit '" +
-                       mode + "' to deploy as '" + default_mode_for(recipe) + "'.";
+            std::string present;
+            for (const std::string& capability : capabilities) {
+                if (has_label(labels, capability)) {
+                    present = capability;
+                    break;
+                }
             }
-            if (gated != deployed && has_capability) {
-                return "the '" + capability + "' label needs the '" + mode +
-                       "' label: recipe '" + recipe + "' serves '" + capability +
+            if (gated == deployed && present.empty()) {
+                const std::string needed =
+                    capabilities.size() == 1 ? "the '" + capabilities.front() + "' label"
+                                             : "one of the labels " + quote_join(capabilities);
+                return "recipe '" + recipe + "' cannot serve '" + mode + "' without " + needed +
+                       ". Add that label, or omit '" + mode + "' to deploy as '" +
+                       default_mode_for(recipe) + "'.";
+            }
+            if (gated != deployed && !present.empty()) {
+                return "the '" + present + "' label needs the '" + mode +
+                       "' label: recipe '" + recipe + "' serves '" + present +
                        "' models only in that mode. Add '" + mode + "'.";
             }
         }

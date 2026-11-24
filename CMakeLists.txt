@@ -1142,6 +1142,7 @@ set(SOURCES_CORE
     src/cpp/server/utils/network_beacon.cpp
     src/cpp/server/utils/tcp_jsonl_client.cpp
     src/cpp/server/backends/backend_utils.cpp
+    src/cpp/server/backends/systemone_classify.cpp
     src/cpp/server/backend_manager.cpp
     src/cpp/server/mcp_server.cpp
     src/cpp/server/streaming_audio_buffer.cpp
@@ -1269,6 +1270,17 @@ if(WIN32)
             LINK_FLAGS "/MANIFEST:EMBED /MANIFESTINPUT:\"${CMAKE_CURRENT_BINARY_DIR}/server/lemonade.manifest\""
         )
     endif()
+
+    # Reports HIP's device order to the server; it must sit beside lemond.exe
+    # and LemonadeServer.exe, which look for it in their own directory.
+    add_executable(lemonade-hip-probe src/cpp/hip_probe/main.cpp)
+    target_compile_definitions(lemonade-hip-probe PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN)
+    set_target_properties(lemonade-hip-probe PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+        RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_BINARY_DIR}/Debug"
+        RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/Release"
+    )
+    add_dependencies(${EXECUTABLE_NAME} lemonade-hip-probe)
 endif()
 
 
@@ -1360,9 +1372,29 @@ if(BUILD_TESTING AND EXISTS "${LLAMACPP_SYSTEMONE_TEST_SOURCE}")
     add_executable(test_llamacpp_systemone
         ${LLAMACPP_SYSTEMONE_TEST_SOURCE}
         src/cpp/server/backends/llamacpp/llamacpp_systemone.cpp
+        src/cpp/server/backends/systemone_classify.cpp
     )
     target_link_libraries(test_llamacpp_systemone PRIVATE nlohmann_json::nlohmann_json)
     add_cpp_ci_test(llamacpp_systemone CI ON COMMAND test_llamacpp_systemone)
+endif()
+
+set(LLAMACPP_RULEHEAD_TEST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_llamacpp_rulehead.cpp")
+if(BUILD_TESTING AND EXISTS "${LLAMACPP_RULEHEAD_TEST_SOURCE}")
+    add_executable(test_llamacpp_rulehead
+        ${LLAMACPP_RULEHEAD_TEST_SOURCE}
+        src/cpp/server/backends/llamacpp/llamacpp_rulehead.cpp
+    )
+    target_link_libraries(test_llamacpp_rulehead PRIVATE nlohmann_json::nlohmann_json)
+    add_cpp_ci_test(llamacpp_rulehead CI ON COMMAND test_llamacpp_rulehead)
+endif()
+
+set(FLM_MODEL_LABELS_TEST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_flm_model_labels.cpp")
+if(BUILD_TESTING AND EXISTS "${FLM_MODEL_LABELS_TEST_SOURCE}")
+    add_executable(test_flm_model_labels
+        ${FLM_MODEL_LABELS_TEST_SOURCE}
+        src/cpp/server/backends/fastflowlm/flm_model_labels.cpp
+    )
+    add_cpp_ci_test(flm_model_labels CI ON COMMAND test_flm_model_labels)
 endif()
 
 # libwebsockets for the realtime and log-stream WebSocket server
@@ -1873,6 +1905,9 @@ if(WIN32 AND WIX_EXECUTABLE)
     if(TARGET ${EXECUTABLE_NAME})
         list(APPEND WIX_PACKAGED_TARGETS ${EXECUTABLE_NAME})
     endif()
+    if(TARGET lemonade-hip-probe)
+        list(APPEND WIX_PACKAGED_TARGETS lemonade-hip-probe)
+    endif()
 
     if(TARGET wix_installer_minimal)
         if(TARGET web-app)
@@ -2352,6 +2387,14 @@ else()
         "${EMBEDDABLE_DIR_NAME}")
 endif()
 
+set(EMBEDDABLE_HIP_PROBE_COPY)
+set(EMBEDDABLE_EXTRA_DEPENDS)
+if(TARGET lemonade-hip-probe)
+    set(EMBEDDABLE_HIP_PROBE_COPY
+        COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:lemonade-hip-probe>" "${EMBEDDABLE_STAGING_DIR}/")
+    set(EMBEDDABLE_EXTRA_DEPENDS lemonade-hip-probe)
+endif()
+
 add_custom_target(embeddable
     # Clean and create staging directory
     COMMAND ${CMAKE_COMMAND} -E remove_directory "${EMBEDDABLE_STAGING_DIR}"
@@ -2360,6 +2403,7 @@ add_custom_target(embeddable
     # Copy binaries
     COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:lemond>" "${EMBEDDABLE_STAGING_DIR}/"
     COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:lemonade>" "${EMBEDDABLE_STAGING_DIR}/"
+    ${EMBEDDABLE_HIP_PROBE_COPY}
 
     # Copy LICENSE
     COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE" "${EMBEDDABLE_STAGING_DIR}/"
@@ -2387,7 +2431,7 @@ add_custom_target(embeddable
     # Create archive
     COMMAND ${CMAKE_COMMAND} -E chdir "${CMAKE_BINARY_DIR}" ${EMBEDDABLE_TAR_CMD}
 
-    DEPENDS lemond lemonade
+    DEPENDS lemond lemonade ${EMBEDDABLE_EXTRA_DEPENDS}
     COMMENT "Assembling embeddable archive: ${EMBEDDABLE_ARCHIVE_NAME}"
     VERBATIM
 )
@@ -2763,6 +2807,8 @@ endif()
 if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_hrx_contract.cpp")
     add_executable(test_hrx_contract test/cpp/test_hrx_contract.cpp)
     target_link_libraries(test_hrx_contract PRIVATE lemonade-server-core)
+    target_compile_definitions(test_hrx_contract PRIVATE
+        HRX_TEST_CATALOG_PATH="${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/server_models.json")
     add_cpp_ci_test(HrxContractTest CI ON COMMAND test_hrx_contract)
 endif()
 
@@ -2791,6 +2837,30 @@ if(BUILD_TESTING AND EXISTS "${_JOB_GRAPH_TEST_SRC}")
     target_link_libraries(test_job_graph PRIVATE nlohmann_json::nlohmann_json)
     include(CTest)
     add_cpp_ci_test(JobGraphTest CI ON COMMAND test_job_graph)
+endif()
+
+set(_JOB_MEDIA_LIMITS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_job_media_limits.cpp")
+if(BUILD_TESTING AND EXISTS "${_JOB_MEDIA_LIMITS_TEST_SRC}")
+    add_executable(test_job_media_limits test/cpp/test_job_media_limits.cpp)
+    target_include_directories(test_job_media_limits PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_job_media_limits PRIVATE nlohmann_json::nlohmann_json)
+    include(CTest)
+    add_cpp_ci_test(JobMediaLimitsTest CI ON COMMAND test_job_media_limits)
+endif()
+
+set(_JOB_MEDIA_IO_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_job_media_io.cpp")
+if(BUILD_TESTING AND EXISTS "${_JOB_MEDIA_IO_TEST_SRC}")
+    add_executable(test_job_media_io test/cpp/test_job_media_io.cpp)
+    target_include_directories(test_job_media_io PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_job_media_io PRIVATE nlohmann_json::nlohmann_json)
+    include(CTest)
+    add_cpp_ci_test(JobMediaIoTest CI ON COMMAND test_job_media_io)
 endif()
 
 # Backend install atomicity (staging + verified atomic swap).
@@ -3116,6 +3186,25 @@ if(BUILD_TESTING AND EXISTS "${_MODEL_MANAGER_COLLECTION_VALIDATION_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(ModelManagerCollectionValidationTest CI ON COMMAND test_model_manager_collection_validation)
+endif()
+
+# Cost/latency hints must survive user-model registration and `lemonade import`:
+# they travel in ModelInfo::extras, so a key missing from either allowlist is
+# dropped silently and the router prices the model as free.
+set(_MODEL_MANAGER_COST_PROPS_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_manager_cost_props.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_MODEL_MANAGER_COST_PROPS_TEST_SRC}")
+    add_executable(test_model_manager_cost_props
+        test/cpp/test_model_manager_cost_props.cpp
+        src/cpp/cli/lemonade_client.cpp
+        src/cpp/cli/recipe_import.cpp
+    )
+    target_link_libraries(test_model_manager_cost_props PRIVATE lemonade-server-core)
+    add_dependencies(test_model_manager_cost_props copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(ModelManagerCostPropsTest CI ON COMMAND test_model_manager_cost_props)
 endif()
 
 set(_EXTRA_MODEL_DISCOVERY_TEST_SRC
@@ -3638,6 +3727,12 @@ if(BUILD_TESTING AND EXISTS "${_AUTO_TUNE_TEST_SRC}")
     add_cpp_ci_test(AutoTuneTest CI ON COMMAND test_auto_tune)
 endif()
 
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_auto_context_flow.cpp")
+    add_executable(test_auto_context_flow test/cpp/test_auto_context_flow.cpp)
+    target_link_libraries(test_auto_context_flow PRIVATE lemonade-server-core)
+    add_cpp_ci_test(AutoContextFlowTest CI ON COMMAND test_auto_context_flow)
+endif()
+
 set(_GPU_MEMORY_SELECTION_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_gpu_memory_selection.cpp"
 )
@@ -3812,6 +3907,14 @@ if(BUILD_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux" AND EXISTS "${_LLAMACPP_
     add_cpp_ci_test(LlamaCppSystemBackendTest CI ON COMMAND test_llamacpp_system_backend)
 endif()
 
+set(_NVIDIA_DRIVER_GATING_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_nvidia_driver_gating.cpp")
+if(BUILD_TESTING AND EXISTS "${_NVIDIA_DRIVER_GATING_TEST_SRC}")
+    add_executable(test_nvidia_driver_gating test/cpp/test_nvidia_driver_gating.cpp)
+    target_link_libraries(test_nvidia_driver_gating PRIVATE lemonade-server-core)
+    add_dependencies(test_nvidia_driver_gating copy_resources)
+    add_cpp_ci_test(NvidiaDriverGatingTest CI ON COMMAND test_nvidia_driver_gating)
+endif()
+
 set(_DLL_VERSION_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_utils_dll_version.cpp")
 if(BUILD_TESTING AND EXISTS "${_DLL_VERSION_TEST_SRC}")
     add_executable(test_backend_utils_dll_version test/cpp/test_backend_utils_dll_version.cpp)
@@ -3926,6 +4029,13 @@ if(BUILD_TESTING AND EXISTS "${_STREAMING_SILENT_STREAM_TEST_SRC}")
     add_cpp_ci_test(StreamingSilentStreamTest CI ON COMMAND test_streaming_silent_stream)
 endif()
 
+set(_OLLAMA_STREAM_ERROR_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_ollama_stream_error.cpp")
+if(BUILD_TESTING AND EXISTS "${_OLLAMA_STREAM_ERROR_TEST_SRC}")
+    add_executable(test_ollama_stream_error test/cpp/test_ollama_stream_error.cpp)
+    target_link_libraries(test_ollama_stream_error PRIVATE lemonade-server-core)
+    add_cpp_ci_test(OllamaStreamErrorTest CI ON COMMAND test_ollama_stream_error)
+endif()
+
 set(_CLOUD_DISCOVERY_POLICY_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_cloud_discovery_policy.cpp")
 if(BUILD_TESTING AND EXISTS "${_CLOUD_DISCOVERY_POLICY_TEST_SRC}")
     add_executable(test_cloud_discovery_policy test/cpp/test_cloud_discovery_policy.cpp)
@@ -3952,6 +4062,20 @@ if(BUILD_TESTING AND EXISTS "${_ANTHROPIC_ERROR_TEST_SRC}")
     add_executable(test_anthropic_error test/cpp/test_anthropic_error.cpp)
     target_link_libraries(test_anthropic_error PRIVATE lemonade-server-core)
     add_cpp_ci_test(AnthropicErrorTest CI ON COMMAND test_anthropic_error)
+endif()
+
+set(_OLLAMA_OUTPUT_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_ollama_output.cpp")
+if(BUILD_TESTING AND EXISTS "${_OLLAMA_OUTPUT_TEST_SRC}")
+    add_executable(test_ollama_output test/cpp/test_ollama_output.cpp)
+    target_link_libraries(test_ollama_output PRIVATE lemonade-server-core)
+    add_cpp_ci_test(OllamaOutputTest CI ON COMMAND test_ollama_output)
+endif()
+
+set(_OLLAMA_GENERATE_CHUNK_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_ollama_generate_chunk.cpp")
+if(BUILD_TESTING AND EXISTS "${_OLLAMA_GENERATE_CHUNK_TEST_SRC}")
+    add_executable(test_ollama_generate_chunk test/cpp/test_ollama_generate_chunk.cpp)
+    target_link_libraries(test_ollama_generate_chunk PRIVATE lemonade-server-core)
+    add_cpp_ci_test(OllamaGenerateChunkTest CI ON COMMAND test_ollama_generate_chunk)
 endif()
 
 set(_ANTHROPIC_RELAY_HEADERS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_anthropic_relay_headers.cpp")

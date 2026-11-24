@@ -19,13 +19,21 @@
 #include <vector>
 
 using lemon::system_info_detail::compute_cap_to_sm;
+using lemon::system_info_detail::cuda_min_driver_version;
 using lemon::system_info_detail::cuda_supported_archs;
 using lemon::system_info_detail::device_matches_constraint;
 using lemon::system_info_detail::gfx_target_version_to_arch;
 using lemon::system_info_detail::gpu_display_name;
 using lemon::system_info_detail::identify_cuda_arch_from_name;
+using lemon::system_info_detail::hip_index_for_pci_bus_id;
 using lemon::system_info_detail::hip_visible_device;
+using lemon::system_info_detail::kfd_gpu_nodes;
 using lemon::system_info_detail::kfd_gpu_properties;
+using lemon::system_info_detail::kfd_pci_bus_id;
+using lemon::system_info_detail::parse_hip_probe_output;
+using lemon::system_info_detail::rocm_uuid;
+using lemon::system_info_detail::nvidia_driver_older_than;
+using lemon::system_info_detail::nvidia_driver_version_from_windows;
 using lemon::system_info_detail::rocm_device_memory_from_sysfs;
 
 static bool expect_string(const char* name,
@@ -98,6 +106,16 @@ public:
         props << "cpu_cores_count 0\n"
               << "gfx_target_version " << gfx_target_version << "\n"
               << "drm_render_minor " << drm_render_minor << "\n";
+    }
+
+    void add_ids(const std::string& node_id,
+                 const std::string& unique_id,
+                 const std::string& domain,
+                 const std::string& location_id) const {
+        std::ofstream props(kfd_nodes() / node_id / "properties", std::ios::app);
+        props << "unique_id " << unique_id << "\n"
+              << "domain " << domain << "\n"
+              << "location_id " << location_id << "\n";
     }
 
     void add_memory(const std::string& drm_render_minor,
@@ -372,6 +390,43 @@ int main() {
             "cpu_cores_count 0\ngfx_target_version 110501\ndrm_render_minor 129\n");
     }
 
+    {
+        // A dGPU at node 2 and an iGPU at node 10: "10" sorts before "2" as text,
+        // so only a numeric sort gives HIP's order.
+        FakeSysfs sysfs("hip_ids");
+        sysfs.add_node("0", "0", "-1");
+        sysfs.add_node("10", "110500", "129");
+        sysfs.add_ids("10", "0", "0", "49920");
+        sysfs.add_node("2", "110000", "128");
+        sysfs.add_ids("2", "1311768467294899696", "0", "768");
+        const auto gpus = kfd_gpu_nodes(sysfs.kfd_nodes());
+        failures += !expect_bool("KFD lists the two GPU nodes", gpus.size() == 2, true);
+        if (gpus.size() == 2) {
+            failures += !expect_string("node 2 is HIP 0",
+                std::to_string(gpus[0].node_id) + ":" + std::to_string(gpus[0].hip_index), "2:0");
+            failures += !expect_string("node 10 is HIP 1",
+                std::to_string(gpus[1].node_id) + ":" + std::to_string(gpus[1].hip_index), "10:1");
+            failures += !expect_string("the UUID is unique_id in 16 hex digits",
+                rocm_uuid(gpus[0].unique_id), "GPU-1234567890abcdf0");
+            failures += !expect_string("a GPU without unique_id has no UUID",
+                rocm_uuid(gpus[1].unique_id), "");
+            failures += !expect_string("location_id decodes to a PCI address",
+                kfd_pci_bus_id(gpus[1]), "0000:c3:00.0");
+        }
+    }
+
+    {
+        const auto devices = parse_hip_probe_output(
+            "0\t0000:03:00.0\tAMD Radeon RX 7900 XTX\r\n"
+            "1\t0000:c3:00.0\tAMD Radeon(TM) 890M Graphics\n"
+            "not a probe line\n");
+        failures += !expect_bool("the probe output has two devices", devices.size() == 2, true);
+        failures += !expect_string("a PCI address finds its HIP index regardless of domain or case",
+            std::to_string(hip_index_for_pci_bus_id(devices, "0001:C3:00.0")), "1");
+        failures += !expect_string("an unknown PCI address has no HIP index",
+            std::to_string(hip_index_for_pci_bus_id(devices, "0000:04:00.0")), "-1");
+    }
+
     failures += !expect_string(
         "a marketing name keeps the ISA alongside it",
         gpu_display_name("AMD Radeon RX 9070 XT", "gfx1201"),
@@ -472,6 +527,41 @@ int main() {
         failures += !expect_string("NVML memory totals do not prove dedicated VRAM",
                                    sample.memory_type, "unknown");
     }
+
+    failures += !expect_bool("Windows driver below minimum is too old",
+                             nvidia_driver_older_than("516.94", "528.33"), true);
+    failures += !expect_bool("Windows driver at minimum is accepted",
+                             nvidia_driver_older_than("528.33", "528.33"), false);
+    failures += !expect_bool("Windows driver above minimum is accepted",
+                             nvidia_driver_older_than("560.94", "528.33"), false);
+    failures += !expect_bool("Linux driver with older patch is too old",
+                             nvidia_driver_older_than("525.60.12", "525.60.13"), true);
+    failures += !expect_bool("Linux two-part driver compares against three-part minimum",
+                             nvidia_driver_older_than("580.95", "525.60.13"), false);
+    failures += !expect_bool("Unknown driver version is never too old",
+                             nvidia_driver_older_than("Unknown", "576.02"), false);
+    failures += !expect_bool("Empty driver version is never too old",
+                             nvidia_driver_older_than("", "576.02"), false);
+    failures += !expect_bool("No minimum never blocks",
+                             nvidia_driver_older_than("400.00", ""), false);
+
+    failures += !expect_string("Windows driver-store version maps to NVIDIA version",
+                               nvidia_driver_version_from_windows("32.0.15.7602"), "576.02");
+    failures += !expect_string("Windows driver-store version keeps leading-zero minor",
+                               nvidia_driver_version_from_windows("31.0.15.2802"), "528.02");
+    failures += !expect_string("NVIDIA-format version passes through",
+                               nvidia_driver_version_from_windows("576.02"), "576.02");
+    failures += !expect_string("Unparseable version passes through",
+                               nvidia_driver_version_from_windows("Unknown"), "Unknown");
+
+    failures += !expect_string("llamacpp:cuda Windows minimum",
+                               cuda_min_driver_version("llamacpp", "cuda", "windows"), "528.33");
+    failures += !expect_string("llamacpp:cuda Linux minimum",
+                               cuda_min_driver_version("llamacpp", "cuda", "linux"), "525.60.13");
+    failures += !expect_string("Non-CUDA backend has no minimum",
+                               cuda_min_driver_version("llamacpp", "vulkan", "windows"), "");
+    failures += !expect_string("Other CUDA backends have no minimum yet",
+                               cuda_min_driver_version("sd-cpp", "cuda", "windows"), "");
 
     std::printf("\n%d failures\n", failures);
     return failures == 0 ? 0 : 1;

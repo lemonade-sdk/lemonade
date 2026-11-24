@@ -18,19 +18,6 @@ namespace lemon {
 // holds it behind a shared_ptr, which supports incomplete types.
 struct RoutePolicy;
 
-// Image generation defaults for SD models
-struct ImageDefaults {
-    int steps = 20;
-    float cfg_scale = 7.0f;
-    int width = 512;
-    int height = 512;
-    std::string sampling_method;
-    float flow_shift = 0.0f;
-    std::uint64_t soft_pixel_cap = 0;  // 0 uses the server's inferred edit-size cap
-
-    bool has_defaults = false;  // True if explicit defaults were provided in JSON
-};
-
 /// Metadata extracted from a GGUF file's KV header.
 ///
 /// Stored inside ModelInfo for llama.cpp models so that auto-tune and other
@@ -47,10 +34,21 @@ struct GgufMetadata {
     int64_t block_count = 0;
     int64_t embedding_length = 0;
     int64_t head_count_kv = 0;       // total across all blocks (derived)
+    int64_t head_count = 0;          // attention heads (for llama.cpp's default K/V dimensions)
     int64_t key_length = 0;
-    int64_t key_length_swa = 0;      // SWA-reduced key length (Gemma4, etc.)
+    int64_t value_length = 0;
+    int64_t sliding_window = 0;
+    int64_t key_length_swa = 0;      // optional SWA-specific K dimension
+    int64_t value_length_swa = 0;    // optional SWA-specific V dimension
     int64_t swa_layer_count = 0;     // layers with sliding-window attention (derived)
-    int64_t full_attention_interval = 0; // every Nth layer does full attention (Qwen SSM)
+    int64_t full_attention_interval = 0; // hybrid recurrent state is not ordinary KV
+    int64_t shared_kv_layers = 0;    // Gemma 4 virtual/reusing KV layers
+    // A malformed explicitly provided pattern must not be replaced by defaults.
+    bool sliding_window_pattern_present = false;
+    bool sliding_window_pattern_valid = true;
+    bool bounded_swa_metadata_valid = true; // malformed explicit SWA/KV fields disable optimization
+    bool sliding_window_pattern_scalar_present = false;
+    int64_t sliding_window_pattern_period = 0;
     bool causal_attention = true;    // "<arch>.attention.causal"; false for encoders
     std::string decision_type;       // "<arch>.decision.type"; set only on SystemOne decision models
     int64_t decision_max_head_tokens = 0; // "<arch>.decision.max_head_tokens": question + options (laya)
@@ -97,9 +95,6 @@ struct ModelInfo {
     // Multi-model support fields
     ModelType type = ModelType::LLM;      // Model type for LRU cache management
     DeviceType device = DEVICE_NONE;      // Target device(s) for this model
-
-    // Image generation defaults (for sd-cpp models)
-    ImageDefaults image_defaults;
 
     // Per-collection system prompt template (collection.omni models only).
     // When non-empty, overrides the global default in toolDefinitions.json.

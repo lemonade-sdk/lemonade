@@ -37,6 +37,39 @@ env:
   LEMONADE_DISABLE_SYSTEMD_JOURNAL: "1"
 
 jobs:
+
+  classify-small-docs-pr:
+    name: Classify small docs PR (C++ CI)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      docs_only: ${{ steps.classify.outputs.docs_only }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/actions/classify-small-docs-pr
+      - name: Classify changed files
+        id: classify
+        uses: ./.github/actions/classify-small-docs-pr
+        with:
+          max-files: "5"
+
+  full-ci-gate:
+    name: Full CI gate (C++ CI)
+    needs: classify-small-docs-pr
+    if: >-
+      !cancelled() &&
+      (needs.classify-small-docs-pr.result != 'success' ||
+       needs.classify-small-docs-pr.outputs.docs_only != 'true')
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Allow full CI
+        run: echo 'Full CI enabled'
+
   source-tarball:
     name: Build Source Tarball
     if: startsWith(github.ref, 'refs/heads/release-v') || startsWith(github.ref, 'refs/tags/v')
@@ -76,10 +109,11 @@ jobs:
   # ========================================================================
 
   build-lemonade-server-installer:
+    needs: full-ci-gate
+    if: >-
+      !cancelled() && needs.full-ci-gate.result == 'success'
     name: Build Lemonade Server Installer
     runs-on: windows-latest
-    outputs:
-      unsigned-artifact-id: ${{ steps.upload-unsigned-msi.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -162,7 +196,6 @@ jobs:
           Write-Host "Build and packaging successful!" -ForegroundColor Green
 
       - name: Upload Lemonade Server Installers
-        id: upload-unsigned-msi
         uses: actions/upload-artifact@v7
         with:
           name: Lemonade_Server_MSI
@@ -172,6 +205,7 @@ jobs:
           retention-days: 7
 
   build-lemonade-desktop-installer:
+    needs: full-ci-gate
     name: Build Lemonade Desktop Installer
     # Packaging-only variant: it builds the Tauri desktop app and lemonade.msi,
     # which no test job installs. The merge queue gates every merge, so PR
@@ -183,8 +217,11 @@ jobs:
     # BUILD_FULL_INSTALLER above, spelled the same way so the two stay
     # provably complementary.
     if: >-
+      !cancelled() && needs.full-ci-gate.result == 'success' &&
+      (
       !(startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/release-v') || inputs.enable_signing == true) &&
       (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:distros'))
+      )
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
@@ -258,6 +295,9 @@ jobs:
           retention-days: 7
 
   tauri-compile-check:
+    needs: full-ci-gate
+    if: >-
+      !cancelled() && needs.full-ci-gate.result == 'success'
     name: Compile-check the Tauri host (${{ matrix.os }})
     # The Tauri host is Rust, which `npm run typecheck` does not touch. Both
     # jobs that build it — the Windows desktop installer and the macOS .dmg —
@@ -301,56 +341,106 @@ jobs:
         working-directory: src/app/src-tauri
         run: cargo check --locked --all-targets
 
-  sign-msi-installers:
-    name: Sign MSI Installers with SignPath
+  bundle-windows-unsigned:
+    name: Bundle Unsigned Windows Release Files
+    runs-on: ubuntu-latest
+    needs: [build-lemonade-server-installer, build-lemonade-embeddable-windows]
+    # One artifact so a release needs a single SignPath approval.
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.enable_signing == true
+    outputs:
+      unsigned-artifact-id: ${{ steps.upload-bundle.outputs.artifact-id }}
+    steps:
+      - name: Download Lemonade Server Installers
+        uses: actions/download-artifact@v7
+        with:
+          name: Lemonade_Server_MSI
+          path: bundle
+
+      - name: Download Lemonade Embeddable (Windows)
+        uses: actions/download-artifact@v7
+        with:
+          name: lemonade-embeddable-windows
+          path: bundle
+
+      - name: Upload unsigned bundle
+        id: upload-bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: Windows_Release_Unsigned
+          path: bundle/
+          if-no-files-found: error
+          retention-days: 7
+
+  sign-windows-release:
+    name: Sign Windows Release with SignPath
     runs-on: windows-latest
-    needs: build-lemonade-server-installer
+    needs: bundle-windows-unsigned
     # Sign on tag pushes (releases) or when manually enabled via workflow_dispatch
     if: startsWith(github.ref, 'refs/tags/v') || inputs.enable_signing == true
     steps:
-      - name: Sign MSI Installers with SignPath
-        id: sign-msi
+      - name: Sign Windows release files with SignPath
         uses: signpath/github-action-submit-signing-request@v2
         with:
           api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
           organization-id: '8103545b-7814-4edc-86d6-a91dc2a2291b'
           project-slug: 'lemonade'
           signing-policy-slug: 'release-signing'
-          github-artifact-id: '${{ needs.build-lemonade-server-installer.outputs.unsigned-artifact-id }}'
+          artifact-configuration-slug: 'windows-release'
+          github-artifact-id: '${{ needs.bundle-windows-unsigned.outputs.unsigned-artifact-id }}'
           wait-for-completion: true
           wait-for-completion-timeout-in-seconds: 3600
-          output-artifact-directory: 'signed-msi'
+          output-artifact-directory: 'signed-windows'
           parameters: |
             version: "${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || 'test' }}"
 
-      - name: Verify Signed MSI Files
+      - name: Verify signed files
         shell: PowerShell
         run: |
-          Write-Host "Verifying signed MSI files..." -ForegroundColor Cyan
+          $ErrorActionPreference = "Stop"
+          Get-ChildItem -Path "signed-windows" -Recurse | Format-Table Name, Length
 
-          if (-not (Test-Path "signed-msi\lemonade-server-minimal.msi")) {
-              Write-Host "ERROR: Signed lemonade-server-minimal.msi not found!" -ForegroundColor Red
-              exit 1
+          $zips = @(Get-ChildItem "signed-windows\lemonade-embeddable-*-windows-x64.zip")
+          if ($zips.Count -ne 1) { throw "Expected one signed embeddable zip, found $($zips.Count)" }
+          Expand-Archive -Path $zips[0].FullName -DestinationPath "embeddable-check"
+
+          $files = @(
+              (Get-Item "signed-windows\lemonade-server-minimal.msi"),
+              (Get-Item "signed-windows\lemonade.msi")
+          )
+          $files += Get-ChildItem "embeddable-check" -Recurse -Include lemond.exe, lemonade.exe
+          if ($files.Count -ne 4) { throw "Expected 4 files to verify, found $($files.Count)" }
+
+          $failures = 0
+          foreach ($f in $files) {
+              $sig = Get-AuthenticodeSignature $f.FullName
+              Write-Host "$($f.Name): $($sig.Status) ($($sig.SignerCertificate.Subject))"
+              if ($sig.Status -ne 'Valid') { $failures++ }
           }
-
-          if (-not (Test-Path "signed-msi\lemonade.msi")) {
-              Write-Host "ERROR: Signed lemonade.msi not found!" -ForegroundColor Red
-              exit 1
-          }
-
-          Write-Host "Signed MSI files verified!" -ForegroundColor Green
-          Get-ChildItem -Path "signed-msi" -Recurse | Format-Table Name, Length
+          if ($failures -gt 0) { throw "$failures file(s) are not validly signed" }
+          Write-Host "Signed Windows release files verified!" -ForegroundColor Green
 
       - name: Upload Signed MSI Installers
         uses: actions/upload-artifact@v7
         with:
           name: Lemonade_Server_MSI_Signed
           path: |
-            signed-msi/lemonade-server-minimal.msi
-            signed-msi/lemonade.msi
+            signed-windows/lemonade-server-minimal.msi
+            signed-windows/lemonade.msi
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload Signed Lemonade Embeddable (Windows)
+        uses: actions/upload-artifact@v7
+        with:
+          name: lemonade-embeddable-windows-signed
+          path: signed-windows/lemonade-embeddable-*-windows-x64.zip
+          if-no-files-found: error
           retention-days: 7
 
   build-lemonade-deb:
+    needs: full-ci-gate
+    if: >-
+      !cancelled() && needs.full-ci-gate.result == 'success'
     name: Build Lemonade .deb Package
     runs-on: ubuntu-latest
     outputs:
@@ -440,6 +530,9 @@ jobs:
           fi
 
   cpp-unit-tests:
+    needs: full-ci-gate
+    if: >-
+      !cancelled() && needs.full-ci-gate.result == 'success'
     name: C++ unit tests
     # Own job rather than a step of build-lemonade-deb: it shares nothing with
     # the packaging build (different configure, different flags), so as a step
@@ -479,11 +572,14 @@ jobs:
           ctest --test-dir build --output-on-failure --no-tests=error -L "^cpp-ci$"
 
   build-lemonade-debian13:
+    needs: full-ci-gate
     name: Build Lemonade .deb Package (Debian 13)${{ matrix.job-suffix }}
     # Packaging-only variant: the merge queue gates every merge, so PR pushes
     # skip it. Any Debian 13 build break still blocks at merge-queue time.
     # Label a PR `ci:distros` to opt it back in.
-    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:distros')
+    if: >-
+      !cancelled() && needs.full-ci-gate.result == 'success' &&
+      (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:distros'))
     runs-on: ${{ matrix.runs-on }}
     outputs:
       version: ${{ steps.get_version.outputs.version }}
@@ -640,11 +736,14 @@ jobs:
           kill $SERVER_PID 2>/dev/null || true
 
   build-lemonade-rpm:
+    needs: full-ci-gate
     name: Build Lemonade .rpm - Fedora ${{ matrix.fedora-version }}${{ matrix.job-suffix }}
     # Packaging-only variant: the merge queue gates every merge, so PR pushes
     # skip it. Any Fedora build break still blocks at merge-queue time.
     # Label a PR `ci:distros` to opt it back in.
-    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:distros')
+    if: >-
+      !cancelled() && needs.full-ci-gate.result == 'success' &&
+      (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:distros'))
     runs-on: ${{ matrix.runs-on }}
     container:
       image: fedora:${{ matrix.fedora-version }}
@@ -732,13 +831,16 @@ jobs:
           retention-days: 7
 
   build-lemonade-macos-dmg:
+    needs: full-ci-gate
     name: Build Lemonade macOS .dmg (with Tauri App)
     # macOS runners are the scarcest GitHub-hosted resource (org-wide cap: 5
     # concurrent) and observed queue waits reach 40+ minutes. Build Embeddable
     # Lemonade (macOS) stays on PR pushes as the AppleClang compile canary; the
     # Tauri/dmg/pkg surface is packaging-only, so it gates at merge-queue time.
     # Label a PR `ci:macos` to opt it back in.
-    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:macos')
+    if: >-
+      !cancelled() && needs.full-ci-gate.result == 'success' &&
+      (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:macos'))
     runs-on: macos-latest
     outputs:
       version: ${{ steps.get_version.outputs.version }}
@@ -823,7 +925,7 @@ jobs:
       matrix:
         include:
           - arch-name: X86_64
-            runs-on: ubuntu-latest
+            runs-on: ubuntu-24.04
             platform: ubuntu-x64
             artifact-suffix: x86_64
             job-suffix: ""
@@ -885,6 +987,9 @@ jobs:
           retention-days: 7
 
   build-lemonade-linux-arm64:
+    needs: full-ci-gate
+    if: >-
+      !cancelled() && needs.full-ci-gate.result == 'success'
     name: Build Lemonade (Linux ARM64)
     runs-on: ubuntu-24.04-arm
     outputs:
@@ -934,6 +1039,9 @@ jobs:
           retention-days: 7
 
   build-lemonade-embeddable-windows:
+    needs: full-ci-gate
+    if: >-
+      !cancelled() && needs.full-ci-gate.result == 'success'
     name: Build Embeddable Lemonade (Windows)
     runs-on: windows-latest
     outputs:
@@ -984,6 +1092,9 @@ jobs:
           retention-days: 7
 
   build-lemonade-embeddable-macos:
+    needs: full-ci-gate
+    if: >-
+      !cancelled() && needs.full-ci-gate.result == 'success'
     name: Build Embeddable Lemonade (macOS)
     runs-on: macos-latest
     outputs:
@@ -1072,9 +1183,10 @@ jobs:
           - name: xdna2
             runner: [Windows, X64, xdna2, lemon-prod]
             suites: >-
-              [{"name":"ryzenai","script":"server_llm.py","extra_args":"--wrapped-server ryzenai","backends":"cpu hybrid npu"},
+              [{"name":"ryzenai","script":"server_llm.py","extra_args":"--wrapped-server ryzenai","backends":"npu"},
                {"name":"flm","script":"server_llm.py","extra_args":"--wrapped-server flm","backends":"npu"},
-               {"name":"flm-whisper","script":"server_whisper.py","extra_args":"--wrapped-server flm","backends":"npu"}]
+               {"name":"flm-whisper","script":"server_whisper.py","extra_args":"--wrapped-server flm","backends":"npu"},
+               {"name":"systemone-flm","script":"server_systemone.py","extra_args":"--wrapped-server flm","backends":"npu"}]
           - name: stx-halo
             runner: [Windows, X64, stx-halo, lemon-prod]
             suites: >-
@@ -1342,7 +1454,8 @@ jobs:
           - name: xdna2
             runner: [Linux, X64, xdna2, lemon-prod]
             suites: >-
-              [{"name":"flm","script":"server_llm.py","extra_args":"--wrapped-server flm","backends":"npu"}]
+              [{"name":"flm","script":"server_llm.py","extra_args":"--wrapped-server flm","backends":"npu"},
+               {"name":"systemone-flm","script":"server_systemone.py","extra_args":"--wrapped-server flm","backends":"npu"}]
           - name: generic
             runner: [self-hosted, Linux, X64, lemon-prod]
             suites: >-
@@ -1536,6 +1649,20 @@ jobs:
       - name: Cleanup
         if: always()
         uses: ./.github/actions/cleanup-processes-linux
+
+      # The model cache persists across jobs on the same disk as the runner, and
+      # a full disk kills the next job before any step runs.
+      # Record usage so a disk-full failure can be traced to what filled it.
+      - name: Report disk usage
+        if: always()
+        continue-on-error: true
+        run: |
+          df -h "$GITHUB_WORKSPACE" ${HF_HOME:+"$HF_HOME"} || true
+          if [ -n "${HF_HOME:-}" ] && [ -d "$HF_HOME" ]; then
+            timeout 120 du -sh "$HF_HOME" || true
+            timeout 120 du -sh "$HF_HOME"/hub/models--* 2>/dev/null | sort -h | tail -n 15 || true
+          fi
+          timeout 60 docker system df || true
 
   # llamacpp:nathanw's image runs llama-server on the CPU when it finds no GPU,
   # so hosted runners can drive each container tool end to end on every PR.
@@ -1777,7 +1904,7 @@ jobs:
   # to run on ordinary pull request pushes.
   packaging-gate:
     name: Packaging builds
-    needs: [build-lemonade-debian13, test-lemonade-debian13-smoke, build-lemonade-rpm, test-rpm-package, build-lemonade-desktop-installer, tauri-compile-check]
+    needs: [classify-small-docs-pr, full-ci-gate, build-lemonade-debian13, test-lemonade-debian13-smoke, build-lemonade-rpm, test-rpm-package, build-lemonade-desktop-installer, tauri-compile-check]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -1792,7 +1919,7 @@ jobs:
   # settings.
   backends-gate:
     name: Inference backend tests
-    needs: [build-lemonade-server-installer, build-lemonade-deb, cpp-unit-tests, test-exe-inference, test-deb-inference, test-container-backends, test-container-smoke, test-watchdog-lifecycle-linux]
+    needs: [classify-small-docs-pr, full-ci-gate, build-lemonade-server-installer, build-lemonade-deb, cpp-unit-tests, test-exe-inference, test-deb-inference, test-container-backends, test-container-smoke, test-watchdog-lifecycle-linux]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -1805,7 +1932,7 @@ jobs:
   # Same gate pattern as packaging-gate, for the macOS jobs that PR pushes skip.
   macos-gate:
     name: macOS builds
-    needs: [build-lemonade-macos-dmg, test-cli-endpoints-macos, test-embeddable-macos, test-dmg-inference]
+    needs: [classify-small-docs-pr, full-ci-gate, build-lemonade-macos-dmg, test-cli-endpoints-macos, test-embeddable-macos, test-dmg-inference]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -1824,7 +1951,7 @@ jobs:
       matrix:
         include:
           - label: Linux
-            os: ubuntu-latest
+            os: ubuntu-24.04
             platform: ubuntu-x64
             artifact: lemonade-embeddable-linux-x86_64
           - label: Linux ARM64
@@ -1902,6 +2029,7 @@ jobs:
           $expected = @(
               "$archiveDir\lemond.exe",
               "$archiveDir\lemonade.exe",
+              "$archiveDir\lemonade-hip-probe.exe",
               "$archiveDir\LICENSE",
               "$archiveDir\resources\server_models.json",
               "$archiveDir\resources\backend_versions.json",
@@ -2921,7 +3049,7 @@ jobs:
     name: Create GitHub Release
     runs-on: ubuntu-latest
     needs:
-      - sign-msi-installers
+      - sign-windows-release
       - build-lemonade-rpm
       - build-lemonade-debian13
       - test-lemonade-debian13-smoke
@@ -2937,7 +3065,7 @@ jobs:
       - test-embeddable-windows
       - source-tarball
       - repo-manager-release
-    # Candidates skip sign-msi-installers, so a plain `needs` would skip this
+    # Candidates skip sign-windows-release, so a plain `needs` would skip this
     # job too; check the results explicitly instead.
     if: >-
       !cancelled() &&
@@ -3026,7 +3154,15 @@ jobs:
           name: lemonade-embeddable-linux-arm64
           path: .
 
-      - name: Download Lemonade Embeddable (Windows)
+      - name: Download Signed Lemonade Embeddable (Windows)
+        if: env.CANDIDATE == 'false'
+        uses: actions/download-artifact@v7
+        with:
+          name: lemonade-embeddable-windows-signed
+          path: .
+
+      - name: Download Unsigned Lemonade Embeddable (Windows)
+        if: env.CANDIDATE == 'true'
         uses: actions/download-artifact@v4
         with:
           name: lemonade-embeddable-windows

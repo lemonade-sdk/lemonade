@@ -214,9 +214,6 @@ MULTI_MODEL_QUATERNARY = "Llama-3.2-1B-Instruct-GGUF"
 
 # Whisper test configuration
 WHISPER_MODEL = "Whisper-Tiny"
-TEST_AUDIO_URL = (
-    "https://raw.githubusercontent.com/lemonade-sdk/assets/main/audio/test_speech.wav"
-)
 
 # Vision model test configuration
 VISION_MODEL = "Qwen3.5-0.8B-GGUF"
@@ -288,6 +285,5 @@ MULTI_REPO_SHARED_CACHE_DIR = "models--mradermacher--SmolLM2-135M-Instruct-GGUF"
 # Models that should be pre-downloaded for offline testing
 MODELS_FOR_OFFLINE_CACHE = [
     "Qwen3-0.6B-GGUF",
-    "Qwen2.5-0.5B-Instruct-CPU",
-    "Llama-3.2-1B-Instruct-CPU",
+    "Llama-3.2-1B-Instruct-NPU",
 ]

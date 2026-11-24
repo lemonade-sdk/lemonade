@@ -2,6 +2,7 @@
 
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 #include "lemon/models/artifact_fetch.h"  // ArtifactFetchService
 #include "lemon/models/download_progress.h"
@@ -82,6 +83,12 @@ public:
         (void)info;
         (void)available_gib;
         return std::nullopt;
+    }
+
+    // Add the checkpoints a registry row implies but does not name, before its
+    // paths resolve and before it downloads. Default: none.
+    virtual void add_implied_checkpoints(ModelInfo& info) const {
+        (void)info;
     }
 
     // Add automatic overridable options before exposing/passing to a backend.
@@ -195,6 +202,14 @@ public:
     virtual InstallCheck check_install(const std::string& backend, bool binary_found) const {
         (void)backend;
         return {binary_found, ""};
+    }
+
+    // Optional device discovery for an installed backend. A missing value means
+    // the backend does not expose device discovery; an empty list means none found.
+    virtual std::optional<std::vector<std::pair<std::string, std::string>>> runtime_devices(
+        const std::string& backend) const {
+        (void)backend;
+        return std::nullopt;
     }
 
     // The /system-info state for a backend variant that is supported but not

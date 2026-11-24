@@ -19,6 +19,8 @@ inline const BackendDescriptor descriptor = {
     /*uses_ctx_size*/   false,
     /*dynamic_models*/  false,
     /*options*/ {
+        {"acestep_device", "--acestep-device", "", "DEVICES",
+         "GPU to use: ROCm0, CUDA1, ... or a GPU's uuid or pci_bus_id from system-info; auto selects automatically", "Audio Generation Options"},
         {"acestep_backend", "--acestep", "", "BACKEND",
          "ACE-Step backend to use", "Audio Generation Options"},
     },
@@ -26,6 +28,17 @@ inline const BackendDescriptor descriptor = {
         {"cuda", BackendTier::Experimental, BackendFormat::Native, {"linux", "windows"}, {{"nvidia_gpu", {}}}, "NVIDIA GPUs"},
         {"vulkan", BackendTier::Experimental, BackendFormat::Native, {"linux", "windows"}, {{"cpu", {"x86_64"}}, {"amd_gpu", {}}, {"nvidia_gpu", {}}}, "Vulkan-capable GPUs"},
         {"rocm", BackendTier::Experimental, BackendFormat::Native, {"linux", "windows"}, {{"amd_gpu", {"gfx1150", "gfx1151", "gfx1152", "gfx103X", "gfx110X", "gfx120X"}}}, "Supported AMD ROCm iGPU/dGPU families (ROCm via TheRock)"},
+    },
+    /*about*/ {
+        {"cuda", {"ACE-Step 1.5 music generation in C++/GGML, on NVIDIA GPUs.",
+                  "ServeurpersoCom (acestep.cpp)", "Piotr Wilkin (pwilkin)", "MIT",
+                  "https://github.com/ServeurpersoCom/acestep.cpp"}},
+        {"vulkan", {"ACE-Step 1.5 music generation in C++/GGML, on Vulkan-capable GPUs.",
+                    "ServeurpersoCom (acestep.cpp)", "Piotr Wilkin (pwilkin)", "MIT",
+                    "https://github.com/ServeurpersoCom/acestep.cpp"}},
+        {"rocm", {"ACE-Step 1.5 music generation in C++/GGML, specialized for AMD GPUs.",
+                  "ServeurpersoCom (acestep.cpp)", "Piotr Wilkin (pwilkin)", "MIT",
+                  "https://github.com/ServeurpersoCom/acestep.cpp"}},
     },
     /*supported_modes*/ {"audio-generation"},
     /*required_checkpoints*/ {"main"},
@@ -40,6 +53,10 @@ inline const BackendDescriptor descriptor = {
     /*arg_variants*/    {},
     /*bin_variants*/    {"vulkan", "rocm", "cuda"},
     /*config_extra*/    nlohmann::json::object(),
+    /*streams_model_from_storage*/ false,
+    /*containers*/      {},
+    /*mode_capability_requirements*/ {},
+    /*common_gpu_visibility*/ true,
 };
 
 }  // namespace acestep
