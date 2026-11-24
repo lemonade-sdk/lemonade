@@ -353,9 +353,9 @@ void check_card_metadata() {
               strix.args == Args({"--pool_backing=fixed", "--parameter_mode=preload"}));
     check("The R9700 serves its own recorded preset",
           loom::quick_start(cards, loom::kRadeonR9700Target).preset == "chat-r9700");
-    const loom::QuickStart small = loom::quick_start(cards, loom::kGfx120116gbTarget);
+    const loom::QuickStart compact_start = loom::quick_start(cards, loom::kGfx120116gbTarget);
     check("A card without a preset or device query leaves both empty",
-          small.preset.empty() && small.device_query.empty());
+          compact_start.preset.empty() && compact_start.device_query.empty());
     check("Recorded flags are served as they are where the host preloads",
           loom::serve_args(strix, true, "") == Args({"--pool_backing=fixed", "--parameter_mode=preload"}));
     check("No preload where the host has no memlock problem",
@@ -364,11 +364,11 @@ void check_card_metadata() {
           loom::serve_args(strix, true, "--memory_bytes=16gib") ==
               Args({"--parameter_mode=preload"}));
     check("A size the user asks for replaces the recorded one",
-          loom::serve_args(small, true, "--memory_bytes 8gib") == Args({"--state_slab_bytes=4mib"}));
+          loom::serve_args(compact_start, true, "--memory_bytes 8gib") == Args({"--state_slab_bytes=4mib"}));
     check("Other custom flags keep the recorded size",
-          loom::serve_args(small, true, "--workers=4") == small.args);
+          loom::serve_args(compact_start, true, "--workers=4") == compact_start.args);
     check("Preload is not added when the card omits it",
-          loom::serve_args(small, true, "") == small.args);
+          loom::serve_args(compact_start, true, "") == compact_start.args);
     const json flash = json::parse(R"({"devices":{"strix-halo":{"quick_start":{
         "preset":"vision-mtp","device":"amdgpu://?completion_spin_ns=4294967295",
         "args":["--workers=8"]}}}})");
