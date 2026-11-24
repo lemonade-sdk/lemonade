@@ -8314,15 +8314,16 @@ class EndpointTests(ServerTestBase):
 
         load = requests.post(
             f"{self.base_url}/load",
-            json={"model_name": ENDPOINT_TEST_MODEL, "backend_source": "modelscope"},
+            json={
+                "model_name": ENDPOINT_TEST_MODEL,
+                "llamacpp_backend": backend,
+                "backend_source": "modelscope",
+            },
             timeout=TIMEOUT_MODEL_OPERATION,
         )
         self.assertEqual(load.status_code, 200, load.text)
 
-        from openai import OpenAI
-
-        client = OpenAI(base_url=f"http://localhost:{PORT}/api/v1", api_key="x")
-        response = client.chat.completions.create(
+        response = self.get_openai_client().chat.completions.create(
             model=ENDPOINT_TEST_MODEL,
             messages=[{"role": "user", "content": "Say hello."}],
             max_tokens=16,

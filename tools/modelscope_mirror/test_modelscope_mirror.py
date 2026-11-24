@@ -44,9 +44,25 @@ class PinsTest(unittest.TestCase):
         with_pwilkin = m.pinned_releases(VERSIONS, None, include_pwilkin=True)
         self.assertIn(("pwilkin/trellis.cpp", "v0.8.1"), with_pwilkin)
 
-    def test_unknown_backend_stops_the_mirror(self):
-        with self.assertRaises(SystemExit):
-            m.pinned_releases({"newbackend": {"cpu": "v1"}}, None, True)
+    def test_unknown_backend_is_skipped_not_fatal(self):
+        versions = {"newbackend": {"cpu": "v1"}, "onnxruntime": {"cpu": "0.4.0"}}
+        self.assertEqual(
+            m.pinned_releases(versions, None, True),
+            {("lemonade-sdk/ort-server", "0.4.0"): "small"},
+        )
+
+    def test_therock_targets_merge_across_pin_files(self):
+        a = {"therock": {"version": "10.2.0", "architectures": ["gfx1150"]}}
+        b = {"therock": {"version": "10.2.0", "architectures": ["gfx1151"]}}
+        seen = []
+        with mock.patch.object(
+            m,
+            "therock_item",
+            side_effect=lambda v: seen.append(v) or m.Item("therock", "t", "s"),
+        ):
+            m.build_plan([a, b], "core", False, "none", only_group="therock")
+        self.assertEqual(len(seen), 1)
+        self.assertEqual(seen[0]["therock"]["architectures"], ["gfx1150", "gfx1151"])
 
     def test_hand_pins_count_for_github_files(self):
         hand = {
@@ -114,12 +130,12 @@ class PinsTest(unittest.TestCase):
         with mock.patch.object(m, "release_item", return_value=item), mock.patch.object(
             m, "therock_item", side_effect=AssertionError("AMD contacted")
         ):
-            out = m.checksums_for(versions, False, True, Path("."))
+            out = m.checksums_for(versions, False)
         self.assertEqual(
             out["github"]["lemonade-sdk/ort-server"]["0.4.0"],
             {"a.zip": "sha256:" + "a" * 64, "late.zip": "sha256:" + "e" * 64},
         )
-        self.assertEqual(out["therock"], VERSIONS["checksums"]["modelscope"]["therock"])
+        self.assertNotIn("therock", out)
 
 
 class ManifestTest(unittest.TestCase):

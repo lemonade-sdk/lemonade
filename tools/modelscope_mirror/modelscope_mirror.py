@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Mirror the backend files pinned in backend_versions.json to a ModelScope dataset,
-and keep the SHA-256 checksums pinned there in sync.
+and keep checksums.modelscope (GitHub's published digests) in sync with the pins.
 
 Dataset layout, with GitHub's file names:
     github/<owner>/<repo>/<tag>/<file>   GitHub release files
@@ -93,6 +93,7 @@ SOURCES: dict[str, dict[str, tuple[str, str]]] = {
     "thenoise": {"*": ("lemonade-sdk/thenoise", "thenoise")},
     "moonshine": {"*": ("lemonade-sdk/moonshine-server-rocm", "small")},
     "onnxruntime": {"*": ("lemonade-sdk/ort-server", "small")},
+    "loom": {"*": ("ROCm/hrx-system", "small")},
     # Only with --include-pwilkin.
     "thinksound": {"*": ("pwilkin/thinksound.cpp", "pwilkin")},
     "acestep": {"*": ("pwilkin/acestep.cpp", "pwilkin")},
@@ -130,6 +131,15 @@ class Item:
 
 def log(msg: str) -> None:
     print(msg, flush=True)
+
+
+_warned: set[str] = set()
+
+
+def warn_once(msg: str) -> None:
+    if msg not in _warned:
+        _warned.add(msg)
+        log(msg)
 
 
 def human(n: int) -> str:
@@ -240,10 +250,11 @@ def pinned_releases(
         ):
             continue
         if recipe not in SOURCES:
-            sys.exit(
-                f"backend_versions.json has a backend this script does not know: '{recipe}'. "
-                f"Add it to SOURCES (see its get_install_params() in Lemonade)."
+            warn_once(
+                f"warning: '{recipe}' is not in SOURCES, so it is not mirrored. "
+                "Add its repo from get_install_params() in Lemonade."
             )
+            continue
         if recipes is not None and recipe not in recipes:
             continue
         for variant, tag in variants.items():
@@ -253,7 +264,10 @@ def pinned_releases(
                 continue  # container image pin inside a native recipe
             src = SOURCES[recipe].get(variant) or SOURCES[recipe].get("*")
             if src is None:
-                sys.exit(f"Unknown variant '{recipe}.{variant}'. Add it to SOURCES.")
+                warn_once(
+                    f"warning: '{recipe}.{variant}' is not in SOURCES; not mirrored."
+                )
+                continue
             repo, group = src
             if group == "pwilkin" and not include_pwilkin:
                 continue
@@ -336,11 +350,19 @@ def build_plan(
         items.append(release_item(repo, tag, group))
 
     if chosen["therock"] and only_group in (None, "therock"):
-        seen = set()
+        merged: dict[str, dict] = {}
         for versions in all_versions:
-            if versions["therock"]["version"] not in seen:
-                seen.add(versions["therock"]["version"])
-                items.append(therock_item(versions))
+            rock = versions["therock"]
+            m = merged.setdefault(
+                rock["version"],
+                {"version": rock["version"], "architectures": [], "url_mapping": {}},
+            )
+            m["architectures"] += [
+                a for a in rock.get("architectures", []) if a not in m["architectures"]
+            ]
+            m["url_mapping"].update(rock.get("url_mapping", {}))
+        for rock in merged.values():
+            items.append(therock_item({"therock": rock}))
 
     for item in items:
         for f in item.files:
@@ -419,14 +441,12 @@ def download(url: str, dest: Path, expect_sha: str, expect_size: int | None) -> 
     return sha
 
 
-def checksums_for(
-    versions: dict, refresh_github: bool, hash_therock: bool, workdir: Path
-) -> dict:
-    """The checksums section for what versions pins.
+def checksums_for(versions: dict, refresh_github: bool) -> dict:
+    """checksums.modelscope for the GitHub releases versions pins.
 
-    Pinned hashes win over GitHub's unless refresh_github, so a replaced upstream
-    file shows as drift. AMD publishes no checksums: TheRock is hashed by
-    download, only for a newly pinned version and only with hash_therock.
+    Copied from GitHub's published digests. Pinned hashes win unless
+    refresh_github, so a replaced upstream file shows as drift. TheRock is not
+    listed: AMD publishes no checksums.
     """
     old = generated_checksums(versions)
     github: dict[str, dict[str, dict[str, str]]] = {}
@@ -440,27 +460,10 @@ def checksums_for(
             entries.update(old.get("github", {}).get(repo, {}).get(tag, {}))
         github.setdefault(repo, {})[tag] = dict(sorted(entries.items()))
 
-    ver = versions["therock"]["version"]
-    old_therock = old.get("therock", {}).get(ver, {})
     result = {}
     if "comment" in old:
         result["comment"] = old["comment"]
     result["github"] = github
-    if old_therock:
-        result["therock"] = {ver: old_therock}
-        return result
-
-    item = therock_item(versions)
-    therock: dict[str, str] = {}
-    for f in item.files:
-        if not hash_therock:
-            therock[f["name"]] = "(not hashed yet)"
-            continue
-        log(f"  hashing {f['name']} ({human(f['size'])}) from AMD")
-        local = workdir / f["name"]
-        therock[f["name"]] = "sha256:" + download(f["url"], local, "", f["size"])
-        local.unlink(missing_ok=True)
-    result["therock"] = {ver: therock}
     return result
 
 
@@ -486,9 +489,9 @@ def describe_drift(
     return lines
 
 
-def update_checksums(path: Path, check: bool, refresh: bool, workdir: Path) -> int:
+def update_checksums(path: Path, check: bool, refresh: bool) -> int:
     versions = json.loads(path.read_text(encoding="utf-8"))
-    want = checksums_for(versions, refresh or check, not check, workdir)
+    want = checksums_for(versions, refresh or check)
     have = generated_checksums(versions)
     drift = describe_drift(
         {k: v for k, v in want.items() if k != "comment"},
@@ -684,7 +687,7 @@ def main() -> int:
                 "--write-checksums and --check-checksums take one --versions-file."
             )
         path = Path(args.versions_file[0] if args.versions_file else VERSIONS_PATH)
-        return update_checksums(path, args.check_checksums, args.refresh, workdir)
+        return update_checksums(path, args.check_checksums, args.refresh)
 
     all_versions = [load_versions(p, None) for p in args.versions_file]
     all_versions += [load_versions(None, r) for r in args.lemonade_ref]

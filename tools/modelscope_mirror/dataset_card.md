@@ -8,9 +8,9 @@ tags:
 
 # Lemonade backends mirror / Lemonade 推理后端镜像
 
-This repository is the official mirror of the backend files that [Lemonade](https://github.com/lemonade-sdk/lemonade) downloads, for users who cannot reach GitHub reliably. Every file is copied unchanged from the project's GitHub release, or from AMD's ROCm tarball server, and checked against the SHA-256 pinned in Lemonade's `backend_versions.json`. Lemonade checks that SHA-256 again on every download from here, so it refuses a file that does not match.
+This repository is the official mirror of the backend files that [Lemonade](https://github.com/lemonade-sdk/lemonade) downloads, for users who cannot reach GitHub reliably. Every file is copied unchanged from the project's GitHub release, or from AMD's ROCm tarball server. Files from GitHub releases are checked against GitHub's published SHA-256, which Lemonade pins in `backend_versions.json` and checks again on every download from here, so it refuses a file that does not match. AMD publishes no checksums for the ROCm tarballs, so those are not hash-checked.
 
-本仓库是 [Lemonade](https://github.com/lemonade-sdk/lemonade) 所需推理后端的官方镜像，供无法稳定访问 GitHub 的用户使用。所有文件均与对应项目的 GitHub Release（或 AMD ROCm 下载服务器）完全一致，并已按 Lemonade `backend_versions.json` 中固定的 SHA-256 校验。Lemonade 每次从本镜像下载时都会再次校验 SHA-256，不一致的文件将被拒绝安装。
+本仓库是 [Lemonade](https://github.com/lemonade-sdk/lemonade) 所需推理后端的官方镜像，供无法稳定访问 GitHub 的用户使用。所有文件均与对应项目的 GitHub Release（或 AMD ROCm 下载服务器）完全一致。来自 GitHub Release 的文件已按 GitHub 公布的 SHA-256 校验，Lemonade 在 `backend_versions.json` 中固定这些值，并在每次从本镜像下载时再次校验，不一致的文件将被拒绝安装。AMD 未公布 ROCm 压缩包的校验值，因此这些文件不做哈希校验。
 
 ## Layout / 目录结构
 

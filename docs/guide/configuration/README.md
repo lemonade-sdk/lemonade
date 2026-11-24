@@ -265,6 +265,8 @@ lemonade config set default_model_source=modelscope
 - `rocm_install_method=auto` installs the TheRock tarball, since the mirror has no pip wheel index. A runtime already installed from wheels keeps working.
 - `MODELSCOPE_ENDPOINT` moves the API, as for model pulls. No token is sent: the dataset is public.
 
+When a pin changes on `main`, a workflow uploads the new release to the mirror and opens a PR that adds its GitHub digests to `checksums.modelscope`. Until that PR merges, ModelScope refuses the new version; GitHub is unaffected.
+
 Both `models_dir` and `extra_models_dir` can be changed at runtime through [`POST /internal/set`](../../api/internal.md#post-internalset). Existing `extra_models_dir` paths are preflighted as directories and must be enumerable by the `lemond` process. Nonexistent paths are accepted so the directory watcher can observe them if they are created later.
 
 ### Backend Configuration
