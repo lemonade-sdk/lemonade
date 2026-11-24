@@ -12,6 +12,7 @@ import { backendCompactLabel, capabilityColor } from '../modelPresentation';
 import { scheduleIdleWork } from '../startupScheduler';
 import { useI18n } from '../i18n';
 import ChatReadinessProgress from './ChatReadinessProgress';
+import ContextMeter from './ContextMeter';
 
 const Model3DResult = lazy(() => import(/* webpackChunkName: "chat-model3d" */ './Model3DResult'));
 const LogViewer = lazy(() => import(/* webpackChunkName: "chat-logs" */ './LogViewer'));
@@ -2225,6 +2226,37 @@ const ChatView: React.FC<ChatViewProps> = ({
 
   const activeConvo = conversations.find(c => c.id === activeId) || null;
   const messages = activeConvo?.messages || [];
+  const contextUsage = useMemo(() => {
+    const thread = activeConvo?.messages || [];
+    for (let i = thread.length - 1; i >= 0; i--) {
+      const message = thread[i];
+      if (message.role !== 'assistant' || !message.stats?.context) continue;
+      // Never display another model's last token count after switching models.
+      return message.model?.name?.toLowerCase() === currentModel.toLowerCase()
+        ? message.stats.context : null;
+    }
+    return null;
+  }, [activeConvo?.messages, currentModel]);
+  const liveModel = activeId ? streamModelsRef.current[activeId] : null;
+  const liveContextUsage = activeId && isStreaming
+    && liveModel?.name?.toLowerCase() === currentModel.toLowerCase()
+    ? streaming.getLiveStats(activeId)?.context ?? null : null;
+  const displayedContextUsage = isStreaming ? liveContextUsage : contextUsage;
+  const contextHistory = useMemo(() => (activeConvo?.messages || [])
+    .filter(message => {
+      if (message.role === 'assistant' && !isPersistableAssistantMessage(message)) return false;
+      if (message.generatedImages?.length || message.audioUrl || message.model3dUrl) return false;
+      return true;
+    })
+    .map(message => ({
+      role: message.role,
+      content: message.images?.length && supportsChatImageInput && !isCollectionModel(currentKnownModelInfo)
+        ? [
+          { type: 'text' as const, text: message.content },
+          ...message.images.map(url => ({ type: 'image_url' as const, image_url: { url } })),
+        ]
+        : message.content,
+    })), [activeConvo?.messages, supportsChatImageInput, currentKnownModelInfo]);
   const incomingPromptPending = !activeId && !!incomingPrompt && !incomingPromptHandledRef.current;
   const toolsUnavailable = hasBrowserPromptContext(messages) || incomingPromptPending;
   const webSearchEnabled = useMcp && modeSupportsMcp && !toolsUnavailable
@@ -2717,7 +2749,7 @@ ${finalText}`
           // A failed primary socket may still close while the legacy port connects.
           if (!isCurrent() || !realtimeRef.current) return;
           setIsLiveConnected(false);
-          if (dictating && liveFinalizeTimerRef.current === null) setLiveError('Realtime microphone disconnected.');
+          if (dictating && liveFinalizeTimerRef.current === null) setLiveError(t('Realtime microphone disconnected.'));
           failDictation();
         },
         onError: message => { if (isCurrent()) { setLiveError(message); failDictation(); } },
@@ -2725,12 +2757,12 @@ ${finalText}`
         onTranscription: (text, final) => { if (isCurrent()) handleLiveTranscription(text, final); },
       });
       if (!isCurrent()) { handle.close(); return; }
-      if (!handle.isConnected()) throw new Error('Realtime microphone disconnected.');
+      if (!handle.isConnected()) throw new Error(t('Realtime microphone disconnected.'));
       realtimeRef.current = handle;
       isLiveRecordingRef.current = true;
       await startRecording();
       if (!isCurrent()) { stopRecording(); return; }
-      if (!handle.isConnected()) throw new Error('Realtime microphone disconnected.');
+      if (!handle.isConnected()) throw new Error(t('Realtime microphone disconnected.'));
       setIsLiveRecording(true);
     } catch (err) {
       if (!isCurrent()) return;
@@ -4272,6 +4304,19 @@ ${index}`;
                 </div>
               )}
             </div>
+          )}
+          {modeSupportsChatCompletions && (
+            <ContextMeter
+              model={currentLoadedModel}
+              modelInfo={currentEffectiveSettingsModelInfo}
+              usage={displayedContextUsage}
+              history={contextHistory}
+              previousUsage={contextUsage}
+              pendingImageCount={supportsChatImageInput && !isCollectionModel(currentKnownModelInfo) ? pendingImages.length : 0}
+              mcpEnabled={useMcp && !toolsUnavailable}
+              mcpServerIds={selectedMcpServerIds}
+              mcpToolNames={selectedMcpToolNames}
+            />
           )}
           {canShowEffectiveSettings && (
             <button
