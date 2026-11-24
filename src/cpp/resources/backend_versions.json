@@ -433,7 +433,7 @@
   },
   "llamacpp": {
     "vulkan": "b12633",
-    "rocm-stable": "b12625",
+    "rocm-stable": "b12644",
     "rocm-nightly": "b1385",
     "cuda": "b12625",
     "metal": "b12633",
@@ -456,7 +456,7 @@
   },
   "sd-cpp": {
     "cpu": "master-1106-b115a63",
-    "rocm-stable": "master-1106-b115a63",
+    "rocm-stable": "master-1117-5519d71",
     "vulkan": "master-1106-b115a63",
     "cuda": "master-1106-b115a63",
     "metal": "master-1106-b115a63"
@@ -474,7 +474,7 @@
     "rocm": "rocm-10.0@sha256:686650eed951f80d861905642b3d1d4347b44c0369aa2de5d1db1033bb72813f"
   },
   "therock": {
-    "version": "10.1.0",
+    "version": "10.2.0",
     "architectures": [
       "gfx908",
       "gfx90a",
