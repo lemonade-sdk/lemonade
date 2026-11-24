@@ -577,7 +577,7 @@ static void test_collection_registration_rejection_is_atomic() {
     ModelStore store(aliases);
     RegistryDocuments registries(json::object(), file.string());
     ModelChangeNotifier notifier;
-    ModelIngest::Deps deps{nullptr, {}, &registries, &store, &notifier, {}};
+    ModelIngest::Deps deps{nullptr, {}, {}, &registries, &store, &notifier, {}};
     ModelIngest ingest(deps);
     IngestCollections collections(deps, ingest);
 
@@ -614,7 +614,7 @@ static void test_collection_parent_rejection_is_atomic(bool existing, bool regis
     RegistryDocuments registries(json::object(), file.string());
     ModelChangeNotifier notifier;
     int options_saved = 0;
-    ModelIngest ingest({nullptr, {}, &registries, &store, &notifier,
+    ModelIngest ingest({nullptr, {}, {}, &registries, &store, &notifier,
         [&](ModelInfo&, bool) { ++options_saved; }});
     if (existing) {
         ingest.register_user_model("user.AtomicParent",
@@ -671,7 +671,7 @@ static void test_regular_inline_registration_preserves_local_components() {
     ModelStore store(aliases);
     RegistryDocuments registries(json::object(), (root / "user_models.json").string());
     ModelChangeNotifier notifier;
-    ModelIngest ingest({nullptr, {}, &registries, &store, &notifier, {}});
+    ModelIngest ingest({nullptr, {}, {}, &registries, &store, &notifier, {}});
     json local = component_def("LocalB");
     local["recipe_options"] = {{"llamacpp_args", "--threads 2"}};
     ingest.register_user_model("user.LocalB", local, "", true);
@@ -705,7 +705,7 @@ static void test_registered_collection_pull_does_not_repeat_registration(bool bu
     RegistryDocuments registries(json::object(), (root / "user_models.json").string());
     ModelChangeNotifier notifier;
     ModelArtifactStore artifacts({[&] { return root.string(); }, {}, {}});
-    ModelIngest ingest({&artifacts, {}, &registries, &store, &notifier, {}});
+    ModelIngest ingest({&artifacts, {}, {}, &registries, &store, &notifier, {}});
     if (builtin) {
         ModelInfo child;
         child.model_name = "SelectedA";
