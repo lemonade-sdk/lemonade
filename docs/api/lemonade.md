@@ -1518,7 +1518,7 @@ Errors carry a JSON `error` object.
 ## `POST /v1/videos`
 <sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
 
-Starts generating a video from a text prompt and returns a handle at once. Generation runs for minutes, so it is a job rather than a held connection: poll [`GET /v1/videos/{id}`](#get-v1videosid), then fetch the clip from [`GET /v1/videos/{id}/content`](#get-v1videosidcontent). It serves [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) video models such as `Wan2.1-T2V-1.3B` and is a Lemonade extension.
+Starts generating a video from a text prompt and returns a handle at once. Generation runs for minutes, so it is a job rather than a held connection: poll [`GET /v1/videos/{id}`](#get-v1videosid), then fetch the clip from [`GET /v1/videos/{id}/content`](#get-v1videosidcontent). It serves [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) and [TheNoise](https://github.com/lemonade-sdk/thenoise) video models and is a Lemonade extension.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -1530,8 +1530,8 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `model` | Yes | The model to run; loaded on first use. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `negative_prompt` | No | Text describing what to avoid. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `duration` | No | Length of the clip in seconds. Approximate: it is converted to frames at `fps` and rounded to the nearest count the model takes, which is 4n+1 for Wan. `video_frames` wins when both are given. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `video_frames` | No | Number of frames to generate. Defaults to the model's `video_frames` recipe option, else `33`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `fps` | No | Frames per second of the returned clip. Defaults to the model's `fps` recipe option, else `16`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `video_frames` | No | Number of frames to generate. Defaults to the model's `video_frames` recipe option, else the backend default. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `fps` | No | Frames per second of the returned clip. Defaults to the model's `fps` recipe option, else the backend default. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `width` | No | Output width in pixels. Video models are sensitive to resolutions they were not trained on. Defaults to the model's own. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `height` | No | Output height in pixels. Defaults to the model's own. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `steps` | No | Number of sampling steps. Defaults to the model's own. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -1539,7 +1539,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `sampling_method` | No | Sampler name, such as `euler`. Defaults to the model's own. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `flow_shift` | No | Flow shift, used by flow-matching models such as Wan. Defaults to the model's own. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `seed` | No | Random seed for reproducibility. Defaults to the backend's own. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `output_format` | No | Container format of the clip: `webm`, `webp` or `avi`. Defaults to `webm`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `output_format` | No | Container format: `webm` (default), `webp` or `avi` (stable-diffusion.cpp), or `mp4` (TheNoise). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 The model loads when the job starts, not during this request.
 
@@ -1709,7 +1709,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 |-----------|----------|-------------|--------|
 | `id` (path) | Yes | Video id, from [`POST /v1/videos`](#post-v1videos). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-A clip still queued is cancelled straight away. stable-diffusion.cpp cannot stop a clip once frames are being produced, so cancelling one stops its backend process; the video reports `canceled` once the process has exited, and the next request reloads the model.
+A clip still queued is cancelled straight away. TheNoise cooperatively cancels its own job and keeps the model loaded after inference has stopped. stable-diffusion.cpp cannot stop a clip once frames are being produced, so cancelling one stops its backend process; the video reports `canceled` once the process has exited, and the next request reloads the model.
 
 ### Example
 
