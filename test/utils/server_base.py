@@ -295,6 +295,7 @@ def _pull_model_streaming(model_name, port):
     with requests.post(
         f"http://localhost:{port}/api/v1/pull",
         json={"model_name": model_name, "stream": True, "do_not_upgrade": True},
+        headers=_auth_headers(),
         stream=True,
         timeout=TIMEOUT_MODEL_OPERATION,
     ) as response:

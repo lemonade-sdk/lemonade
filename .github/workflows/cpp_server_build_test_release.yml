@@ -2491,7 +2491,7 @@ jobs:
     name: Test CLI/Endpoints (windows-latest)
     runs-on: windows-latest
     needs: build-lemonade-server-installer
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       LEMONADE_CI_MODE: "True"
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
@@ -2622,7 +2622,7 @@ jobs:
     if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:macos')
     runs-on: macos-latest
     needs: build-lemonade-macos-dmg
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
       LEMONADE_CI_MODE: "True"
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}

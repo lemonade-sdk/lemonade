@@ -144,7 +144,9 @@ jobs:
     strategy:
       matrix: ${{ fromJSON(needs.prepare-matrix.outputs.package_matrix) }}
     # A hang should fail this job well before the merge queue's check timeout.
-    timeout-minutes: 30
+    # Normal runs take under 17 minutes; the rest leaves room for one apt step
+    # to use its whole retry window (.github/scripts/retry.sh).
+    timeout-minutes: 45
     container:
       image: ubuntu:${{ matrix.release }}
     env:

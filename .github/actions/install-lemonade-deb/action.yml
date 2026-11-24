@@ -86,7 +86,7 @@ runs:
                     _ "$SUDO" "$DEB_DEPENDS" "$APT_LOG"; then
                     # A source whose index failed to download is missing from
                     # apt-cache policy too, so check for Launchpad errors first.
-                    if grep -Eq '(^Err:|Failed to fetch).*ppa\.launchpad(content)?\.net' "$APT_LOG"; then
+                    if grep -Eq '(^Err:|Failed to fetch).*ppa\.launchpad(content)?\.net/lemonade-team/bleeding-edge/' "$APT_LOG"; then
                         echo "::error title=Lemonade PPA unreachable::ppa.launchpadcontent.net kept failing (see the Err / Failed to fetch lines above). This is a Launchpad outage, not a runner problem; re-run the job later."
                     # On Ubuntu some runtime deps (e.g. libcpp-httplib0.26 on
                     # 24.04) exist only in the lemonade PPA, so a runner
