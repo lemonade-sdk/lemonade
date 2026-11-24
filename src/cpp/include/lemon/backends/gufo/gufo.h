@@ -32,7 +32,11 @@ inline const std::set<std::string>& reserved_custom_arg_flags() {
 inline const BackendDescriptor descriptor = {
     /*recipe*/          "gufo",
     /*display_name*/    "Gufo",
+#ifdef _WIN32
+    /*binary*/          "gufo.exe",
+#else
     /*binary*/          "gufo",
+#endif
     /*config_section*/  "",  // defaults to recipe
     /*default_device*/  DEVICE_GPU,
     /*slot_policy*/     SlotPolicy::Standard,
@@ -45,6 +49,7 @@ inline const BackendDescriptor descriptor = {
     },
     /*support*/ {
         {"rocm", BackendTier::Guest, BackendFormat::Container, {"linux"}, {{"amd_gpu", {"gfx1151"}}}, "AMD Strix Halo"},
+        {"rocm", BackendTier::Guest, BackendFormat::Native, {"windows"}, {{"amd_gpu", {"gfx1151"}}}, "AMD Strix Halo"},
     },
     /*about*/ {
         {"rocm", {"Open-source engine with model-specific Strix Halo kernels, for a handful of top models.",
@@ -64,13 +69,18 @@ inline const BackendDescriptor descriptor = {
     /*bin_variants*/    {},
     /*config_extra*/    nlohmann::json::object(),
     /*streams_model_from_storage*/ false,
+    // The release that publishes the image also attaches the Windows build, which
+    // runs on the host.
     /*containers*/ {
+#ifndef _WIN32
         {"rocm", {
             /*image*/   "ghcr.io/gufo-org/toolboxes/gufo-runtime",
             /*devices*/ {"/dev/dri", "/dev/kfd"},
             /*cap_add*/ {},
             /*user*/    lemon::utils::ContainerUser{1000, 1000},
+            /*former_images*/ {"docker.io/kyuz0/amd-strix-halo-toolboxes"},
         }},
+#endif
     },
 };
 

@@ -46,6 +46,7 @@ class ModelIngest : public ArtifactFetchService {
         const ModelArtifactStore* artifacts;
         // The server-wide default pull source; null when none is configured.
         std::function<std::optional<RegistryId>()> default_registry_source;
+        std::function<bool()> automatic_model_source;
 
         // The user registry and the published set it keeps in step: a registration
         // writes the entry and invalidates the store in one move.
@@ -66,6 +67,8 @@ class ModelIngest : public ArtifactFetchService {
 
     void fetch_registry_artifacts(const ModelInfo& info, DownloadProgressCallback progress,
                                   const utils::CancelToken& cancel) override;
+
+    std::unique_ptr<FetchableRepository> repository_for(const ArtifactRef& ref) const override;
 
     // Why a `collection.omni` / `collection.router` definition cannot be registered,
     // in the words the caller returns; empty when it can.

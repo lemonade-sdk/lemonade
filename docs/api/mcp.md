@@ -1,6 +1,6 @@
 # MCP Gateway
 
-Lemonade exposes its inference capabilities as a Model Context Protocol (MCP) server, so any MCP-compatible client (GitHub Copilot, Claude Desktop, MCP Inspector, Cursor, the `mcp` Python client, etc.) can call your locally running models as tools.
+Lemonade exposes its inference and model-management capabilities as a Model Context Protocol (MCP) server, so any MCP-compatible client (GitHub Copilot, Claude Desktop, MCP Inspector, Cursor, the `mcp` Python client, etc.) can call your locally running models as tools.
 
 The gateway implements the **MCP "Streamable HTTP" transport** (spec version `2025-06-18`) with the `tools` capability only, so `resources/*` and `prompts/*` are not implemented. All traffic flows through a single endpoint:
 
@@ -57,7 +57,7 @@ Tool-level failures (bad arguments, model load errors, backend exceptions) are r
 
 - No session resumption (`Mcp-Session-Id` header is not issued).
 - Tools return their whole result: `lemonade_chat` ignores `stream`. Use [`POST /v1/chat/completions`](./openai.md#post-v1chatcompletions) for streamed tokens.
-- Embeddings and text-to-speech have no MCP tool; use [`/v1/embeddings`](./openai.md#post-v1embeddings) and [`/v1/audio/speech`](./openai.md#post-v1audiospeech).
+- Embeddings have no MCP tool; use [`/v1/embeddings`](./openai.md#post-v1embeddings).
 
 ### Examples
 
@@ -174,6 +174,144 @@ of being copied into the docs.
 <!-- BEGIN GENERATED: mcp-tools -->
 <!-- Generated from live /mcp tools/list. Do not edit this region by hand. -->
 
+### `lemonade_get_model_info`
+
+Get the server's detailed record for one exact model ID returned by lemonade_list_models. Returns the same model metadata used by the REST model APIs, including recipe, download state, components, recipe options, and Router metadata when present.
+
+**Returns**
+
+Returns a result from lemonade_get_model_info, including structured content on success.
+
+**MCP annotations**
+
+```json
+{
+  "destructiveHint": false,
+  "openWorldHint": false,
+  "readOnlyHint": true
+}
+```
+
+| Argument | Required | Schema | Description |
+|---|:---:|---|---|
+| `model_name` | yes | `{"type":"string"}` | Exact model ID from lemonade_list_models. |
+
+### `lemonade_load_model`
+
+Explicitly load a Lemonade model using the same implementation as POST /v1/load. The model_name must be exact. A known registry model that is not local may be downloaded by the existing load path. collection.router models are virtual and are acknowledged without starting a Router backend process. `options` contains ephemeral recipe-specific load options such as llamacpp_backend or llamacpp_device; they are not persisted by this MCP tool.
+
+**Returns**
+
+Returns a result from lemonade_load_model, including structured content on success.
+
+**MCP annotations**
+
+```json
+{
+  "destructiveHint": false,
+  "openWorldHint": true,
+  "readOnlyHint": false
+}
+```
+
+| Argument | Required | Schema | Description |
+|---|:---:|---|---|
+| `ctx_size` | no | `{"type":"integer"}` | Optional context size. Use -1 for automatic sizing. |
+| `model_name` | yes | `{"type":"string"}` | Exact model ID from lemonade_list_models. |
+| `options` | no | `{"additionalProperties":true,"type":"object"}` | Optional recipe-specific load options. Applied only to this load; model/model_name/save_options/pinned are not allowed here. |
+| `pinned` | no | `{"type":"boolean"}` | Optional residency pin state for this load. |
+
+### `lemonade_unload_model`
+
+Unload exactly one named model using the same implementation as POST /v1/unload. model_name is mandatory: this MCP tool never exposes the REST endpoint's empty-name unload-all behavior.
+
+**Returns**
+
+Returns a result from lemonade_unload_model, including structured content on success.
+
+**MCP annotations**
+
+```json
+{
+  "destructiveHint": false,
+  "openWorldHint": false,
+  "readOnlyHint": false
+}
+```
+
+| Argument | Required | Schema | Description |
+|---|:---:|---|---|
+| `model_name` | yes | `{"type":"string"}` | Exact model ID to unload. |
+
+### `lemonade_get_loaded_models`
+
+List the models currently loaded in Lemonade, including runtime recipe/type/device information reported by the server. Use this when the question is specifically about current residency; use lemonade_list_models for broader discovery.
+
+**Returns**
+
+Returns a result from lemonade_get_loaded_models, including structured content on success.
+
+**MCP annotations**
+
+```json
+{
+  "destructiveHint": false,
+  "openWorldHint": false,
+  "readOnlyHint": true
+}
+```
+
+This tool takes no arguments.
+
+### `lemonade_pull_model`
+
+Download or register a model using the same implementation as POST /v1/pull. For a built-in/registered model, pass its exact model_name. For a custom remote model, pass a user.* model_name plus checkpoint and recipe. This call is synchronous and may take a long time for large model downloads.
+
+**Returns**
+
+Returns a result from lemonade_pull_model, including structured content on success.
+
+**MCP annotations**
+
+```json
+{
+  "destructiveHint": false,
+  "openWorldHint": true,
+  "readOnlyHint": false
+}
+```
+
+| Argument | Required | Schema | Description |
+|---|:---:|---|---|
+| `checkpoint` | no | `{"type":"string"}` | Optional remote repository/checkpoint selector accepted by /pull. |
+| `do_not_upgrade` | no | `{"type":"boolean"}` | Skip upgrading an already-cached registered model. |
+| `model_name` | yes | `{"type":"string"}` | Exact registered model ID, or user.* ID for a new custom model. |
+| `recipe` | no | `{"type":"string"}` | Recipe required when registering a custom checkpoint. |
+| `source` | no | `{"type":"string"}` | Optional remote registry source, for example huggingface or modelscope. |
+
+### `lemonade_delete_model`
+
+Delete exactly one model using the same implementation as POST /v1/delete. This is destructive. The model_name must identify an existing model exactly and confirm must be true. A loaded model is unloaded first, matching the REST endpoint.
+
+**Returns**
+
+Returns a result from lemonade_delete_model, including structured content on success.
+
+**MCP annotations**
+
+```json
+{
+  "destructiveHint": true,
+  "openWorldHint": false,
+  "readOnlyHint": false
+}
+```
+
+| Argument | Required | Schema | Description |
+|---|:---:|---|---|
+| `confirm` | yes | `{"enum":[true],"type":"boolean"}` | Must be true to execute deletion. |
+| `model_name` | yes | `{"type":"string"}` | Exact existing model ID to delete. |
+
 ### `lemonade_list_models`
 
 List models known to the Lemonade server. ALWAYS call this first if you don't already know the exact model name to use for chat/transcribe/image — passing a wrong name may trigger a multi-GB download. Returns a summary text block plus a JSON block with `{loaded, available, suggested_to_pull, recommended_chat_model}`.
@@ -181,6 +319,16 @@ List models known to the Lemonade server. ALWAYS call this first if you don't al
 **Returns**
 
 Success returns two `text` content blocks: a human-readable summary, then a JSON-stringified object with `loaded`, `available`, `suggested_to_pull`, and `recommended_chat_model`.
+
+**MCP annotations**
+
+```json
+{
+  "destructiveHint": false,
+  "openWorldHint": false,
+  "readOnlyHint": true
+}
+```
 
 | Argument | Required | Schema | Description |
 |---|:---:|---|---|
@@ -276,6 +424,30 @@ Success always starts with one `text` block containing the final text. Artifacts
 | `tools` | no | `{"items":{"type":"object"},"type":"array"}` | OpenAI-compatible application tool definitions passed to the planner. |
 | `top_p` | no | `{"type":"number"}` | Nucleus sampling probability for the planner LLM. |
 
+### `lemonade_web_search`
+
+Search live web or news for current information, products, releases and research. Use search_type=news for recent headlines. Only the query goes to an external provider; linked pages are not fetched.
+
+**Returns**
+
+Success returns structuredContent with query, search_type, results (title, HTTPS url, snippet; optional source and published_at), and truncated, plus numbered text. Provider failures return isError: true.
+
+**MCP annotations**
+
+```json
+{
+  "destructiveHint": false,
+  "openWorldHint": true,
+  "readOnlyHint": true
+}
+```
+
+| Argument | Required | Schema | Description |
+|---|:---:|---|---|
+| `max_results` | no | `{"minimum":1,"type":"integer"}` | Optional number of results, maximum 5 (default 5). |
+| `query` | yes | `{"type":"string"}` | Search terms (1-256 UTF-8 bytes). |
+| `search_type` | no | `{"enum":["web","news"],"type":"string"}` | Use news for current events/headlines; default web. |
+
 ### `lemonade_docs`
 
 Read this server's own API reference. Call with no arguments to list the pages it ships, then pass `page` (an `id` from that list) to read one as markdown. The docs are bundled with the server, so they describe the version actually running and work offline. Use this before hand-writing requests against Lemonade endpoints.
@@ -289,6 +461,23 @@ With `page`, success returns one `text` block containing the raw bundled Markdow
 | `page` | no | `{"type":"string"}` | Optional. Page id from the listing, e.g. 'api/lemonade'. Omit to list. |
 
 <!-- END GENERATED: mcp-tools -->
+
+### Additional server capabilities
+
+`tools/list` is the canonical runtime contract. The following additional
+tools reuse Lemonade's existing server implementations:
+
+| Capability | MCP tool |
+|-----------|----------|
+| Model detail | `lemonade_get_model_info` |
+| Load / unload | `lemonade_load_model`, `lemonade_unload_model` |
+| Pull / delete | `lemonade_pull_model`, `lemonade_delete_model` |
+| Model residency | `lemonade_get_loaded_models` |
+
+Lifecycle actions can change local model state and consume resources.
+MCP annotations and `confirm: true` for model deletion help clients
+present approvals, but are not authorization controls. Clients should
+approve destructive actions and backend installation explicitly.
 
 ## Quick Test with curl
 

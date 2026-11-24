@@ -6,6 +6,7 @@
 #include <lemon/routing_policy.h>
 #include <lemon/routing_policy_parser.h>
 #include <lemon/canonical_id.h>
+#include <lemon/cost_metadata.h>
 #include <lemon/models/model_errors.h>
 #include <lemon/models/model_info.h>
 #include <lemon/models/registry_types.h>
@@ -226,6 +227,10 @@ void ModelIngest::fetch_registry_artifacts(const ModelInfo& info,
                                            DownloadProgressCallback progress,
                                            const utils::CancelToken& cancel) {
     download_from_registry(info, progress, cancel);
+}
+
+std::unique_ptr<FetchableRepository> ModelIngest::repository_for(const ArtifactRef& ref) const {
+    return deps_.resolver->repository_for(ref, {});
 }
 
 // Always queries the registry for the current file tree: offline and
@@ -766,18 +771,27 @@ void ModelIngest::pull(const std::string& model_name,
                     const auto* runtime_config = RuntimeConfig::global();
                     defer_default_source = download_source.empty() && !is_model_collection_recipe(model_info.recipe) &&
                                            runtime_config && runtime_config->offline();
-                    const std::string default_source =
-                        remote_registry_source_name(download_source_for(ModelInfo{}));
-                    const std::string selected = download_source.empty() ? default_source : download_source;
+                    const bool automatic = deps_.automatic_model_source && deps_.automatic_model_source();
+                    // Auto's preference drifts with network weather; it must not orphan a
+                    // complete copy by re-fetching it from the other registry.
+                    const bool keep_downloaded = automatic && download_source.empty() &&
+                        !model_info.registry_source.empty() && model_info.downloaded &&
+                        (is_model_collection_recipe(model_info.recipe) || artifacts().complete(model_info));
+                    const std::string default_source = (automatic && !download_source.empty()) || keep_downloaded
+                        ? "" : remote_registry_source_name(download_source_for(ModelInfo{}));
+                    const std::string selected = !download_source.empty() ? download_source
+                        : keep_downloaded ? model_info.registry_source : default_source;
+                    const std::string source_policy = automatic ? "auto"
+                        : download_source.empty() ? "" : default_source;
                     if (!defer_default_source && (model_info.registry_source != selected ||
-                        (download_source.empty() && !model_info.pull_source_default.empty()))) {
+                        model_info.pull_source_default != source_policy)) {
                         {
                             ModelStore::Write write(*deps_.store);
                             if (auto it = write.draft().find(model_info.model_name);
                                 it != write.draft().end() && it->second.recipe == model_info.recipe &&
                                 it->second.checkpoints == model_info.checkpoints) {
                                 it->second.registry_source = selected;
-                                it->second.pull_source_default = download_source.empty() ? "" : default_source;
+                                it->second.pull_source_default = source_policy;
                                 write.invalidate_cache();
                             }
                         }
@@ -1094,12 +1108,16 @@ void ModelIngest::fetch_model(const ModelInfo& info, bool do_not_upgrade,
 }
 
 
-static const std::vector<std::string> USER_DEFINED_MODEL_PROPS = std::vector<std::string>{
-    "checkpoints", "checkpoint", "recipe", "mmproj", "size",
-    "components", "recipe_options",
-    "routing", "system_prompt", "version", "source", "registry_source",
-    "auto_update"
-};
+static const std::vector<std::string> USER_DEFINED_MODEL_PROPS = [] {
+    std::vector<std::string> props{
+        "checkpoints", "checkpoint", "recipe", "mmproj", "size",
+        "components", "recipe_options",
+        "routing", "system_prompt", "version", "source", "registry_source",
+        "auto_update"
+    };
+    props.insert(props.end(), kCostMetadataKeys.begin(), kCostMetadataKeys.end());
+    return props;
+}();
 
 static bool user_entry_is_router_collection(const json& user_models,
                                             const std::string& key) {
@@ -1145,6 +1163,17 @@ void ModelIngest::register_user_model(const std::string& model_name,
     std::set<std::string> labels = normalized_definition_labels(model_data, &illegal);
     if (!illegal.empty()) {
         throw InvalidModelDefinitionError(describe_illegal_labels(model_name, illegal));
+    }
+
+    // Unusable values are saved as given and only dropped when read, which
+    // would otherwise go unnoticed.
+    for (const std::string& key : unusable_cost_metadata(model_entry)) {
+        LOG(WARNING, "ModelManager") << "Model '" << model_name << "': " << key << " = "
+                                     << model_entry[key].dump()
+                                     << " is ignored by routing (expected "
+                                     << (key == kCostTierKey ? "free, low, medium or high"
+                                                             : "a non-negative number")
+                                     << ")" << std::endl;
     }
 
     model_entry["labels"] = labels;

@@ -64,6 +64,7 @@ namespace backend_routes {
 extern const RouteArg kRecipe;
 extern const RouteArg kBackend;
 extern const RouteArg kAllowInsecureHttp;
+extern const RouteArg kSource;
 } // namespace backend_routes
 
 namespace downloads {

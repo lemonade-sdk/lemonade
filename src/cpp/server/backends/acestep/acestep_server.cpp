@@ -126,7 +126,7 @@ void AceStepServer::load(const std::string& model_name,
     // ROCm/CUDA: the slim binary finds its runtime in the shared TheRock SDK
     // (ROCm) or bundled next to the exe (CUDA), plus the colocated ggml library.
     // Prepend those dirs to the loader path (mirrors sd-cpp / llama.cpp). Vulkan
-    // needs no special env.
+    // needs no special loader path; visibility is applied at process start.
     std::vector<std::pair<std::string, std::string>> env_vars;
     const std::string exe_dir = std::filesystem::path(exe_path).parent_path().string();
     auto prepend_loader_path = [&env_vars, &exe_dir](const std::string& extra_dirs) {
@@ -150,10 +150,10 @@ void AceStepServer::load(const std::string& model_name,
         prepend_loader_path(dirs);
     } else if (backend == "cuda") {
         prepend_loader_path("");
-        BackendUtils::apply_cuda_env_vars(env_vars, "acestep-server");
     }
 
     LOG(INFO, "acestep-server") << "Starting " << exe_path << " on port " << port_ << std::endl;
+
     ServerCommand command;
     command.program = exe_path;
     command.args = std::move(args);

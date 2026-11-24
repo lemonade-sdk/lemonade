@@ -54,6 +54,16 @@ int main() {
               "modelscope reflected in snapshot");
     }
 
+    {
+        RuntimeConfig config(json::object());
+        config.set(json{{"default_model_source", "auto"}});
+        check(config.default_model_source() == "auto" &&
+                  config.snapshot()["default_model_source"] == "auto",
+              "auto is accepted and round-trips as the configured policy");
+        check(!lemon::is_remote_registry_source("auto"),
+              "auto is a policy and cannot be persisted as a registry");
+    }
+
     // Unknown registry names are rejected.
     {
         RuntimeConfig config(json{{"default_model_source", "huggingface"}});
@@ -147,9 +157,14 @@ int main() {
     {
         json req = {{"model_name", "user.M"}, {"recipe", "llamacpp"},
                     {"checkpoint", "owner/repo"}, {"source", "huggingface"}};
-        apply_default_pull_source(req, "modelscope");
+        bool resolved_default = false;
+        apply_default_pull_source(req, [&] {
+            resolved_default = true;
+            return "modelscope";
+        });
         check(req["source"] == "huggingface",
               "explicit source overrides the configured default");
+        check(!resolved_default, "explicit source bypasses a pending automatic decision");
     }
 
     // An explicit registry_source alone suppresses default injection.

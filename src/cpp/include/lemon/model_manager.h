@@ -85,6 +85,8 @@ struct ModelManagerConfig {
     // host. A test that wants to watch a download end to end answers here instead.
     std::function<std::unique_ptr<models::FetchableRepository>(const models::ArtifactRef& ref)>
         repository_for;
+    std::function<bool()> automatic_model_source;
+    std::function<std::string()> default_pull_source;
 };
 
 class ModelManager {
@@ -201,7 +203,8 @@ public:
     // no search to give.
     RegistrySearchResponse search_registry(const std::string& source,
                                            const std::string& query,
-                                           std::size_t limit, bool gguf_only) const;
+                                           std::size_t limit,
+                                           RegistrySearchFormat format) const;
 
     // Delete a model
     void delete_model(const std::string& model_name);

@@ -6,6 +6,7 @@
 #include <locale>
 #include <codecvt>
 #include <algorithm>
+#include <cstdio>
 // INITGUID must be defined before devpkey.h in exactly one .cpp to emit DEVPKEY symbols
 #include <initguid.h>
 #include <devpkey.h>
@@ -347,6 +348,40 @@ std::string get_driver_version_setupapi(const std::string& device_name_substr) {
         break;
     }
 
+    SetupDiDestroyDeviceInfoList(dev_info);
+    return result;
+}
+
+std::string pci_bus_id_for_pnp_device(const std::string& pnp_device_id) {
+    if (pnp_device_id.rfind("PCI\\", 0) != 0) {
+        return "";
+    }
+    HDEVINFO dev_info = SetupDiCreateDeviceInfoList(NULL, NULL);
+    if (dev_info == INVALID_HANDLE_VALUE) {
+        return "";
+    }
+
+    std::string result;
+    SP_DEVINFO_DATA dev_data = {};
+    dev_data.cbSize = sizeof(SP_DEVINFO_DATA);
+    const std::wstring instance_id = string_to_wstring(pnp_device_id);
+    if (SetupDiOpenDeviceInfoW(dev_info, instance_id.c_str(), NULL, 0, &dev_data)) {
+        // Numeric properties rather than DEVPKEY_Device_LocationInfo, whose
+        // "PCI bus 3, device 0, function 0" text is localized.
+        DEVPROPTYPE prop_type = 0;
+        UINT32 bus = 0;
+        UINT32 address = 0;
+        if (SetupDiGetDevicePropertyW(dev_info, &dev_data, &DEVPKEY_Device_BusNumber, &prop_type,
+                                      reinterpret_cast<PBYTE>(&bus), sizeof(bus), NULL, 0) &&
+            SetupDiGetDevicePropertyW(dev_info, &dev_data, &DEVPKEY_Device_Address, &prop_type,
+                                      reinterpret_cast<PBYTE>(&address), sizeof(address), NULL, 0)) {
+            // For PCI, the address is device << 16 | function.
+            char text[16];
+            snprintf(text, sizeof(text), "0000:%02x:%02x.%x", bus & 0xff,
+                     (address >> 16) & 0x1f, address & 0x7);
+            result = text;
+        }
+    }
     SetupDiDestroyDeviceInfoList(dev_info);
     return result;
 }

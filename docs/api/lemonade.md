@@ -310,8 +310,10 @@ Requires `LEMONADE_API_KEY` when it is set.
   - `registry_source` - Remote registry the checkpoint downloads from: `huggingface` or `modelscope`.
   - `recipe_options` - The model's own options: those its registry row authors, with what was saved in `recipe_options.json` on top.
   - `cloud_provider` - Cloud models only: the provider that serves the model.
-  - `cost_input_per_million` - Cloud models only: USD per million input tokens, when the provider reports it.
-  - `cost_output_per_million` - Cloud models only: USD per million output tokens, when the provider reports it.
+  - `cost_tier` - `free`, `low`, `medium` or `high`, when the model's entry sets it.
+  - `cost_input_per_million` - USD per million input tokens: the provider's price for a cloud model, or the model entry's own.
+  - `cost_output_per_million` - USD per million output tokens: the provider's price for a cloud model, or the model entry's own.
+  - `latency_ms_hint` - Expected latency in milliseconds, when the model's entry sets it.
   - `system_prompt` - Omni collections only: the collection's system prompt override.
   - `version` - Router collections only: the policy document's version.
   - `routing` - Router collections only: the routing policy.
@@ -858,7 +860,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `query` or `q` (query) | Yes | Search text, minimum 3 characters after trimming. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `source` (query) | No | Registry to search: `huggingface` or `modelscope`, also accepted as `hf` and `ms`. Defaults to `huggingface`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `limit` (query) | No | Maximum number of results, from `1` to `50`. Defaults to `12`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `format` (query) | No | Only `gguf`, which limits a Hugging Face search to GGUF repositories and favors them in a ModelScope search. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `format` (query) | No | `gguf` limits a Hugging Face search to GGUF repositories and favors them in a ModelScope search. `loom` limits a Hugging Face search to repositories tagged `loom-serve`, the bundles the `loom` recipe runs. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 ### Example
 
@@ -918,7 +920,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 - `source` - The registry searched, by its canonical name.
 - `query` - The query, trimmed.
-- `format` - Present only when `format=gguf` was requested.
+- `format` - Present only when `format` was requested.
 - `total` - Matches the registry reports; can exceed the results returned.
 - `results` - Up to `limit` repositories.
   - `repository_id` - Repository id, such as `unsloth/Qwen3-8B-GGUF`.
@@ -937,7 +939,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | Status | Code | When |
 |--------|------|------|
 | `400` |  | `query` (or `q`) is shorter than 3 characters after trimming |
-| `400` |  | `source` names an unsupported registry, `limit` is not an integer from 1 to 50, or `format` is not `gguf` |
+| `400` |  | `source` names an unsupported registry, `limit` is not an integer from 1 to 50, or `format` is not `gguf` or `loom`, or `format=loom` names a registry other than Hugging Face |
 | `400` | `lemond_offline` | `offline` is set to `true` |
 | `429` |  | The upstream registry rate-limits the request; `error.upstream_status_code` is its status |
 | `502` |  | The upstream registry answers with another error; `error.upstream_status_code` is its status |
@@ -1114,6 +1116,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `width` | No | `sd-cpp`: image width in pixels. Defaults to the model's own, else `512`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `height` | No | `sd-cpp`: image height in pixels. Defaults to the model's own, else `512`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `merge_args` | No | If `true`, server-wide `*_args` still apply when the request sends `*_args`. If `false`, the request's `*_args` are the only arguments passed: server-wide, saved and architecture `*_args` are dropped, as are the arguments Lemonade adds to `llama-server` by default, such as `--parallel 1`. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `backend_source` | No | Where to download the model's backend from if this load installs it, `github` or `modelscope`, for this load only. Defaults to the server's `backend_source`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 Loading a collection (`recipe: "collection.omni"`) loads each component in turn with the component's own saved options; options in the request are not forwarded. A `collection.router` model loads nothing until a request routes to a candidate.
 
@@ -1872,7 +1875,7 @@ This endpoint does not take any parameters.
 
 `gpu_percent` and `vram_gb` come from the primary GPU: the one with the largest known GPU-accessible memory capacity (ties broken by ID), whatever its current utilization, and not necessarily the GPU a model recipe targets. `vram_gb` keeps its historical name but reports GPU memory usage, which can be shared system memory on AMD APUs.
 
-GPU, VRAM and NPU telemetry depends on the operating system and installed drivers. On Linux, AMD and NVIDIA GPUs are enumerated; on Windows, NVIDIA GPUs through NVML and AMD GPUs through DXGI, DXCore and PDH; on macOS `gpus` is empty. NVML does not report whether memory is dedicated or shared, so NVIDIA GPUs report `memory_type` as `unknown`.
+GPU, VRAM and NPU telemetry depends on the operating system and installed drivers. On Linux, AMD and NVIDIA GPUs are enumerated; on Windows, NVIDIA GPUs through NVML and AMD GPUs through DXGI, DXCore, D3DKMT and PDH; on macOS `gpus` is empty. NVML does not report whether memory is dedicated or shared, so NVIDIA GPUs report `memory_type` as `unknown`.
 
 ### Example
 
@@ -2159,7 +2162,7 @@ The same backend can carry different labels on different operating systems. Each
   - `error` - Only when the drive could not be measured.
 - `devices` - Hardware devices detected on the system (no software/support information)
   - `cpu` - CPU information (name, cores, threads)
-  - `amd_gpu` - Usable AMD GPUs, both integrated and discrete; empty when there are none.
+  - `amd_gpu` - Usable AMD GPUs, both integrated and discrete, integrated first; empty when there are none. Each entry may carry `hip_index`, the number HIP gives the GPU (`ROCm<hip_index>` is what the `*_device` options select), which need not follow this list's order; `pci_bus_id`, such as `0000:c3:00.0`; and, on Linux, `uuid`, the ROCr agent UUID. Each is absent when it could not be determined.
   - `nvidia_gpu` - NVIDIA GPUs. When none is found, it holds one entry whose `available` is `false` and whose `error` says why.
   - `amd_npu` - The AMD NPU. Always present; `available` is `false` when none is found, and `error` says why.
 - `recipes` - Software recipes and their backend support status
@@ -2179,6 +2182,7 @@ The same backend can carry different labels on different operating systems. Each
     - `backends` - Available backends for this recipe
       - One entry per backend.
         - `devices` - Devices **on this system** that support this backend; empty when none do.
+        - `runtime_devices` - Optional devices enumerated by an installed backend, as `{name, description}` in the runtime's own order.
         - `state` - Backend lifecycle state: `unsupported`, `installable`, `update_required`, `update_available`, `action_required` or `installed`.
         - `message` - Human-readable status text for GUI and CLI users. Required for `unsupported`, `installable`, and `update_required`; empty for `installed`.
         - `action` - An instruction for the user: for install and update, usually the exact CLI command; for other states it may be empty or another action, such as a URL.
@@ -2228,6 +2232,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `backend` | Yes | The backend within the recipe, such as `vulkan`, `rocm`, `cpu` or `default`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stream` | No | `true` sends the response as server-sent events as it progresses; `false` sends one response once complete. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `force` | No | Local backends: if `true`, installs a backend this system does not support anyway. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `source` | No | Local backends: where the backend's files come from, `github` or the `modelscope` mirror, for this request only. Defaults to the server's `backend_source`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `provider` | No | Cloud providers, which take `backend: "cloud"`, required: a short identifier matching `[a-z0-9_-]+`, such as `fireworks`, used as the provider's model-name prefix. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `base_url` | No | Cloud providers, required: the provider's base URL, such as one ending in `/v1`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `api_key` | No | Cloud providers: an API key, held in `lemond`'s memory. The provider's environment variable takes precedence; see [`POST /v1/cloud/auth`](#post-v1cloudauth). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -2501,6 +2506,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `recipe` | Yes | The recipe, such as `llamacpp`, `whispercpp` or `vllm`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `backend` | Yes | The backend within the recipe, such as `vulkan`, `rocm`, `cpu` or `default`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `arch` | No | A ROCm GPU architecture, such as `gfx1201`, to resolve for in place of this host's detected one, so CI can check an architecture's asset on a runner without that GPU. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `source` | No | Local backends: where the backend's files come from, `github` or the `modelscope` mirror, for this request only. Defaults to the server's `backend_source`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 Errors carry an `error` string.
 
@@ -2552,7 +2558,7 @@ Lemonade does not check that the asset exists; fetch `url`, or its split-archive
 - `repo` - GitHub repository of the release.
 - `version` - Release version: the pin in `backend_versions.json` unless runtime version policy overrides it.
 - `filename` - Release asset name.
-- `url` - Download URL built from `repo`, `version` and `filename`.
+- `url` - Download URL built from `repo`, `version` and `filename`, from the configured `backend_source` (GitHub, or the ModelScope mirror).
 - `supported` - Whether Lemonade's recipe/backend support matrix accepts the architecture. An unsupported `arch` still resolves, with `false`; without `arch`, a successful answer is always `true`.
 - `supports_split_archive` - Whether the recipe supports assets published as multiple archive parts. When `true`, the real download path can consult a `.partcount` manifest.
 

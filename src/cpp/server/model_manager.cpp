@@ -140,9 +140,13 @@ models::ModelIngest::Deps ModelManager::make_ingest_deps() {
     deps.resolver = resolver_.get();
     deps.artifacts = artifacts_.get();
     deps.default_registry_source = [this] {
+        if (config_.default_pull_source) {
+            return std::make_optional(parse_remote_registry_source(config_.default_pull_source()));
+        }
         if (!default_model_source_provider_) return std::optional<RegistryId>{};
         return std::make_optional(parse_remote_registry_source(default_model_source_provider_()));
     };
+    deps.automatic_model_source = config_.automatic_model_source;
     deps.registries = &registries_;
     deps.store = &store_;
     deps.notifier = &change_notifier_;
@@ -580,14 +584,48 @@ models::CatalogSetDeps ModelManager::make_catalog_deps(
         json_recipe_options[name] = authored;
     };
     deps.registry_rows = std::move(rows);
-    deps.pin_registries = [this] {
+    const bool automatic = config_.automatic_model_source && config_.automatic_model_source();
+    const std::string& huggingface = models::huggingface_descriptor().id.str();
+    const std::string default_source = default_model_source_provider_
+        ? default_model_source_provider_() : huggingface;
+    if (automatic) {
+        const std::string alternate_source = default_source == huggingface
+            ? models::modelscope_descriptor().id.str() : huggingface;
+        deps.resolve_builtin_source = [this, default_source, alternate_source](ModelInfo& info) {
+            if (!info.source.empty() || !info.registry_source.empty() ||
+                !checkpoint_looks_like_repo_id(info.checkpoint())) return;
+            const bool collection = is_model_collection_recipe(info.recipe);
+            if (!collection && download_policy(info) != backends::DownloadPolicy::Repository) return;
+            const auto previous = store_.find(info.model_name);
+            if (previous && previous->pull_source_default == "auto" &&
+                previous->recipe == info.recipe && previous->checkpoints == info.checkpoints) {
+                info.registry_source = previous->registry_source;
+                info.pull_source_default = previous->pull_source_default;
+                return;
+            }
+            info.registry_source = default_source;
+            ModelInfo alternate = info;
+            alternate.registry_source = alternate_source;
+            if (collection) {
+                ingest_->populate_from_cached_manifest(info);
+                if (!info.components.empty()) return;
+                ingest_->populate_from_cached_manifest(alternate);
+                if (alternate.components.empty()) return;
+            } else {
+                resolve_all_model_paths(info);
+                if (artifacts_->complete(info)) return;
+                resolve_all_model_paths(alternate);
+                if (!artifacts_->complete(alternate)) return;
+            }
+            info.registry_source = alternate.registry_source;
+        };
+    }
+    deps.pin_registries = [this, automatic, default_source] {
         auto pinned = registries_.pin();
         auto builtin = std::make_shared<json>(*pinned.builtin);
-        const std::string default_source =
-            remote_registry_source_name(download_source_for(ModelInfo{}));
         for (auto& [name, row] : builtin->items()) {
             try {
-                apply_default_pull_source(row, default_source);
+                apply_default_pull_source(row, automatic ? "" : default_source);
             } catch (const std::exception& e) {
                 LOG(ERROR, "ModelManager") << "Cannot apply default source to built-in model '"
                                           << name << "': " << e.what() << std::endl;
@@ -674,6 +712,11 @@ backends::DownloadPolicy ModelManager::download_policy(const ModelInfo& info) co
 }
 
 void ModelManager::download_registered_model(const ModelInfo& info, bool do_not_upgrade, DownloadProgressCallback progress_callback) {
+    if (config_.automatic_model_source && config_.automatic_model_source() &&
+        download_policy(info) == backends::DownloadPolicy::Repository) {
+        ingest_->pull(info.model_name, json::object(), do_not_upgrade, progress_callback);
+        return;
+    }
     ingest_->fetch_model(info, do_not_upgrade, progress_callback);
 }
 
@@ -737,7 +780,7 @@ std::optional<std::string> ModelManager::resolve_alias(const std::string& alias_
 RegistrySearchResponse ModelManager::search_registry(const std::string& source_name,
                                                              const std::string& query,
                                                              std::size_t limit,
-                                                             bool gguf_only) const {
+                                                             RegistrySearchFormat format) const {
     const auto source = parse_remote_registry_source(source_name);
     models::ArtifactRef probe;
     probe.registry = source;
@@ -746,7 +789,7 @@ RegistrySearchResponse ModelManager::search_registry(const std::string& source_n
         throw std::runtime_error(remote_registry_display_name(source) +
                                  " does not support model search");
     }
-    return repository->search(query, limit, gguf_only);
+    return repository->search(query, limit, format);
 }
 
 void ModelManager::delete_model(const std::string& model_name) {

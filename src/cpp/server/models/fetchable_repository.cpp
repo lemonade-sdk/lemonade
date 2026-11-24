@@ -22,7 +22,8 @@ std::vector<RegistryId>& conflicts() {
 
 }  // namespace
 
-RegistrySearchResponse FetchableRepository::search(const std::string&, std::size_t, bool) const {
+RegistrySearchResponse FetchableRepository::search(const std::string&, std::size_t,
+                                                   RegistrySearchFormat) const {
     throw std::logic_error("This artifact source does not search; ask supports_search() first");
 }
 

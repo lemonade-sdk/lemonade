@@ -7,7 +7,6 @@
 
 #include "lemon/backends/backend_ops.h"
 #include "lemon/model_manager.h"
-#include "lemon/models/registry_types.h"
 #include "lemon/system_info.h"
 
 namespace lemon {
@@ -63,10 +62,7 @@ void ModelLoader::ensure_loaded(const std::string& requested_model, const json& 
     // Passes do_not_upgrade: only /pull checks the registry for a newer revision.
     if (model_manager_->download_policy(info) != lemon::backends::DownloadPolicy::SelfManaged &&
         !model_manager_->is_model_downloaded(requested_model)) {
-        LOG(INFO, "Server") << "Model not cached, downloading from "
-                            << remote_registry_display_name(
-                                   parse_remote_registry_source(info.registry_source))
-                            << "..." << std::endl;
+        LOG(INFO, "Server") << "Model not cached, downloading..." << std::endl;
         LOG(INFO, "Server") << "This may take several minutes for large models." << std::endl;
         model_manager_->download_registered_model(info, true);
         LOG(INFO, "Server") << "Model download complete: " << requested_model << std::endl;
