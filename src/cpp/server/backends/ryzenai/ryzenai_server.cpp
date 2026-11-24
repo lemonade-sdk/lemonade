@@ -82,6 +82,13 @@ void RyzenAIServer::load(const std::string& model_name,
     command.args = std::move(args);
     command.port = port_;
     start_server(std::make_unique<NativeProcess>(ProcessOutput{is_debug(), true}), command);
+
+    // The router seeds device_type_ from the registry, which carries the
+    // descriptor's default for the whole recipe (NPU). Correct only what is
+    // reported with the variant this load actually started: -Hybrid also uses the
+    // iGPU and -CPU runs on the CPU. device_type_ itself stays untouched, so NPU
+    // exclusivity and eviction keep accounting for ryzenai models as before.
+    set_reported_device(backends::ryzenai::device_for_variant(model_name));
 }
 
 json RyzenAIServer::chat_completion(const json& request) {
