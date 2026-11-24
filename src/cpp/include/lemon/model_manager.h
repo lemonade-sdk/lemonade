@@ -201,7 +201,8 @@ public:
     // no search to give.
     RegistrySearchResponse search_registry(const std::string& source,
                                            const std::string& query,
-                                           std::size_t limit, bool gguf_only) const;
+                                           std::size_t limit,
+                                           RegistrySearchFormat format) const;
 
     // Delete a model
     void delete_model(const std::string& model_name);

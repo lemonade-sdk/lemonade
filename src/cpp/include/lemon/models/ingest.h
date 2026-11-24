@@ -67,6 +67,8 @@ class ModelIngest : public ArtifactFetchService {
     void fetch_registry_artifacts(const ModelInfo& info, DownloadProgressCallback progress,
                                   const utils::CancelToken& cancel) override;
 
+    std::unique_ptr<FetchableRepository> repository_for(const ArtifactRef& ref) const override;
+
     // Why a `collection.omni` / `collection.router` definition cannot be registered,
     // in the words the caller returns; empty when it can.
     std::optional<std::string> validate_collection(const std::string& model_name,
