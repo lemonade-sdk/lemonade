@@ -987,9 +987,9 @@ const ChatView: React.FC<ChatViewProps> = ({
   const imageSettingsTouchedRef = useRef(false);
   const imageSettingsCommittedRef = useRef(false);
   const audioGenerationSettingsModelRef = useRef<string | null>(null);
-  const audioGenerationSettingsTouchedRef = useRef(false);
+  const audioGenerationEditedRef = useRef<Set<string>>(new Set());
   const openMossSettingsModelRef = useRef<string | null>(null);
-  const openMossSettingsTouchedRef = useRef(false);
+  const openMossDescriptionEditedRef = useRef(false);
   const [pendingImages, setPendingImages] = useState<Array<{ preview: string; original: File }>>([]);
   const [imageAttachmentError, setImageAttachmentError] = useState('');
   const [imageRegistry] = useState(() => new ConversationImageRegistry());
@@ -1448,57 +1448,61 @@ const ChatView: React.FC<ChatViewProps> = ({
     return () => { cancelled = true; };
   }, [connectionStatus, currentCapability, currentModel, isOpenMossTts]);
 
-  const markAudioGenerationSettingsEdited = useCallback((updater: React.SetStateAction<AudioGenerationSettings>) => {
-    audioGenerationSettingsTouchedRef.current = true;
-    setAudioGenerationSettings(updater);
+  const editAudioGenerationSetting = useCallback(<K extends keyof AudioGenerationSettings>(
+    key: K,
+    value: AudioGenerationSettings[K],
+  ) => {
+    audioGenerationEditedRef.current.add(key);
+    setAudioGenerationSettings(prev => ({ ...prev, [key]: value }));
   }, []);
 
-  const markOpenMossSettingsEdited = useCallback((updater: React.SetStateAction<OpenMossSettings>) => {
-    openMossSettingsTouchedRef.current = true;
-    setOpenMossSettings(updater);
-  }, []);
-
-  const markOpenMossSpeechParamsEdited = useCallback((updater: React.SetStateAction<Record<string, number>>) => {
-    openMossSettingsTouchedRef.current = true;
-    setOpenMossSpeechParams(updater);
+  const editOpenMossDescription = useCallback((voiceDescription: string) => {
+    openMossDescriptionEditedRef.current = true;
+    setOpenMossSettings(prev => ({ ...prev, voiceDescription }));
   }, []);
 
   useEffect(() => {
     const modelKey = currentModel || '';
     if (audioGenerationSettingsModelRef.current !== modelKey) {
       audioGenerationSettingsModelRef.current = modelKey;
-      audioGenerationSettingsTouchedRef.current = false;
+      audioGenerationEditedRef.current = new Set();
     }
-    if (currentCapability !== 'audio-generation' || audioGenerationSettingsTouchedRef.current) return;
+    if (currentCapability !== 'audio-generation') return;
     const recipeOptions = currentModelRecipeOptions || {};
     const fallback = isOpenMossSfx ? OPENMOSS_SFX_DEFAULTS : DEFAULT_AUDIO_GENERATION_SETTINGS;
     const numericOption = (key: string, value: number) => (
       typeof recipeOptions[key] === 'number' ? recipeOptions[key] as number : value
     );
-    setAudioGenerationSettings(prev => ({
-      ...prev,
+    const defaults: Partial<AudioGenerationSettings> = {
       duration: isAceStepAudio ? 150 : 10,
       steps: numericOption('steps', fallback.steps),
       cfg: numericOption('cfg_scale', fallback.cfg),
       sigmaShift: numericOption('sigma_shift', fallback.sigmaShift),
       negativePrompt: '',
       lyrics: '',
-    }));
+    };
+    const edited = audioGenerationEditedRef.current;
+    const untouched = Object.fromEntries(
+      Object.entries(defaults).filter(([key]) => !edited.has(key)),
+    ) as Partial<AudioGenerationSettings>;
+    setAudioGenerationSettings(prev => ({ ...prev, ...untouched }));
   }, [currentModel, currentCapability, currentModelRecipeOptions, isAceStepAudio, isOpenMossSfx]);
 
   useEffect(() => {
-    const modelKey = currentModel || '';
-    if (openMossSettingsModelRef.current !== modelKey) {
-      openMossSettingsModelRef.current = modelKey;
-      openMossSettingsTouchedRef.current = false;
+    if (!isOpenMossTts) {
+      openMossSettingsModelRef.current = null;
+      return;
     }
-    if (!isOpenMossTts || openMossSettingsTouchedRef.current) return;
-    setOpenMossSettings({
-      mode: 'plain',
-      voiceDescription: String(currentModelRecipeOptions?.voice || ''),
-    });
-    setOpenMossSpeechParams({});
-    setPendingAudioFiles([]);
+    if (openMossSettingsModelRef.current !== currentModel) {
+      openMossSettingsModelRef.current = currentModel;
+      openMossDescriptionEditedRef.current = false;
+      setOpenMossSettings(DEFAULT_OPENMOSS_SETTINGS);
+      setOpenMossSpeechParams({});
+      setPendingAudioFiles([]);
+    }
+    if (openMossDescriptionEditedRef.current) return;
+    const recipeVoice = String(currentModelRecipeOptions?.voice || '');
+    setOpenMossSettings(prev => (prev.voiceDescription === recipeVoice ? prev : { ...prev, voiceDescription: recipeVoice }));
   }, [currentModel, currentModelRecipeOptions, isOpenMossTts]);
 
   useEffect(() => {
@@ -4516,7 +4520,7 @@ ${index}`;
                 min={1}
                 max={600}
                 value={audioGenerationSettings.duration}
-                onChange={e => markAudioGenerationSettingsEdited(prev => ({ ...prev, duration: Math.max(1, Math.min(600, parseInt(e.target.value, 10) || 1)) }))}
+                onChange={e => editAudioGenerationSetting('duration', Math.max(1, Math.min(600, parseInt(e.target.value, 10) || 1)))}
                 disabled={isBusy}
               />
               <small>s</small>
@@ -4528,7 +4532,7 @@ ${index}`;
                 min={1}
                 max={200}
                 value={audioGenerationSettings.steps}
-                onChange={e => markAudioGenerationSettingsEdited(prev => ({ ...prev, steps: Math.max(1, Math.min(200, parseInt(e.target.value, 10) || 1)) }))}
+                onChange={e => editAudioGenerationSetting('steps', Math.max(1, Math.min(200, parseInt(e.target.value, 10) || 1)))}
                 disabled={isBusy}
               />
             </label>
@@ -4541,7 +4545,7 @@ ${index}`;
                   max={30}
                   step={0.5}
                   value={audioGenerationSettings.cfg}
-                  onChange={e => markAudioGenerationSettingsEdited(prev => ({ ...prev, cfg: Math.max(0, Math.min(30, parseFloat(e.target.value) || 0)) }))}
+                  onChange={e => editAudioGenerationSetting('cfg', Math.max(0, Math.min(30, parseFloat(e.target.value) || 0)))}
                   disabled={isBusy}
                 />
               </label>
@@ -4553,7 +4557,7 @@ ${index}`;
                 min={-1}
                 value={audioGenerationSettings.seed}
                 placeholder="-1"
-                onChange={e => markAudioGenerationSettingsEdited(prev => ({ ...prev, seed: seedFromInput(e.target.value) }))}
+                onChange={e => editAudioGenerationSetting('seed', seedFromInput(e.target.value))}
                 disabled={isBusy}
               />
             </label>
@@ -4566,7 +4570,7 @@ ${index}`;
                   max={20}
                   step={0.5}
                   value={audioGenerationSettings.sigmaShift}
-                  onChange={e => markAudioGenerationSettingsEdited(prev => ({ ...prev, sigmaShift: Math.max(0, Math.min(20, parseFloat(e.target.value) || 0)) }))}
+                  onChange={e => editAudioGenerationSetting('sigmaShift', Math.max(0, Math.min(20, parseFloat(e.target.value) || 0)))}
                   disabled={isBusy}
                 />
               </label>
@@ -4577,7 +4581,7 @@ ${index}`;
                 <input
                   type="text"
                   value={audioGenerationSettings.negativePrompt}
-                  onChange={e => markAudioGenerationSettingsEdited(prev => ({ ...prev, negativePrompt: e.target.value }))}
+                  onChange={e => editAudioGenerationSetting('negativePrompt', e.target.value)}
                   placeholder={t('Sounds to steer away from…')}
                   disabled={isBusy}
                 />
@@ -4590,7 +4594,7 @@ ${index}`;
                   type="text"
                   maxLength={12}
                   value={audioGenerationSettings.vocalLanguage}
-                  onChange={e => markAudioGenerationSettingsEdited(prev => ({ ...prev, vocalLanguage: e.target.value }))}
+                  onChange={e => editAudioGenerationSetting('vocalLanguage', e.target.value)}
                   placeholder="en"
                   disabled={isBusy}
                 />
@@ -4601,7 +4605,7 @@ ${index}`;
                 <span>{t('Lyrics')} <small>{t('optional · leave empty for instrumental')}</small></span>
                 <textarea
                   value={audioGenerationSettings.lyrics}
-                  onChange={e => markAudioGenerationSettingsEdited(prev => ({ ...prev, lyrics: e.target.value }))}
+                  onChange={e => editAudioGenerationSetting('lyrics', e.target.value)}
                   placeholder={'[verse]\nMoonlight spills across the floor…\n\n[chorus]\nWe sing until the morning light…'}
                   rows={3}
                   disabled={isBusy}
@@ -4618,7 +4622,7 @@ ${index}`;
                 value={openMossMode}
                 onChange={event => {
                   const mode = event.target.value as OpenMossMode;
-                  markOpenMossSettingsEdited(previous => ({ ...previous, mode }));
+                  setOpenMossSettings(previous => ({ ...previous, mode }));
                   if (mode !== 'clone') setPendingAudioFiles([]);
                 }}
                 disabled={isBusy}
@@ -4640,7 +4644,7 @@ ${index}`;
               <input
                 type="text"
                 value={openMossSettings.voiceDescription}
-                onChange={event => markOpenMossSettingsEdited(previous => ({ ...previous, voiceDescription: event.target.value }))}
+                onChange={event => editOpenMossDescription(event.target.value)}
                 placeholder={openMossMode === 'describe'
                   ? 'Warm low female voice, British accent…'
                   : openMossMode === 'clone'
@@ -4665,7 +4669,7 @@ ${index}`;
                       onChange={event => {
                         const raw = event.target.value;
                         const value = Number(raw);
-                        markOpenMossSpeechParamsEdited(previous => {
+                        setOpenMossSpeechParams(previous => {
                           const next = { ...previous };
                           if (raw === '' || !Number.isFinite(value)) delete next[param.key];
                           else next[param.key] = value;

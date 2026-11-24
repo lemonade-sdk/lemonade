@@ -28,7 +28,11 @@ function wavBytes(): Buffer {
   return header;
 }
 
-async function mockOpenMossServer(page: Page, loadedModel: string, { holdModelOptions = false } = {}) {
+async function mockOpenMossServer(
+  page: Page,
+  loadedModel: string,
+  { holdModelOptions = false, lateOptions = {} as Record<string, unknown> } = {},
+) {
   let releaseModelOptions = () => { };
   const modelOptionsReleased = holdModelOptions
     ? new Promise<void>(resolve => { releaseModelOptions = resolve; })
@@ -67,7 +71,13 @@ async function mockOpenMossServer(page: Page, loadedModel: string, { holdModelOp
       await modelOptionsReleased;
       const name = decodeURIComponent(optionsMatch[1]);
       return route.fulfill({
-        json: { model_name: name, recipe: 'openmoss', saved: {}, effective: { model_name: name }, defaults: { model_name: name } },
+        json: {
+          model_name: name,
+          recipe: 'openmoss',
+          saved: {},
+          effective: { model_name: name, ...lateOptions },
+          defaults: { model_name: name },
+        },
       });
     }
     return route.fulfill({
@@ -92,13 +102,6 @@ async function mockOpenMossServer(page: Page, loadedModel: string, { holdModelOp
   });
 
   return { speechRequests, generationRequests, loadRequests, releaseModelOptions };
-}
-
-async function releaseModelOptionsAndSettle(page: Page, release: () => void) {
-  const loaded = page.waitForResponse(/\/api\/v1\/models\/[^/]+\/options$/);
-  release();
-  await loaded;
-  await page.waitForTimeout(250);
 }
 
 test.describe('OpenMOSS composer', () => {
@@ -177,17 +180,21 @@ test.describe('OpenMOSS composer', () => {
   });
 
   test('voice settings entered before the model options load survive the load', async ({ page }) => {
-    const server = await mockOpenMossServer(page, SPEECH_MODEL, { holdModelOptions: true });
+    const server = await mockOpenMossServer(page, SPEECH_MODEL, {
+      holdModelOptions: true,
+      lateOptions: { voice: 'a gravelly old voice' },
+    });
     await page.goto('/');
 
     const settings = page.locator('.composer__openmoss-settings');
     await settings.locator('select').selectOption('describe');
-    await settings.getByRole('textbox').fill('a gravelly old voice');
     await settings.locator('.composer__openmoss-params > summary').click();
     await settings.getByRole('spinbutton', { name: 'Audio top-k' }).fill('40');
 
-    await releaseModelOptionsAndSettle(page, server.releaseModelOptions);
+    server.releaseModelOptions();
+    await expect(settings.getByRole('textbox')).toHaveValue('a gravelly old voice');
     await expect(settings.locator('select')).toHaveValue('describe');
+    await expect(settings.getByRole('spinbutton', { name: 'Audio top-k' })).toHaveValue('40');
 
     await page.locator('.composer__input').fill('Still here after the options loaded.');
     await page.locator('.composer__send').click();
@@ -199,16 +206,21 @@ test.describe('OpenMOSS composer', () => {
     expect(request.audio_top_k).toBe(40);
   });
 
-  test('sound-effect settings entered before the model options load survive the load', async ({ page }) => {
-    const server = await mockOpenMossServer(page, SFX_MODEL, { holdModelOptions: true });
+  test('sound-effect edits survive a late options load that still updates untouched settings', async ({ page }) => {
+    const server = await mockOpenMossServer(page, SFX_MODEL, {
+      holdModelOptions: true,
+      lateOptions: { cfg_scale: 6.5 },
+    });
     await page.goto('/');
 
     const settings = page.locator('.composer__audio-generation-settings');
     await settings.getByRole('spinbutton', { name: 'Steps' }).fill('30');
     await settings.getByRole('textbox', { name: /Negative prompt/ }).fill('music, speech');
 
-    await releaseModelOptionsAndSettle(page, server.releaseModelOptions);
+    server.releaseModelOptions();
+    await expect(settings.getByRole('spinbutton', { name: 'CFG' })).toHaveValue('6.5');
     await expect(settings.getByRole('spinbutton', { name: 'Steps' })).toHaveValue('30');
+    await expect(settings.getByRole('textbox', { name: /Negative prompt/ })).toHaveValue('music, speech');
 
     await page.locator('.composer__input').fill('rain on a tin roof');
     await page.locator('.composer__send').click();
@@ -217,6 +229,7 @@ test.describe('OpenMOSS composer', () => {
     expect(server.generationRequests).toHaveLength(1);
     const [request] = server.generationRequests;
     expect(request.steps).toBe(30);
+    expect(request.cfg).toBe(6.5);
     expect(request.negative_prompt).toBe('music, speech');
   });
 
