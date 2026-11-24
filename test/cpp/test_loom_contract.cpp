@@ -200,10 +200,10 @@ void check_launch_contract() {
     check("Launch argv omits an unset preset and serve flags",
           loom::build_server_argv("/run", 1, "", {}, "") ==
               std::vector<std::string>({"--model=/run/model.json", "--listen=127.0.0.1:1", device}));
-    check("Serve flags are passed through in order",
-          loom::build_server_argv("/run", 1, "", {"--pool_backing=fixed", loom::kPreloadFlag}, "") ==
+    check("Supported serve flags are passed through in order",
+          loom::build_server_argv("/run", 1, "", {"--workers=5", "--state_slab_bytes=4mib"}, "") ==
               std::vector<std::string>({"--model=/run/model.json", "--listen=127.0.0.1:1", device,
-                                        "--pool_backing=fixed", "--parameter_mode=preload"}));
+                                        "--workers=5", "--state_slab_bytes=4mib"}));
     check("A custom device and memory size follow the defaults, so they win",
           loom::build_server_argv("/run", 1, "", {}, "--device=amdgpu://1 --memory_bytes=16gib", "completion_spin_ns=123") ==
               std::vector<std::string>({"--model=/run/model.json", "--listen=127.0.0.1:1", device + "?completion_spin_ns=123",
