@@ -23,8 +23,6 @@
 #include "lemon/server/model_loader.h"
 #include "lemon/server/route_registry.h"
 
-#include <stdexcept>
-
 namespace lemon {
 namespace {
 
