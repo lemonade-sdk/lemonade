@@ -2124,20 +2124,26 @@ class LemonadeAPI {
     return this._videoResult(model, record, blob);
   }
 
+  // The current key is sent only to the server it belongs to, and wins there
+  // so a key fixed in Settings after a 401 is used. Another server gets the
+  // key the job was created with, which stays in memory only.
+  private _videoJobServer(job: VideoJobRef): LemonadeServerTarget {
+    const apiKey = job.baseUrl === this.baseUrl
+      ? this.apiKey
+      : (this._videoJobKeys.get(videoJobKey(job.baseUrl, job.id)) ?? '');
+    return { baseUrl: job.baseUrl, apiKey };
+  }
+
   async resumeVideoGeneration(
     job: VideoJobRef,
     control: VideoGenerationControl = {},
   ): Promise<VideoGenerationResult> {
-    // Keys stay in memory only. After a restart the current key is sent only
-    // to the server it belongs to, never to the one the job was created on.
-    const jobKey = videoJobKey(job.baseUrl, job.id);
-    const apiKey = this._videoJobKeys.get(jobKey) ?? (job.baseUrl === this.baseUrl ? this.apiKey : '');
     const { record, blob } = await resumeVideoJob(
-      this._videoTransport({ baseUrl: job.baseUrl, apiKey }),
+      this._videoTransport(this._videoJobServer(job)),
       { id: job.id, status: 'running' },
       control,
     );
-    this._videoJobKeys.delete(jobKey);
+    this._videoJobKeys.delete(videoJobKey(job.baseUrl, job.id));
     return this._videoResult(job.model, record, blob);
   }
 

@@ -74,6 +74,26 @@ function json(body) {
     assert.equal(request.auth, undefined);
   }
 
+  // A job lost to a 401 is resumed with the key now in Settings when it runs
+  // on the selected server, not with the key that was refused.
+  api.baseUrl = 'http://server-a:13305';
+  api.apiKey = 'stale-key';
+  global.fetch = async url => {
+    if (String(url).endsWith('/api/v1/videos')) return json({ id: 'job-3', status: 'queued' });
+    return new Response('unauthorized', { status: 401 });
+  };
+  await assert.rejects(api.videoGeneration('Wan', 'a cat', {}, {}));
+  api.apiKey = 'fixed-key';
+  requests.length = 0;
+  global.fetch = async (url, init = {}) => {
+    requests.push({ url: String(url), auth: init.headers?.Authorization });
+    if (String(url).endsWith('/content')) return new Response(new Blob(['clip']), { status: 200 });
+    return json({ id: 'job-3', status: 'completed', output_format: 'webm' });
+  };
+  await api.resumeVideoGeneration({ id: 'job-3', baseUrl: 'http://server-a:13305', model: 'Wan' }, {});
+  assert.ok(requests.length >= 2);
+  for (const request of requests) assert.equal(request.auth, 'Bearer fixed-key');
+
   console.log('Video job server affinity checks passed.');
 })().catch(err => {
   console.error(err);
