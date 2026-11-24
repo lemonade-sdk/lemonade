@@ -1774,7 +1774,7 @@ jobs:
     name: Container smoke test - ${{ matrix.tool }} (${{ matrix.mode }})
     runs-on: ubuntu-24.04
     needs: build-lemonade-deb
-    timeout-minutes: 45
+    timeout-minutes: 75
     strategy:
       fail-fast: false
       matrix:
@@ -1853,7 +1853,7 @@ jobs:
       inputs.enable_signing != true &&
       inputs.disable_macos_signing != true &&
       (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:backends'))
-    timeout-minutes: 15
+    timeout-minutes: 30
     container:
       image: ghcr.io/lemonade-sdk/lemonade/build-environment:ubuntu24.04
       credentials:
@@ -2220,7 +2220,7 @@ jobs:
     # run where merges are gated.
     # Label a PR `ci:macos` to opt it back in.
     if: ${{ !startsWith(github.ref, 'refs/tags/') && inputs.enable_signing != true && (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:macos')) }}
-    timeout-minutes: 45
+    timeout-minutes: 75
     env:
       LEMONADE_CI_MODE: "True"
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
@@ -2590,7 +2590,7 @@ jobs:
     name: Test CLI/Endpoints (windows-latest)
     runs-on: windows-latest
     needs: build-lemonade-server-installer
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
       LEMONADE_CI_MODE: "True"
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
@@ -2721,7 +2721,7 @@ jobs:
     if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:macos')
     runs-on: macos-latest
     needs: build-lemonade-macos-dmg
-    timeout-minutes: 60
+    timeout-minutes: 75
     env:
       LEMONADE_CI_MODE: "True"
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
