@@ -3265,6 +3265,17 @@
         ],
         "size": 1.1
     },
+    "Inkling-2-Mini-Loom": {
+        "checkpoint": "loom-fun/unsloth-Inkling-2-Mini-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "tool-calling",
+            "reasoning"
+        ],
+        "size": 18.1
+    },
     "Laguna-XS-2.1-Loom": {
         "checkpoint": "loom-fun/ggml-org-Laguna-XS-2.1-loom",
         "recipe": "loom",
