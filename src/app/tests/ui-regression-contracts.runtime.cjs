@@ -179,6 +179,11 @@ assert.match(
   /if \(stillHere\(\)\) \{\s*await loadModelForChat\([\s\S]{0,160}if \(stillHere\(\)\) onModelSelect\(model\.name/,
   'a model picked while the reload runs must not be overwritten by it',
 );
+assert.match(
+  sources.chat,
+  /onRetry=\{msg\.role === 'assistant' && !msg\.videoJob \?/,
+  'Retry must not drop a video job that can still be resumed',
+);
 assert.match(sources.chat, /api\.cancelVideoJob\(job\)/, 'deleting a conversation cancels its retained video jobs');
 
 console.log('UI regression contract checks passed.');

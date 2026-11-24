@@ -4297,7 +4297,7 @@ ${index}`;
                   userLabel="You"
                   defaultThinkingOpen={!globalModelSettings.collapseThinkingByDefault}
                   onOptionSelect={handleOptionSelect}
-                  onRetry={msg.role === 'assistant' ? () => handleRetryAssistant(i) : undefined}
+                  onRetry={msg.role === 'assistant' && !msg.videoJob ? () => handleRetryAssistant(i) : undefined}
                   onSpeak={canReadAssistantMessages && msg.role === 'assistant' && !msg.isError && msg.content ? () => handleSpeakAssistantMessage(msg.content) : undefined}
                   onEditUser={msg.role === 'user' ? (text) => handleEditUserMessage(i, text) : undefined}
                   onResumeVideo={msg.videoJob && msg.model && activeId && !isBusy
