@@ -3126,8 +3126,7 @@
         "labels": [
             "chat",
             "tool-calling",
-            "reasoning",
-            "dflash"
+            "reasoning"
         ],
         "size": 18.1
     },
