@@ -107,5 +107,19 @@ int main() {
     CHECK(q8 == 17.0 / 32.0);
     CHECK(resolve(qwen, 31.8, false) < 262144);
     CHECK(resolve(qwen, 31.8, false, q8) == 262144);
+
+    // Recipes with uses_ctx_size=false (such as loom and cloud) manage their
+    // own context window; auto-tune must not run or inject a synthetic ctx_size.
+    for (const char* recipe : {"loom", "cloud"}) {
+        ModelInfo fixed_ctx;
+        fixed_ctx.model_name = std::string("fixed-ctx-") + recipe;
+        fixed_ctx.recipe = recipe;
+        fixed_ctx.size = 19.3;
+        fixed_ctx.device = DEVICE_GPU;
+        fixed_ctx.max_context_window = 262144;
+        RecipeOptions opts(recipe, nlohmann::json::object());
+        CHECK(resolve_auto_ctx_size(opts, fixed_ctx) == -2);
+    }
+
     return failures ? 1 : 0;
 }

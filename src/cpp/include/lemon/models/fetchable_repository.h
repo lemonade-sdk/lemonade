@@ -98,7 +98,7 @@ class FetchableRepository : public ArtifactSource {
     // supports_search() first; the default throws for sources that cannot.
     virtual RegistrySearchResponse search(const std::string& query,
                                           std::size_t limit,
-                                          bool gguf_only) const;
+                                          RegistrySearchFormat format) const;
 
   protected:
     FetchableRepository(ArtifactRef ref, SourcePlacement placement)

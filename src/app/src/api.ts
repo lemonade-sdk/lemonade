@@ -6,6 +6,7 @@
 
 import type { RecipeOptions } from './modelConfiguration';
 import { COLLECTION_IMAGE_SIZE } from './features/collections/collectionImageConfig';
+import { buildChatContextUsage, collectChatTokenCounts, estimateChatContextUsage, newChatTokenCounts, withGeneratedContextUsage, type ChatContextUsage } from './features/chat/contextUsage';
 
 function detectDefaultBaseUrl(): string {
   if (typeof window !== 'undefined' && window.location) {
@@ -212,6 +213,7 @@ export function blobFromDataUrl(dataUrl: string): Blob {
 }
 
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected';
+export type ModelLoadArgumentSource = 'local-overrides' | 'server-config';
 
 export interface HealthData {
   status: string;
@@ -345,10 +347,12 @@ export interface ChatCompletionStats {
   tokens: number;
   reasoningTokens: number;
   reasoningElapsedMs: number | null;
+  context?: ChatContextUsage;
   route?: Record<string, unknown> | null;
 }
 
 export interface LiveStreamStats {
+  context?: ChatContextUsage;
   tps: number;
   tokens: number;
   reasoningTokens: number;
@@ -362,6 +366,8 @@ export interface ChatCompletionCallbacks {
   onReasoning?: (token: string, fullReasoning: string) => void;
   onStats?: (stats: LiveStreamStats) => void;
   onDone?: (stats: ChatCompletionStats) => void;
+  /** Request backend token usage for the GUI composer only. */
+  includeUsage?: boolean;
   onToolCalls?: (toolCalls: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>) => void;
   onError?: (err: Error) => void;
   params?: Record<string, unknown>;
@@ -1461,6 +1467,62 @@ class LemonadeAPI {
 
   // ── Endpoints ───────────────────────────────────────────────────
 
+  async webSearch(
+    args: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<{ query: string; search_type?: 'web' | 'news'; results: Array<{
+    title: string; url: string; snippet: string; source?: string; published_at?: string;
+  }>; truncated: boolean }> {
+    const envelope = await this._json<Record<string, unknown>>('/mcp', {
+      method: 'POST',
+      body: {
+        jsonrpc: '2.0', id: 'web-search', method: 'tools/call',
+        params: { name: 'lemonade_web_search', arguments: args },
+      },
+      signal,
+    });
+    const rpcError = isObject(envelope?.error) ? envelope.error : null;
+    if (rpcError) throw new Error(String(rpcError.message || 'Web search MCP request failed.'));
+    const result = isObject(envelope?.result) ? envelope.result : null;
+    if (!result) throw new Error('Web search returned no MCP result.');
+    const blocks = Array.isArray(result.content) ? result.content : [];
+    const texts = blocks.filter(isObject).filter(block => block.type === 'text' && typeof block.text === 'string')
+      .map(block => String(block.text));
+    if (result.isError === true) throw new Error(texts.join('\n').trim() || 'Web search failed.');
+    let payload: unknown = result.structuredContent;
+    if (payload === undefined) {
+      // Older servers may only provide JSON text blocks, not structuredContent.
+      for (const text of texts) {
+        try { payload = JSON.parse(text); break; } catch { /* try the next block */ }
+      }
+    }
+    if (!isObject(payload) || typeof payload.query !== 'string' ||
+        !Array.isArray(payload.results) || typeof payload.truncated !== 'boolean' || payload.results.length > 5) {
+      throw new Error('Web search returned an invalid result format.');
+    }
+    if (payload.search_type !== undefined && payload.search_type !== 'web' && payload.search_type !== 'news') {
+      throw new Error('Web search returned an invalid search type.');
+    }
+    const results = payload.results.map((entry: unknown) => {
+      if (!isObject(entry) || typeof entry.title !== 'string' ||
+          typeof entry.url !== 'string' || typeof entry.snippet !== 'string') {
+        throw new Error('Web search returned an invalid result entry.');
+      }
+      try {
+        if (new URL(entry.url).protocol !== 'https:') throw new Error();
+      } catch { throw new Error('Web search returned a non-HTTPS result URL.'); }
+      if ((entry.source !== undefined && typeof entry.source !== 'string') ||
+          (entry.published_at !== undefined && typeof entry.published_at !== 'string')) {
+        throw new Error('Web search returned invalid article metadata.');
+      }
+      return { title: entry.title, url: entry.url, snippet: entry.snippet,
+        ...(entry.source ? { source: entry.source } : {}),
+        ...(entry.published_at ? { published_at: entry.published_at } : {}) };
+    });
+    return { query: payload.query, search_type: payload.search_type as 'web' | 'news' | undefined,
+      results, truncated: payload.truncated };
+  }
+
   async health(): Promise<HealthData> {
     const data = normalizeHealth(await this._json<unknown>('/api/v1/health'));
     const signature = JSON.stringify(data);
@@ -1567,7 +1629,22 @@ class LemonadeAPI {
     return result;
   }
 
-  async loadModel(modelName: string, recipeOptions?: Record<string, unknown>, modelInfo?: ModelInfo | null): Promise<unknown> {
+  async loadModel(
+    modelName: string,
+    recipeOptions?: Record<string, unknown>,
+    modelInfo?: ModelInfo | null,
+    argumentSource: ModelLoadArgumentSource = 'local-overrides',
+  ): Promise<unknown> {
+    return this._loadModel(modelName, recipeOptions, modelInfo, argumentSource, false);
+  }
+
+  private async _loadModel(
+    modelName: string,
+    recipeOptions: Record<string, unknown> | undefined,
+    modelInfo: ModelInfo | null | undefined,
+    argumentSource: ModelLoadArgumentSource,
+    restart: boolean,
+  ): Promise<unknown> {
     await this._assertModelNotDownloading(modelName);
     const target = modelName.trim().toLowerCase();
     const cachedModelInfo = modelInfo || this.allModels.find(model => modelInfoKey(model).toLowerCase() === target) || null;
@@ -1581,6 +1658,15 @@ class LemonadeAPI {
       /* webpackChunkName: "model-configuration" */ './modelConfiguration'
     );
     const stagedOptions = recipeOptionsForModel(modelName, cachedModelInfo, recipeOptions as RecipeOptions | undefined, this.systemInfoData);
+    if (argumentSource === 'server-config' && stagedOptions) {
+      // An explicit panel payload must not regain hidden privileged overrides.
+      for (const key of Object.keys(stagedOptions)) {
+        if ((key.endsWith('_args') || key === 'merge_args')
+          && !Object.prototype.hasOwnProperty.call(recipeOptions ?? {}, key)) {
+          delete (stagedOptions as Record<string, unknown>)[key];
+        }
+      }
+    }
     // A load carries whatever the panel currently shows, saved or not, so it must
     // not write those options back as the model's stored defaults.
     const body: Record<string, unknown> = {
@@ -1599,6 +1685,19 @@ class LemonadeAPI {
       console.warn('Could not watch model load progress:', error);
     }
     try {
+      if (restart) {
+        if (Object.keys(body).some(key => key.endsWith('_args'))) {
+          // Use the load credential to check admin access before stopping the
+          // model. HEAD checks the route without transferring the configuration.
+          const server = this.baseUrl;
+          const credential = this.apiKey;
+          await this._fetch('/internal/config', { method: 'HEAD', cache: 'no-store' });
+          if (this.baseUrl !== server || this.apiKey !== credential) {
+            throw new Error('Connection changed while authorizing the model reload');
+          }
+        }
+        await this.unloadModel(modelName);
+      }
       const result = await this._json('/api/v1/load', { method: 'POST', body });
       this._notifyModelsChanged();
       return result;
@@ -1668,15 +1767,9 @@ class LemonadeAPI {
     modelName: string,
     recipeOptions?: Record<string, unknown>,
     modelInfo?: ModelInfo | null,
+    argumentSource: ModelLoadArgumentSource = 'local-overrides',
   ): Promise<unknown> {
-    const target = modelName.trim().toLowerCase();
-    const info = modelInfo || this.allModels.find(model => modelInfoKey(model).toLowerCase() === target) || null;
-    const recipe = String((info as any)?.recipe || '').trim().toLowerCase();
-    if (recipe === 'collection.router' || recipe.startsWith('collection.router.')) {
-      return this.loadModel(modelName, undefined, info);
-    }
-    await this.unloadModel(modelName);
-    return this.loadModel(modelName, recipeOptions, info);
+    return this._loadModel(modelName, recipeOptions, modelInfo, argumentSource, true);
   }
 
   async deleteModel(modelName: string): Promise<unknown> {
@@ -2429,13 +2522,18 @@ class LemonadeAPI {
     limit = 14,
     signal?: AbortSignal,
   ): Promise<RegistrySearchResponse> {
-    const params = new URLSearchParams({
-      source,
-      query,
-      limit: String(limit),
-      format: 'gguf',
-    });
-    return this._json(`/api/v1/registry/search?${params}`, { signal });
+    const search = (format: 'gguf' | 'loom') => this._json<RegistrySearchResponse>(
+      `/api/v1/registry/search?${new URLSearchParams({ source, query, limit: String(limit), format })}`,
+      { signal },
+    );
+    if (source !== 'huggingface') return search('gguf');
+
+    // Loom bundles are a separate Hugging Face tag; a failure there must not
+    // take the GGUF results down with it.
+    const [gguf, loom] = await Promise.all([search('gguf'), search('loom').catch(() => null)]);
+    const seen = new Set((gguf.results || []).map(result => result.repository_id));
+    const extra = (loom?.results || []).filter(result => !seen.has(result.repository_id));
+    return { ...gguf, results: [...(gguf.results || []), ...extra] };
   }
 
   // ── Model registration / pull ───────────────────────────────────
@@ -2587,7 +2685,7 @@ class LemonadeAPI {
     messages: ChatMessage[],
     callbacks: ChatCompletionCallbacks = {}
   ): Promise<void> {
-    const { onToken, onReasoning, onStats, onDone, onToolCalls, onError, params, tools, signal } = callbacks;
+    const { onToken, onReasoning, onStats, onDone, onToolCalls, onError, params, tools, signal, includeUsage } = callbacks;
     const t0 = performance.now();
     let firstTokenTime: number | null = null;
     let tokenCount = 0;
@@ -2597,6 +2695,28 @@ class LemonadeAPI {
     let reasoningClosed = false;
     let routeDecision: Record<string, unknown> | null = null;
     let finishReason: string | null = null;
+    const tokenCounts = newChatTokenCounts();
+    const initialContext = estimateChatContextUsage(messages, tools);
+    let streamedAnswerLength = 0;
+    let streamedThinkingLength = 0;
+    let measuredContext: ChatContextUsage | null = null;
+    let lastMeasuredPrompt: number | null = null;
+    let lastMeasuredCache: number | null = null;
+    const currentContext = (): ChatContextUsage => {
+      const prompt = tokenCounts.usagePrompt ?? tokenCounts.timingPrompt;
+      const cached = tokenCounts.usageCache ?? tokenCounts.timingCache;
+      if (prompt !== null && (prompt !== lastMeasuredPrompt || cached !== lastMeasuredCache)) {
+        measuredContext = buildChatContextUsage(messages, tools, prompt, null, cached);
+        lastMeasuredPrompt = prompt;
+        lastMeasuredCache = cached;
+      }
+      return withGeneratedContextUsage(
+        measuredContext ?? initialContext,
+        streamedAnswerLength,
+        streamedThinkingLength,
+        tokenCounts.usageCompletion ?? tokenCounts.timingCompletion,
+      );
+    };
 
     const reasoningElapsedMs = (now: number): number | null => {
       if (reasoningStartTime == null) return null;
@@ -2620,6 +2740,7 @@ class LemonadeAPI {
         tokens: tokenCount,
         reasoningTokens: reasoningTokenCount,
         reasoningElapsedMs: reasoningElapsedMs(now),
+        context: currentContext(),
         route: routeDecision,
       };
     };
@@ -2637,6 +2758,7 @@ class LemonadeAPI {
         reasoningElapsedMs: reasoningElapsedMs(now),
         elapsed,
         ttft: firstTokenTime ? firstTokenTime - t0 : null,
+        context: currentContext(),
       });
     };
 
@@ -2653,6 +2775,10 @@ class LemonadeAPI {
       const body: Record<string, unknown> = { model, messages, stream: true, ...samplingForModel(model, requestModelInfo), ...(params || {}) };
       if (isRouterRequest && body.route_trace === undefined) body.route_trace = true;
       if (tools && tools.length > 0) body.tools = tools;
+      if (includeUsage) {
+        const options = isObject(body.stream_options) ? body.stream_options : {};
+        body.stream_options = { ...options, include_usage: true };
+      }
       const resp = await this._fetch('/api/v1/chat/completions', {
         method: 'POST',
         body,
@@ -2693,6 +2819,7 @@ class LemonadeAPI {
           }
           try {
             const chunk = JSON.parse(payload);
+            collectChatTokenCounts(tokenCounts, chunk);
             if (isObject(chunk.x_lemonade_route)) routeDecision = { ...chunk.x_lemonade_route };
             // If the Router already selected a candidate, keep that attribution in surfaced errors.
             if (chunk.error) {
@@ -2714,6 +2841,7 @@ class LemonadeAPI {
               reasoningEndTime = now;
               reasoningClosed = false;
               reasoningTokenCount++;
+              streamedThinkingLength += delta.reasoning_content.length;
               reasoning += delta.reasoning_content;
               onReasoning?.(delta.reasoning_content, reasoning);
             }
@@ -2725,6 +2853,7 @@ class LemonadeAPI {
                 reasoningClosed = true;
               }
               tokenCount++;
+              streamedAnswerLength += delta.content.length;
               full += delta.content;
               onToken?.(delta.content, full);
             }
@@ -2742,7 +2871,10 @@ class LemonadeAPI {
                 const entry = pendingToolCalls.get(idx)!;
                 if (tc.id) entry.id = tc.id;
                 if (tc.function?.name) entry.function.name = tc.function.name;
-                if (tc.function?.arguments) entry.function.arguments += tc.function.arguments;
+                if (tc.function?.arguments) {
+                  streamedAnswerLength += tc.function.arguments.length;
+                  entry.function.arguments += tc.function.arguments;
+                }
               }
             }
           } catch {}

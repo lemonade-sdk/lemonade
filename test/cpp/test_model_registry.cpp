@@ -238,7 +238,7 @@ static void test_registration_persists_remote_provenance() {
         {"source", "modelscope"},
         {"checkpoint", "org/repo:Q4_K_M"},
         {"recipe", "llamacpp"},
-    });
+    }, "", /*allow_backend_args=*/true);
     auto remote = manager.get_model_info("user.FromModelScope");
     check("remote source is persisted separately from local origin",
           remote.source.empty() && remote.registry_source == "modelscope");
@@ -248,7 +248,7 @@ static void test_registration_persists_remote_provenance() {
         {"registry_source", "modelscope"},
         {"checkpoint", "org/repo:Q4_K_M"},
         {"recipe", "llamacpp"},
-    });
+    }, "", /*allow_backend_args=*/true);
     auto local = manager.get_model_info("user.LocalMirror");
     check("local origin and remote provenance can coexist",
           local.source == "local_upload" && local.registry_source == "modelscope");

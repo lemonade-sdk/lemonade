@@ -45,7 +45,7 @@ All endpoints are documented in `docs/api`.
 
 **Anthropic-compatible endpoint:** `POST /api/messages` — supports message completion, tool use, and SSE streaming.
 
-**MCP gateway endpoint:** `POST /mcp` — Model Context Protocol (Streamable HTTP transport, spec `2025-06-18`). Exposes tools over a single JSON-RPC 2.0 endpoint.
+**MCP gateway endpoint:** `POST /mcp` — Model Context Protocol (Streamable HTTP transport, spec `2025-06-18`). Exposes a canonical tools/list catalog through one JSON-RPC 2.0 endpoint; keep the detailed tool contract in docs/api/mcp.md.
 
 **WebSocket Realtime API**: OpenAI-compatible Realtime protocol for real-time audio transcription. Also supports streaming Lemonade logs over `/logs/stream`.
 

@@ -2,10 +2,14 @@
 
 #include <lemon/utils/aixlog.hpp>
 
+#include <condition_variable>
+#include <future>
+
 #include "lemon/backend_manager.h"
 #include "lemon/cloud_provider_registry.h"
 #include "lemon/jobs/job_manager.h"
 #include "lemon/model_manager.h"
+#include "lemon/models/registry_types.h"
 #include "lemon/router.h"
 #include "lemon/runtime_config.h"
 #include "lemon/server/config_effects.h"
@@ -23,6 +27,137 @@
 #include "telemetry.h"
 
 namespace lemon {
+
+class ModelSourceMonitor {
+public:
+    explicit ModelSourceMonitor(std::function<void()> on_change)
+        : on_change_(std::move(on_change)) {}
+
+    ~ModelSourceMonitor() { stop(); }
+
+    void configure(const RuntimeConfig& config) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        configure_locked(config.default_model_source() == "auto" && !config.offline());
+    }
+
+    std::string preferred_source() const {
+        return source_name(preferred_.load());
+    }
+
+    std::string default_pull_source(const RuntimeConfig& config) {
+        std::unique_lock<std::mutex> lock(mutex_);
+        for (;;) {
+            if (stopping_) throw std::runtime_error("The server is shutting down");
+            const std::string source = config.default_model_source();
+            configure_locked(source == "auto" && !config.offline());
+            if (!enabled_) return source == "auto" ? preferred_source() : source;
+            if (!probe_) {
+                if (preferred_ != Source::Unknown) return preferred_source();
+                probe_ = std::make_shared<Probe>();
+                changed_.notify_all();
+            }
+            const auto probe = probe_;
+            const auto generation = generation_.load();
+            changed_.wait(lock, [this, &probe, generation] {
+                return generation != generation_ || probe->complete;
+            });
+            if (generation != generation_) continue;
+            if (probe->source == Source::Unknown) {
+                throw std::runtime_error(
+                    "Neither Hugging Face nor ModelScope responded. Try the pull again.");
+            }
+            return source_name(probe->source);
+        }
+    }
+
+    void stop() {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            stopping_ = true;
+            ++generation_;
+        }
+        changed_.notify_all();
+        if (worker_.joinable()) worker_.join();
+    }
+
+private:
+    enum class Source { Unknown, HuggingFace, ModelScope };
+
+    struct Probe {
+        bool complete = false;
+        Source source = Source::Unknown;
+    };
+
+    static const char* source_name(Source source) {
+        return source == Source::ModelScope ? "modelscope" : "huggingface";
+    }
+
+    void configure_locked(bool enabled) {
+        if (stopping_ || enabled_ == enabled) return;
+        if (enabled && !worker_.joinable()) {
+            worker_ = std::thread([this] { run(); });
+        }
+        enabled_ = enabled;
+        ++generation_;
+        preferred_ = Source::Unknown;
+        probe_ = enabled ? std::make_shared<Probe>() : nullptr;
+        changed_.notify_all();
+    }
+
+    void run() {
+        std::unique_lock<std::mutex> lock(mutex_);
+        while (!stopping_) {
+            changed_.wait(lock, [this] { return stopping_ || probe_; });
+            if (stopping_) return;
+
+            const auto probe = probe_;
+            const auto generation = generation_.load();
+            lock.unlock();
+            utils::CancelToken cancel;
+            cancel.should_cancel = [this, generation] { return generation_ != generation; };
+            auto modelscope = std::async(std::launch::async, [&cancel] {
+                return probe_model_registry(models::modelscope_descriptor().id, 10, cancel);
+            });
+            const bool huggingface_reachable =
+                probe_model_registry(models::huggingface_descriptor().id, 10, cancel);
+            const bool modelscope_reachable = !huggingface_reachable && modelscope.get();
+            const Source source = huggingface_reachable ? Source::HuggingFace
+                : modelscope_reachable ? Source::ModelScope : Source::Unknown;
+            lock.lock();
+
+            if (generation == generation_) {
+                if (preferred_.exchange(source) != source) {
+                    lock.unlock();
+                    LOG(INFO, "ModelRegistry") << "Auto model source selected "
+                        << source_name(source) << std::endl;
+                    on_change_();
+                    lock.lock();
+                }
+                if (generation == generation_) {
+                    probe->source = source;
+                    probe->complete = true;
+                    probe_.reset();
+                    changed_.notify_all();
+                }
+            }
+            if (modelscope.valid()) {
+                lock.unlock();
+                modelscope.wait();
+                lock.lock();
+            }
+        }
+    }
+
+    std::function<void()> on_change_;
+    std::atomic<Source> preferred_{Source::Unknown};
+    std::atomic<uint64_t> generation_{0};
+    std::mutex mutex_;
+    std::condition_variable changed_;
+    std::shared_ptr<Probe> probe_;
+    bool enabled_ = false;
+    bool stopping_ = false;
+    std::thread worker_;
+};
 
 // Each route folder's routes.cpp adds its routes in the order httplib should match them.
 void register_openai_text_routes(RouteRegistry& registry, ServerContext& ctx);
@@ -46,7 +181,10 @@ void register_mcp_routes(RouteRegistry& registry, ServerContext& ctx);
 Server::Server(std::shared_ptr<RuntimeConfig> config,
                const std::string& cache_dir,
                const std::string& config_dir)
-    : config_(config), config_dir_(config_dir) {
+    : config_(config), config_dir_(config_dir),
+      model_source_monitor_(std::make_unique<ModelSourceMonitor>([this] {
+          model_manager_->invalidate_models_cache();
+      })) {
     ctx_.server = this;
     ctx_.config = config_.get();
 
@@ -70,7 +208,11 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
     manager_config.cache_dir = cache_dir;
     manager_config.extra_models_dir = config_->extra_models_dir();
     manager_config.cloud_providers = cloud_registry_.get();
-    manager_config.default_model_source = [this]() { return config_->default_model_source(); };
+    manager_config.default_model_source = [this]() { return effective_default_model_source(); };
+    manager_config.automatic_model_source = [this]() {
+        return config_->default_model_source() == "auto";
+    };
+    manager_config.default_pull_source = [this]() { return wait_for_default_model_source(); };
     manager_config.model_catalogs = [this]() { return config_->model_catalogs(); };
     model_manager_ = std::make_unique<ModelManager>(std::move(manager_config));
 
@@ -147,6 +289,7 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
     register_mcp_routes(*registry_, ctx_);
 
     middleware_ = std::make_unique<RequestMiddleware>(config_.get(), registry_.get());
+    ctx_.middleware = middleware_.get();
     web_ui_ = std::make_unique<WebUi>(ctx_);
     listener_ = std::make_unique<HttpListener>(
         config_.get(), router_.get(),
@@ -158,6 +301,7 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
         [this]() { stop(); }, middleware_->api_key_set(), middleware_->admin_api_key_set());
     ctx_.listener = listener_.get();
 
+    refresh_model_source();
     start_model_cache_warmup();
 }
 
@@ -165,6 +309,19 @@ Server::~Server() {
     downloads_->cancel_all();
     model_manager_->cancel_sync();
     stop();
+}
+
+std::string Server::effective_default_model_source() const {
+    const std::string source = config_->default_model_source();
+    return source == "auto" ? model_source_monitor_->preferred_source() : source;
+}
+
+std::string Server::wait_for_default_model_source() {
+    return model_source_monitor_->default_pull_source(*config_);
+}
+
+void Server::refresh_model_source() {
+    model_source_monitor_->configure(*config_);
 }
 
 void Server::start_model_cache_warmup() {
@@ -228,6 +385,7 @@ void Server::run() {
 
 void Server::stop() {
     std::lock_guard<std::mutex> lock(stop_mutex_);
+    model_source_monitor_->stop();
     if (listener_->stop()) {
         LOG(INFO, "Server") << "Unloading models and stopping backend servers..." << std::endl;
         try {

@@ -231,7 +231,7 @@ void test_a_pull_lands_exactly_the_selected_files() {
     Fixture fx = make_fixture();
     ModelManager mm = fx.make_manager();
 
-    mm.download_model("user.Pull-Char", definition());
+    mm.download_model("user.Pull-Char", definition(), false, nullptr, lemon::utils::CancelToken(), /*allow_backend_args=*/true);
 
     const fs::path main_snapshot = repo_cache(mm, "vendor/repo") / "snapshots" / "snap-main-1";
     for (const auto& name : kMainSelected) {
@@ -333,23 +333,22 @@ void test_a_suggested_pull_uses_the_default_source() {
     stage(fx.stage / flat / filename, staged_gguf("suggested"));
     fx.script[repo] = ScriptedRepo{"snap-suggested-1", {file(filename)}};
 
-    bool used_default_source = true;
+    std::string preferred_source = "huggingface";
     ModelManagerConfig config;
-    config.default_model_source = [] { return std::string("modelscope"); };
+    config.default_model_source = [&] { return preferred_source; };
+    config.automatic_model_source = [] { return true; };
     config.repository_for = [&](const ArtifactRef& ref) {
-        if (ref.repo_id == repo) {
-            used_default_source = used_default_source &&
-                ref.registry.value_or(RegistryId("huggingface")) == RegistryId("modelscope");
-        }
         return std::make_unique<ScriptedRepository>(ref, fx.script, fx.stage.string(),
                                                     &fx.trace);
     };
     ModelManager mm(config);
 
-    mm.download_model(model_name, nlohmann::json::object());
+    const auto initial = mm.get_model_info(model_name);
+    preferred_source = "modelscope";
+    mm.download_registered_model(initial, true);
 
-    check(!fx.trace.urls.empty() && used_default_source,
-          "a name-only Suggested pull downloads from the configured default source");
+    check(!fx.trace.urls.empty(),
+          "a download triggered by loading a model uses the effective source");
     const fs::path cache = fs::path(mm.get_hf_cache_dir()) /
         lemon::registry_repo_cache_dir_name(repo, RegistryId("modelscope"));
     const fs::path acquired = cache / "snapshots" / "snap-suggested-1" / filename;
@@ -360,24 +359,38 @@ void test_a_suggested_pull_uses_the_default_source() {
           mm.get_downloaded_models().count(model_name) == 1 &&
           fs::equivalent(mm.get_model_info(model_name).resolved_path(), acquired),
           "the default-source pull is visible at its acquired cache path");
+    preferred_source = "huggingface";
     mm.invalidate_models_cache();
     check(fs::is_regular_file(acquired) && mm.is_model_downloaded(model_name) &&
           mm.get_downloaded_models().count(model_name) == 1 &&
           fs::equivalent(mm.get_model_info(model_name).resolved_path(), acquired),
-          "the acquired default-source model remains visible after a rebuild");
+          "the acquired ModelScope model remains visible after Hugging Face recovers");
+    ModelManager restarted(config);
+    check(restarted.is_model_downloaded(model_name) &&
+          fs::equivalent(restarted.get_model_info(model_name).resolved_path(), acquired),
+          "a restart discovers the cached ModelScope copy when Hugging Face is preferred");
+    const auto acquired_at = fs::last_write_time(acquired);
+    restarted.download_model(model_name, nlohmann::json::object(), false, nullptr,
+                             lemon::utils::CancelToken(), /*allow_backend_args=*/true);
+    check(restarted.get_model_info(model_name).registry_source == "modelscope" &&
+          restarted.is_model_downloaded(model_name) &&
+          fs::last_write_time(acquired) == acquired_at &&
+          !fs::exists(fs::path(restarted.get_hf_cache_dir()) /
+                      lemon::registry_repo_cache_dir_name(repo, RegistryId("huggingface"))),
+          "a later name-only pull keeps the complete ModelScope copy instead of re-fetching it");
 }
 
 void test_a_second_pull_reselects_but_refetches_nothing() {
     Fixture fx = make_fixture();
     ModelManager mm = fx.make_manager();
-    mm.download_model("user.Pull-Char", definition());
-    mm.download_model("user.Pull-Char", nlohmann::json::object());
+    mm.download_model("user.Pull-Char", definition(), false, nullptr, lemon::utils::CancelToken(), /*allow_backend_args=*/true);
+    mm.download_model("user.Pull-Char", nlohmann::json::object(), false, nullptr, lemon::utils::CancelToken(), /*allow_backend_args=*/true);
     reset_trace(fx);
 
     const fs::path main_snapshot = repo_cache(mm, "vendor/repo") / "snapshots" / "snap-main-1";
     const auto installed_at = fs::last_write_time(main_snapshot / "model.gguf");
 
-    mm.download_model("user.Pull-Char", nlohmann::json::object());
+    mm.download_model("user.Pull-Char", nlohmann::json::object(), false, nullptr, lemon::utils::CancelToken(), /*allow_backend_args=*/true);
 
     check(!fx.trace.listings.empty(), "a re-pull still asks each source for its listing");
     check(fs::exists(main_snapshot / "model.gguf"), "an installed file stays installed");
@@ -403,11 +416,11 @@ void test_a_local_gguf_router_registers_with_its_sibling_head() {
                           {{"recipe", "llamacpp"},
                            {"source", "local_path"},
                            {"checkpoint", gguf},
-                           {"labels", {"classification", "zero-shot"}}});
+                           {"labels", {"classification", "zero-shot"}}}, false, false, /*allow_backend_args=*/true);
         mm.register_model("user.Untagged-Router",
                           {{"recipe", "llamacpp"},
                            {"checkpoint", gguf},
-                           {"labels", {"classification", "zero-shot"}}});
+                           {"labels", {"classification", "zero-shot"}}}, false, false, /*allow_backend_args=*/true);
     } catch (const std::exception& e) {
         registered = false;
         std::cerr << "  registration refused: " << e.what() << std::endl;
@@ -435,7 +448,7 @@ void test_a_pull_of_local_files_never_asks_a_registry() {
                                {"checkpoint", base + "/router-f16.gguf"},
                                {"labels", {"classification", "zero-shot"}}};
         lemon::apply_default_pull_source(body, "huggingface");
-        mm.download_model("user.Pulled-Router", body);
+        mm.download_model("user.Pulled-Router", body, false, nullptr, lemon::utils::CancelToken(), /*allow_backend_args=*/true);
     } catch (const std::exception& e) {
         pulled_error = e.what();
     }
@@ -451,7 +464,7 @@ void test_a_pull_of_local_files_never_asks_a_registry() {
     fs::remove(dir / "rulehead.bin");
     std::string missing_error;
     try {
-        mm.download_model("user.Pulled-Router", nlohmann::json::object());
+        mm.download_model("user.Pulled-Router", nlohmann::json::object(), false, nullptr, lemon::utils::CancelToken(), /*allow_backend_args=*/true);
     } catch (const std::exception& e) {
         missing_error = e.what();
     }
@@ -476,7 +489,7 @@ void test_a_scheme_prefixed_router_downloads_from_its_repository() {
                                {"checkpoint", "hf://vendor/router:router-f16.gguf"},
                                {"labels", {"classification", "zero-shot"}}};
         lemon::apply_default_pull_source(body, "modelscope");
-        mm.download_model("user.Scheme-Router", body);
+        mm.download_model("user.Scheme-Router", body, false, nullptr, lemon::utils::CancelToken(), /*allow_backend_args=*/true);
     } catch (const std::exception& e) {
         error = e.what();
     }
@@ -502,8 +515,8 @@ void test_a_scheme_prefixed_router_downloads_from_its_repository() {
     unnormalized["checkpoints"]["main"] = "hf://vendor/repo:model.gguf";
     std::string refused;
     try {
-        mm.download_model("user.Scheme-Raw", unnormalized);
-        mm.download_model("user.Scheme-Raw", nlohmann::json::object());
+        mm.download_model("user.Scheme-Raw", unnormalized, false, nullptr, lemon::utils::CancelToken(), /*allow_backend_args=*/true);
+        mm.download_model("user.Scheme-Raw", nlohmann::json::object(), false, nullptr, lemon::utils::CancelToken(), /*allow_backend_args=*/true);
     } catch (const std::exception& e) {
         refused = e.what();
     }
@@ -524,7 +537,7 @@ void test_a_relative_gguf_path_is_refused_in_words() {
                                    {"checkpoint", relative},
                                    {"labels", {"classification", "zero-shot"}}};
             lemon::apply_default_pull_source(body, "huggingface");
-            mm.download_model("user.Relative-Router", body);
+            mm.download_model("user.Relative-Router", body, false, nullptr, lemon::utils::CancelToken(), /*allow_backend_args=*/true);
         } catch (const std::exception& e) {
             error = e.what();
         }
@@ -542,8 +555,8 @@ void test_a_missing_aux_checkpoint_is_refused_in_words() {
 
     bool threw = false;
     try {
-        mm.download_model("user.Pull-Refuse", def);
-        mm.download_model("user.Pull-Refuse", nlohmann::json::object());
+        mm.download_model("user.Pull-Refuse", def, false, nullptr, lemon::utils::CancelToken(), /*allow_backend_args=*/true);
+        mm.download_model("user.Pull-Refuse", nlohmann::json::object(), false, nullptr, lemon::utils::CancelToken(), /*allow_backend_args=*/true);
     } catch (const MissingCheckpointError& e) {
         threw = true;
         check(std::string(e.what()).find("Additional checkpoint file not found") !=
@@ -565,8 +578,8 @@ void test_a_malformed_aux_checkpoint_never_reaches_the_wire() {
 
     bool threw = false;
     try {
-        mm.download_model("user.Pull-Malformed", def);
-        mm.download_model("user.Pull-Malformed", nlohmann::json::object());
+        mm.download_model("user.Pull-Malformed", def, false, nullptr, lemon::utils::CancelToken(), /*allow_backend_args=*/true);
+        mm.download_model("user.Pull-Malformed", nlohmann::json::object(), false, nullptr, lemon::utils::CancelToken(), /*allow_backend_args=*/true);
     } catch (const std::exception& e) {
         threw = true;
         check(std::string(e.what()).find("exact repository variant") != std::string::npos,
@@ -579,7 +592,7 @@ void test_a_malformed_aux_checkpoint_never_reaches_the_wire() {
 void test_a_cancelled_pull_stops_before_the_first_byte() {
     Fixture fx = make_fixture();
     ModelManager mm = fx.make_manager();
-    mm.download_model("user.Pull-Cancel", definition());
+    mm.download_model("user.Pull-Cancel", definition(), false, nullptr, lemon::utils::CancelToken(), /*allow_backend_args=*/true);
     // The registration call already fetched; clear the bytes so the cancelled
     // pull below has real work it must not do.
     for (const auto* repo : {"vendor/repo", "vendor/aux"}) {
@@ -591,7 +604,7 @@ void test_a_cancelled_pull_stops_before_the_first_byte() {
     token.flag = &flag;
     bool threw = false;
     try {
-        mm.download_model("user.Pull-Cancel", nlohmann::json::object(), false, nullptr, token);
+        mm.download_model("user.Pull-Cancel", nlohmann::json::object(), false, nullptr, token, /*allow_backend_args=*/true);
     } catch (const std::exception& e) {
         threw = true;
         check(std::string(e.what()).find("cancelled") != std::string::npos,
@@ -600,6 +613,160 @@ void test_a_cancelled_pull_stops_before_the_first_byte() {
     check(threw, "a cancelled token stops the pull");
     check(!fs::exists(repo_cache(mm, "vendor/repo") / "snapshots" / "snap-main-1" / "model.gguf"),
           "a cancelled pull leaves no artifact");
+}
+
+void test_queued_inline_pull_uses_the_current_registered_components() {
+    Fixture fx = make_fixture();
+    for (const std::string name : {"original", "current"}) {
+        stage(fx.stage / ("vendor-inline-" + name) / "model.gguf", staged_gguf(name));
+        fx.script["vendor/inline-" + name] = ScriptedRepo{"snap-inline-1", {file("model.gguf")}};
+    }
+    ModelManager mm = fx.make_manager();
+    const nlohmann::json original_child = {{"model_name", "user.InlineOriginal"},
+        {"recipe", "llamacpp"}, {"checkpoint", "vendor/inline-original:model.gguf"}};
+    mm.register_model("user.QueuedInline", {{"recipe", "collection.omni"},
+        {"components", {"user.InlineOriginal"}}, {"models", {original_child}}}, true, true, true);
+    const nlohmann::json current_child = {{"model_name", "user.InlineCurrent"},
+        {"recipe", "llamacpp"}, {"checkpoint", "vendor/inline-current:model.gguf"},
+        {"recipe_options", {{"llamacpp_args", "--threads 3"}}}};
+    mm.register_model("user.QueuedInline", {{"recipe", "collection.omni"},
+        {"components", {"user.InlineCurrent"}}, {"models", {current_child}},
+        {"recipe_options", {{"llamacpp_args", "--threads 2"}}}}, true, true, true);
+    const fs::path registry_file = lemon::utils::path_from_utf8(
+        lemon::utils::get_config_dir()) / "user_models.json";
+    auto before = nlohmann::json::parse(read_file(registry_file));
+    const auto options_before = mm.options("user.InlineCurrent").at("saved");
+    int completed = 0;
+    mm.download_model("user.QueuedInline", {{"components", {"user.InlineOriginal"}}}, true,
+        [&](const lemon::DownloadProgress& progress) {
+            if (progress.complete) ++completed;
+            return true;
+        }, {}, false);
+    check(completed == 1, "queued inline pull completes once");
+    check(fs::is_regular_file(repo_cache(mm, "vendor/inline-current") /
+              "snapshots" / "snap-inline-1" / "model.gguf") &&
+          !fs::exists(repo_cache(mm, "vendor/inline-original") /
+              "snapshots" / "snap-inline-1" / "model.gguf"),
+          "queued inline pull downloads current components instead of the stale payload");
+    auto after = nlohmann::json::parse(read_file(registry_file));
+    before.at("InlineCurrent").erase("size");
+    after.at("InlineCurrent").erase("size");
+    check(after == before && mm.options("user.InlineCurrent").at("saved") == options_before,
+          "queued inline pull preserves admin definitions and backend arguments");
+    mm.invalidate_models_cache();
+    const auto info = mm.get_model_info("user.QueuedInline");
+    check(info.downloaded && info.components == std::vector<std::string>{"user.InlineCurrent"},
+          "queued inline parent is available using its current registered components");
+}
+
+void test_pointer_collection_pull_requires_its_manifest(bool cached) {
+    Fixture fx = make_fixture();
+    const std::string suffix = cached ? "Cached" : "Fresh";
+    const std::string parent = "user.Queued" + suffix;
+    const std::string child = "user.Queued" + suffix + "Child";
+    const std::string second_child = "user.Queued" + suffix + "SecondChild";
+    const std::string second_repo = "vendor/queued-second-" + suffix;
+    stage(fx.stage / ("vendor-queued-second-" + suffix) / "model.gguf", staged_gguf("second"));
+    fx.script[second_repo] = ScriptedRepo{"snap-second-1", {file("model.gguf")}};
+    const std::string repo = "vendor/queued-" + suffix;
+    const std::string filename = "queued-" + suffix + ".json";
+    nlohmann::json original_child = {{"model_name", child}, {"recipe", "llamacpp"},
+        {"checkpoint", "vendor/repo:model.gguf"}};
+    const nlohmann::json second_definition = {{"model_name", second_child}, {"recipe", "llamacpp"},
+        {"checkpoint", second_repo + ":model.gguf"}};
+    const nlohmann::json manifest = {{"recipe", "collection.omni"},
+        {"components", {child, second_child}}, {"models", {original_child, second_definition}}};
+    stage(fx.stage / ("vendor-queued-" + suffix) / filename, manifest.dump());
+    fx.script[repo] = ScriptedRepo{"snap-collection-1", {file(filename)}};
+    ModelManager mm = fx.make_manager();
+    nlohmann::json imported = manifest;
+    imported["checkpoint"] = "vendor/stale-" + suffix;
+    mm.register_model(parent, imported, true, true, true);
+
+    const nlohmann::json admin_parent = {{"recipe", "collection.omni"},
+        {"checkpoint", repo}, {"recipe_options", {{"llamacpp_args", "--threads 2"}}}};
+    mm.register_model(parent, admin_parent, true, true, true);
+    nlohmann::json admin_child = original_child;
+    admin_child["checkpoint"] = "vendor/repo:other.gguf";
+    admin_child["recipe_options"] = {{"llamacpp_args", "--threads 3"}};
+    mm.register_model(child, admin_child, false, true, true);
+    check(!mm.is_model_downloaded(parent), "fresh pointer starts unavailable: " + suffix);
+    if (cached) {
+        mm.download_model(parent, nlohmann::json::object(), true, nullptr, {}, true);
+    }
+    const fs::path registry_file = lemon::utils::path_from_utf8(
+        lemon::utils::get_config_dir()) / "user_models.json";
+    auto before = nlohmann::json::parse(read_file(registry_file));
+    const auto options_before = mm.options(child).at("saved");
+    reset_trace(fx);
+    int completed = 0;
+    std::string error;
+    try {
+        mm.download_model(parent, nlohmann::json::object(), true,
+            [&](const lemon::DownloadProgress& progress) {
+                if (progress.complete) ++completed;
+                return true;
+            }, {}, false);
+    } catch (const std::exception& e) {
+        error = e.what();
+    }
+    check(error.empty() && completed == 1,
+          "pointer pull completes once after manifest resolution: " + suffix + ": " + error);
+    const fs::path cached_manifest = repo_cache(mm, repo) / "snapshots" /
+        "snap-collection-1" / filename;
+    check(fs::is_regular_file(cached_manifest), "pointer pull caches its manifest: " + suffix);
+    if (cached) {
+        check(fx.trace.listings.empty() && fx.trace.urls.empty(),
+              "cached pointer pull reuses acquired manifest and components");
+    }
+    auto after = nlohmann::json::parse(read_file(registry_file));
+    before.at(child.substr(5)).erase("size");
+    after.at(child.substr(5)).erase("size");
+    before.at(second_child.substr(5)).erase("size");
+    after.at(second_child.substr(5)).erase("size");
+    check(after == before && mm.options(child).at("saved") == options_before,
+          "pointer pull preserves admin definitions and backend arguments: " + suffix);
+    mm.invalidate_models_cache();
+    const auto info = mm.get_model_info(parent);
+    check(info.checkpoint() == repo && info.components == std::vector<std::string>{child, second_child} &&
+          info.downloaded && mm.get_downloaded_models().count(parent) == 1,
+          "pointer parent is available after rebuilding from its current manifest: " + suffix);
+    const auto current_child = mm.get_model_info(child);
+    check(current_child.checkpoint() == "vendor/repo:other.gguf" && current_child.downloaded,
+          "manifest keeps the current local component definition: " + suffix);
+    check(mm.is_model_downloaded(second_child) &&
+          fs::is_regular_file(repo_cache(mm, second_repo) / "snapshots" /
+              "snap-second-1" / "model.gguf"),
+          "pointer pull acquires the entire current manifest: " + suffix);
+}
+
+void test_pointer_collection_pull_rejects_an_unavailable_manifest() {
+    Fixture fx = make_fixture();
+    ModelManager mm = fx.make_manager();
+    const std::string child = "user.QueuedUnavailableChild";
+    const nlohmann::json child_definition = {{"model_name", child}, {"recipe", "llamacpp"},
+        {"checkpoint", "vendor/repo:model.gguf"}};
+    mm.register_model("user.QueuedUnavailable", {{"recipe", "collection.omni"},
+        {"checkpoint", "vendor/unavailable-collection"}, {"components", {child}},
+        {"models", {child_definition}}}, true, true, true);
+    mm.download_model(child, nlohmann::json::object(), true, nullptr, {}, true);
+    reset_trace(fx);
+    int completed = 0;
+    bool rejected = false;
+    try {
+        mm.download_model("user.QueuedUnavailable", nlohmann::json::object(), true,
+            [&](const lemon::DownloadProgress& progress) {
+                if (progress.complete) ++completed;
+                return true;
+            }, {}, false);
+    } catch (const std::exception&) {
+        rejected = true;
+    }
+    check(rejected && completed == 0,
+          "an unavailable pointer manifest rejects the pull without a success event");
+    mm.invalidate_models_cache();
+    check(!mm.is_model_downloaded("user.QueuedUnavailable"),
+          "a downloaded child cannot make a pointer without its manifest available");
 }
 
 void test_search_is_a_source_answer() {
@@ -621,7 +788,7 @@ void test_search_is_a_source_answer() {
     check(!quiet.supports_search(), "a plain source declines search");
     bool threw = false;
     try {
-        quiet.search("anything", 5, false);
+        quiet.search("anything", 5, lemon::RegistrySearchFormat::Any);
     } catch (const std::logic_error&) {
         threw = true;
     }
@@ -642,6 +809,10 @@ int main() {
     test_a_pull_of_local_files_never_asks_a_registry();
     test_a_malformed_aux_checkpoint_never_reaches_the_wire();
     test_a_cancelled_pull_stops_before_the_first_byte();
+    test_queued_inline_pull_uses_the_current_registered_components();
+    test_pointer_collection_pull_requires_its_manifest(false);
+    test_pointer_collection_pull_requires_its_manifest(true);
+    test_pointer_collection_pull_rejects_an_unavailable_manifest();
     test_search_is_a_source_answer();
 
     if (!g_failures.empty()) {
