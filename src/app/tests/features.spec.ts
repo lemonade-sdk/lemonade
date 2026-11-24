@@ -1806,13 +1806,17 @@ test.describe('Lemonade UI — Feature Parity', () => {
     expect(loadRequestBody).not.toHaveProperty('llamacpp_args');
     expect(loadRequestBody).not.toHaveProperty('ctx_size');
 
-    // Loading switches to Chat, so come back before reading the panel again.
+    // Loading switches to Chat once the load and a refresh finish. Wait for that
+    // before coming back, or the late switch hides the panel again mid-test.
     releaseB?.();
+    await expect(page.locator('.titlebar__nav button.is-active')).toContainText('Chat');
     await page.locator('.titlebar__nav').getByText('Models').click();
     await expect(panel.getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
     loadRequestBody = null;
     await page.getByRole('button', { name: `Load ${modelB}` }).click();
-    await expect.poll(() => loadRequestBody?.llamacpp_args).toBeNull();
+    await expect.poll(() => loadRequestBody?.model_name).toBe(modelB);
+    expect(loadRequestBody).not.toHaveProperty('llamacpp_args');
+    expect(loadRequestBody).not.toHaveProperty('merge_args');
   });
 
   test('25b — the form holds the resolved options and Load sends them verbatim', async ({ page }) => {
@@ -1989,7 +1993,10 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await freeformArgs.pressSequentially('2048');
     await expect(freeformArgs).toHaveValue('--spec-draft-n-max 3 -b 2048 -ub 1024');
 
-    await freeformArgs.press('End');
+    await freeformArgs.evaluate(element => {
+      const args = element as HTMLTextAreaElement;
+      args.setSelectionRange(args.value.length, args.value.length);
+    });
     await freeformArgs.press('Space');
     await expect(freeformArgs).toHaveValue('--spec-draft-n-max 3 -b 2048 -ub 1024 ');
 
@@ -2003,8 +2010,10 @@ test.describe('Lemonade UI — Feature Parity', () => {
       .toBe('--temp 1.05 --top-k 20 --presence-penalty 0.05 --zeta 1 --no-mmap');
     expect(loadRequestBody?.merge_args).toBe(false);
 
-    // Loading swaps the view, so come back before editing the form again. The
-    // section stays open across the trip, which is the point of remembering it.
+    // Loading swaps the view once the load and a refresh finish, so wait for it
+    // and come back before editing the form again.
+    // The section stays open across the trip, which is the point of remembering it.
+    await expect(page.locator('.titlebar__nav button.is-active')).toContainText('Chat');
     await page.locator('.titlebar__nav').getByText('Models').click();
     await expect(field('Temperature')).toBeVisible();
     await expect(details).toHaveAttribute('aria-expanded', 'true');
@@ -2037,11 +2046,15 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(field('Top-k')).toHaveValue('20');
     await expect(panel.locator('.detail-configuration__args-fallback')).toHaveCount(0);
 
+    loadRequestBody = null;
     await page.getByRole('button', { name: `Load ${modelName}` }).click();
-    await expect.poll(() => loadRequestBody?.llamacpp_args).toBe(defaultArgs);
+    await expect.poll(() => loadRequestBody?.model_name).toBe(modelName);
+    expect(loadRequestBody).not.toHaveProperty('llamacpp_args');
+    expect(loadRequestBody).not.toHaveProperty('merge_args');
 
     // The axis says where the advised range ends, so a value outside it reads as
     // a choice rather than a surprise.
+    await expect(page.locator('.titlebar__nav button.is-active')).toContainText('Chat');
     await page.locator('.titlebar__nav').getByText('Models').click();
     await expect(panel.locator('.detail-configuration__axis-caution')).toHaveCount(0);
     await field('Temperature').fill('1.6');
@@ -2410,6 +2423,9 @@ test.describe('Lemonade UI — Feature Parity', () => {
   });
 
   test('25j — a reload stays with its model when another model is selected mid-reload', async ({ page }) => {
+    await page.route('**/internal/config', route => route.request().method() === 'HEAD'
+      ? route.fulfill({ status: 200 })
+      : route.fallback());
     const reloadName = 'reloading-model';
     const otherName = 'bystander-model';
     let releaseLoads: (() => void) | null = null;

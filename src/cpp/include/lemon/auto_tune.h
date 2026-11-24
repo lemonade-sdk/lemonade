@@ -8,6 +8,7 @@
 #include <optional>
 #include <system_error>
 #include <lemon/auto_context_budget.h>
+#include <lemon/backends/backend_descriptor_registry.h>
 #include <lemon/backends/backend_ops.h>
 #include <lemon/backends/backend_registry.h>
 #include <lemon/backends/llamacpp/llamacpp_rulehead.h>
@@ -471,6 +472,14 @@ inline bool is_rule_head_router_model(const ModelInfo& model_info) {
 /// The caller should check the return value and update RecipeOptions accordingly.
 inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
                                       const ModelInfo& model_info) {
+    const std::string recipe = effective_options.get_recipe().empty()
+        ? model_info.recipe
+        : effective_options.get_recipe();
+    if (const auto* desc = backends::descriptor_for(recipe);
+        desc != nullptr && !desc->uses_ctx_size) {
+        return -2;
+    }
+
     json ctx_json = effective_options.get_option("ctx_size");
     int64_t ctx_size = ctx_json.is_number() ? ctx_json.get<int64_t>() : -1;
 
@@ -489,7 +498,6 @@ inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
     bool is_embedding = (model_info.type == ModelType::EMBEDDING);
     std::string backend;
     std::string device;
-    const std::string recipe = effective_options.get_recipe();
     const json backend_json = effective_options.get_option(recipe + "_backend");
     const json device_json = effective_options.get_option(recipe + "_device");
     if (backend_json.is_string()) backend = backend_json.get<std::string>();

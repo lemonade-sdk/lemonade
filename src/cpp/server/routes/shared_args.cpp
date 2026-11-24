@@ -110,6 +110,10 @@ const RouteArg kAllowInsecureHttp{"allow_insecure_http", ArgIn::JsonBody, {{"typ
                                   Support::Available,
                                   "Must be `true` to send an API key to a provider whose base URL is "
                                   "`http://`; the opt-in is saved with the provider. Defaults to `false`."};
+const RouteArg kSource{"source", ArgIn::JsonBody, {{"enum", json::array({"github", "modelscope"})}}, false,
+                       Support::Available,
+                       "Local backends: where the backend's files come from, `github` or the `modelscope` "
+                       "mirror, for this request only. Defaults to the server's `backend_source`."};
 } // namespace backend_routes
 
 namespace downloads {

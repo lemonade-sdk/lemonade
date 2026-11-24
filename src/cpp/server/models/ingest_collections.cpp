@@ -163,7 +163,8 @@ json IngestCollections::fetch_manifest(const std::string& repo_id,
 }
 
 std::vector<std::string> IngestCollections::register_components(
-    const json& component_names, const json& component_defs, const std::string& registry_source) {
+    const json& component_names, const json& component_defs, const std::string& registry_source,
+    bool allow_backend_args, const std::string& parent_name, const json& parent_data) {
     auto def_name = [](const json& def) -> std::string {
         if (!def.is_object()) return "";
         for (const char* key : {"model_name", "id"}) {
@@ -174,10 +175,6 @@ std::vector<std::string> IngestCollections::register_components(
         return "";
     };
 
-    // Two passes so register_components is atomic: validate every unknown
-    // component's inline definition first, and only register them once the whole
-    // list is known good. A half-defined component therefore never persists a
-    // stray user.* entry that a later failure would have to roll back.
     std::vector<std::string> components;
     std::vector<std::pair<std::string, json>> pending_registrations;  // canonical, def
     for (const auto& entry : component_names) {
@@ -254,18 +251,23 @@ std::vector<std::string> IngestCollections::register_components(
         }
     }
 
-    for (const auto& [canonical, def] : pending_registrations) {
-        LOG(INFO, "ModelManager") << "Registering collection component as user model: "
-            << canonical << std::endl;
-        fetch_.register_user_model(canonical, def);
+    if (!parent_name.empty()) {
+        if (components.empty()) {
+            throw std::runtime_error("Collection '" + parent_name + "' has no components defined");
+        }
+        json parent = parent_data;
+        parent["components"] = components;
+        pending_registrations.emplace_back(parent_name, std::move(parent));
     }
+    fetch_.register_user_models(pending_registrations, "", allow_backend_args);
     return components;
 }
 
 std::vector<std::string> IngestCollections::resolve_from_manifest(
     const std::string& repo_id, const std::string& registry_source, bool do_not_upgrade) {
     json manifest = fetch_manifest(repo_id, registry_source, do_not_upgrade);
-    return register_components(manifest["components"], manifest["models"], registry_source);
+    return register_components(manifest["components"], manifest["models"], registry_source,
+                               /*allow_backend_args=*/true);
 }
 
 std::optional<std::string> IngestCollections::validate(

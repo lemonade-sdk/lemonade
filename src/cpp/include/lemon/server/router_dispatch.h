@@ -38,6 +38,8 @@ std::optional<RouterDispatchResult> router_dispatch(ServerContext& ctx, std::str
                                                     bool want_trace, nlohmann::json& body,
                                                     const std::optional<ModelInfo>& collection);
 
+nlohmann::json route_span_payload(const RouterDispatchResult& result);
+
 // Router::reconcile_routing_helpers() needs the routing helpers that every active
 // collection.router policy keeps resident, so it can reclaim the rest.
 std::set<std::string> active_policy_helper_models(ModelManager& model_manager);

@@ -88,6 +88,7 @@ const RECIPE_LABELS: Record<string, string> = {
   gufo:            'Gufo',
   ds4:             'DwarfStar4',
   thenoise:        'TheNoise',
+  loom:            'Loom',
 };
 
 const ENGINE_LOGO_BASE = 'https://raw.githubusercontent.com/lemonade-sdk/assets/main/engines/';

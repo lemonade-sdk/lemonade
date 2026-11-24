@@ -1816,7 +1816,11 @@ input[type="checkbox"]:disabled {
   -webkit-overflow-scrolling: touch;
   font-size: var(--text-base);
   line-height: var(--leading-normal);
-  padding: 8px var(--space-2);
+
+  /* Slight optical offset for text ink; same total padding keeps auto-resize stable. */
+  padding: 10px var(--space-2) 6px;
+  align-self: center;
+  margin: 0;
   min-height: 40px;
   max-height: 200px;
   background: transparent;
@@ -5034,6 +5038,19 @@ optgroup {
 .composer__add {
   position: relative;
   flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  height: 38px;
+}
+
+.composer__web-search-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 38px;
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+  line-height: 0;
 }
 
 .composer__add-trigger {
@@ -5048,6 +5065,11 @@ optgroup {
   transition:
     color var(--duration-fast) var(--ease-out),
     background var(--duration-fast) var(--ease-out);
+}
+
+.composer__add-trigger .app-icon,
+.composer__web-search-status .app-icon {
+  display: block;
 }
 
 .composer__add-trigger .app-icon {
@@ -5123,6 +5145,51 @@ optgroup {
   cursor: not-allowed;
 }
 
+/* The Tools row mirrors Web search while keeping its picker and toggle separate. */
+.composer__add-tools-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  border-radius: var(--radius-md);
+}
+
+.composer__add-tools-row:hover {
+  background: var(--surface-2);
+}
+
+.composer__add-tools-open {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.composer__add-tools-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: stretch;
+  flex: 0 0 auto;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-md);
+}
+
+.composer__add-tools-toggle .composer__web-search-switch {
+  margin-left: 0;
+}
+
+.composer__add-tools-toggle:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+
+.composer__add-tools-toggle:focus-visible {
+  outline: 2px solid var(--accent-fg);
+  outline-offset: -2px;
+}
+
+.composer__add-tools-toggle:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .composer__add-icon {
   width: 24px;
   height: 24px;
@@ -5149,6 +5216,49 @@ optgroup {
 .composer__add-text small {
   font-size: var(--text-xs);
   color: var(--text-tertiary);
+}
+
+/* Off remains actionable: it is a deliberately disabled-by-default feature,
+   not a disabled control. The switch is part of the menu button. */
+.composer__add-row--web-search:not(.is-active) .composer__add-icon,
+.composer__add-row--web-search:not(.is-active) .composer__add-text strong {
+  color: var(--text-secondary);
+}
+
+.composer__web-search-switch {
+  margin-left: auto;
+  width: 36px;
+  height: 21px;
+  flex: 0 0 36px;
+  display: flex;
+  align-items: center;
+  padding: 2px;
+  border-radius: 999px;
+  background: var(--border-strong);
+  transition: background var(--duration-fast) var(--ease-out);
+}
+
+.composer__web-search-switch > span {
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: var(--text-primary);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.composer__web-search-switch.is-on {
+  background: var(--accent);
+}
+
+.composer__web-search-switch.is-on > span {
+  transform: translateX(15px);
+  background: var(--accent-on);
+}
+
+.composer__add-error {
+  padding: var(--space-2);
+  color: var(--danger);
+  font-size: var(--text-xs);
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

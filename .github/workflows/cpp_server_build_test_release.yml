@@ -1191,7 +1191,8 @@ jobs:
             runner: [Windows, X64, stx-halo, lemon-prod]
             suites: >-
               [{"name":"whisper","script":"server_whisper.py","extra_args":"--wrapped-server whispercpp","backends":"cpu npu rocm"},
-               {"name":"thenoise","script":"server_thenoise.py","extra_args":"--wrapped-server thenoise","backends":"rocm"}]
+               {"name":"thenoise","script":"server_thenoise.py","extra_args":"--wrapped-server thenoise","backends":"rocm"},
+               {"name":"loom","script":"server_llm.py","extra_args":"--wrapped-server loom","backends":"hrx"}]
           - name: vulkan-stx-halo
             runner: [Windows, X64, vulkan, stx-halo, lemon-prod]
             suites: >-
@@ -1561,11 +1562,12 @@ jobs:
         if: always()
         uses: ./.github/actions/cleanup-processes-linux
 
-  # Container backends run on Devlab Dispatch's ephemeral Strix Halo Linux
-  # runners, which have the memory and scratch disk for DS4 and Halogen models.
+  # Container backends run on Devlab Dispatch's ephemeral Linux runners. Strix
+  # Halo is the default because it has the memory and scratch disk for DS4 and
+  # Halogen models; entries can set `runner` to target another GPU class.
   test-container-backends:
     name: Test container backend - ${{ matrix.name }}
-    runs-on: [self-hosted, Linux, devlab-dispatch, strix-halo]
+    runs-on: [self-hosted, Linux, devlab-dispatch, "${{ matrix.runner || 'strix-halo' }}"]
     needs: build-lemonade-deb
     if: >-
       !startsWith(github.ref, 'refs/tags/') &&
@@ -1602,6 +1604,11 @@ jobs:
             install: "gufo:rocm"
             script: server_llm.py
             extra_args: "--wrapped-server gufo --backend rocm"
+          - name: loom
+            runner: radeon-r9700
+            install: "loom:hrx"
+            script: server_llm.py
+            extra_args: "--wrapped-server loom --backend hrx"
     env:
       LEMONADE_CI_MODE: "True"
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
@@ -1615,6 +1622,12 @@ jobs:
 
       - name: Print the Docker version
         run: docker --version
+
+      # The .deb needs libcpp-httplib0.26, which 24.04 has only in this PPA, and
+      # the R9700 runner image does not ship with it.
+      - name: Add the Lemonade PPA
+        if: matrix.runner == 'radeon-r9700'
+        run: sudo add-apt-repository -y ppa:lemonade-team/bleeding-edge
 
       - name: Install Lemonade (.deb)
         uses: ./.github/actions/install-lemonade-deb
@@ -1664,6 +1677,92 @@ jobs:
           fi
           timeout 60 docker system df || true
 
+  # gufo:rocm runs natively on Windows, so it is tested from the .exe install
+  # on Devlab Dispatch's ephemeral Strix Halo Windows runners.
+  test-exe-devlab-backends:
+    name: Test .exe on Devlab Dispatch - ${{ matrix.name }}
+    runs-on: [self-hosted, Windows, X64, devlab-dispatch, strix-halo]
+    needs: build-lemonade-server-installer
+    if: >-
+      !startsWith(github.ref, 'refs/tags/') &&
+      !startsWith(github.ref, 'refs/heads/release-v') &&
+      inputs.enable_signing != true &&
+      inputs.disable_macos_signing != true &&
+      (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:backends'))
+    timeout-minutes: 240
+    strategy:
+      fail-fast: ${{ github.event_name == 'merge_group' }}
+      matrix:
+        include:
+          - name: gufo
+            install: "gufo:rocm"
+            script: server_llm.py
+            extra_args: "--wrapped-server gufo --backend rocm"
+    env:
+      LEMONADE_CI_MODE: "True"
+      HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
+      PYTHONIOENCODING: utf-8
+      GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+
+      # setup-windows-ci-env points HF_HOME at C:\lemonade-ci\hf. A runner that
+      # provides its own HF_HOME keeps models on a disk that outlives the job,
+      # so a model is downloaded once per machine.
+      - name: Record the runner's HF_HOME
+        shell: PowerShell
+        run: echo "RUNNER_HF_HOME=$env:HF_HOME" >> $Env:GITHUB_ENV
+
+      - name: Setup & sanitize Windows CI environment
+        uses: ./.github/actions/setup-windows-ci-env
+        with:
+          matrix-name: devlab-${{ matrix.name }}
+
+      - name: Restore the runner's HF_HOME
+        if: env.RUNNER_HF_HOME != ''
+        shell: PowerShell
+        run: echo "HF_HOME=$env:RUNNER_HF_HOME" >> $Env:GITHUB_ENV
+
+      - name: Setup Python and virtual environment
+        uses: ./.github/actions/setup-venv
+        with:
+          venv-name: '.venv'
+          python-version: '3.10'
+          requirements-file: 'test/requirements.txt'
+
+      - name: Install and Verify Lemonade Server
+        uses: ./.github/actions/install-lemonade-server-msi
+        with:
+          install-path: ${{ env.LEMONADE_INSTALL_PATH }}
+
+      - name: Install the backend
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $lemonadeExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade.exe"
+          & $lemonadeExe backends
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $lemonadeExe backends install ${{ matrix.install }}
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run tests
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $lemonadeExe = Join-Path $env:LEMONADE_INSTALL_PATH "bin\lemonade.exe"
+          & .\.venv\Scripts\python.exe test/${{ matrix.script }} ${{ matrix.extra_args }} --cli-binary $lemonadeExe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Capture and upload server logs
+        if: always()
+        uses: ./.github/actions/capture-server-logs
+        with:
+          artifact-name: server-logs-exe-devlab-${{ matrix.name }}
+
+      - name: Teardown Windows CI environment
+        if: always()
+        uses: ./.github/actions/teardown-windows-ci-env
+
   # llamacpp:nathanw's image runs llama-server on the CPU when it finds no GPU,
   # so hosted runners can drive each container tool end to end on every PR.
   # Runs on the bare runner, not the build-environment image, because lemond
@@ -1675,7 +1774,7 @@ jobs:
     name: Container smoke test - ${{ matrix.tool }} (${{ matrix.mode }})
     runs-on: ubuntu-24.04
     needs: build-lemonade-deb
-    timeout-minutes: 45
+    timeout-minutes: 75
     strategy:
       fail-fast: false
       matrix:
@@ -1691,8 +1790,10 @@ jobs:
       - uses: actions/checkout@v5
 
       # The .deb needs libcpp-httplib0.26, which 24.04 has only in this PPA.
+      # add-apt-repository queries the Launchpad API, which can hang or
+      # return 5xx, so each attempt is time-limited and retried.
       - name: Add the Lemonade PPA
-        run: sudo add-apt-repository -y ppa:lemonade-team/bleeding-edge
+        run: bash .github/scripts/retry.sh sudo timeout 300 add-apt-repository -y ppa:lemonade-team/bleeding-edge
 
       - name: Install Lemonade (.deb)
         uses: ./.github/actions/install-lemonade-deb
@@ -1752,7 +1853,7 @@ jobs:
       inputs.enable_signing != true &&
       inputs.disable_macos_signing != true &&
       (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:backends'))
-    timeout-minutes: 15
+    timeout-minutes: 30
     container:
       image: ghcr.io/lemonade-sdk/lemonade/build-environment:ubuntu24.04
       credentials:
@@ -1919,7 +2020,7 @@ jobs:
   # settings.
   backends-gate:
     name: Inference backend tests
-    needs: [classify-small-docs-pr, full-ci-gate, build-lemonade-server-installer, build-lemonade-deb, cpp-unit-tests, test-exe-inference, test-deb-inference, test-container-backends, test-container-smoke, test-watchdog-lifecycle-linux]
+    needs: [classify-small-docs-pr, full-ci-gate, build-lemonade-server-installer, build-lemonade-deb, cpp-unit-tests, test-exe-inference, test-deb-inference, test-container-backends, test-exe-devlab-backends, test-container-smoke, test-watchdog-lifecycle-linux]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -2119,7 +2220,7 @@ jobs:
     # run where merges are gated.
     # Label a PR `ci:macos` to opt it back in.
     if: ${{ !startsWith(github.ref, 'refs/tags/') && inputs.enable_signing != true && (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:macos')) }}
-    timeout-minutes: 45
+    timeout-minutes: 75
     env:
       LEMONADE_CI_MODE: "True"
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
@@ -2227,7 +2328,7 @@ jobs:
     name: Test CLI/Endpoints (ubuntu-latest)
     runs-on: ubuntu-latest
     needs: build-lemonade-deb
-    timeout-minutes: 25
+    timeout-minutes: 60
     container:
       image: ghcr.io/lemonade-sdk/lemonade/build-environment:ubuntu24.04
       credentials:
@@ -2275,6 +2376,11 @@ jobs:
         with:
           version: ${{ env.LEMONADE_VERSION }}
 
+      - name: Measure Hugging Face download speed
+        continue-on-error: true
+        shell: bash
+        run: bash .github/scripts/measure_hf_speed.sh
+
       # All test scripts run in one job so they share a single setup and model
       # cache (issue #2103). Each step runs even if an earlier test failed
       # (matching the old fail-fast: false matrix); the job fails if any failed.
@@ -2315,6 +2421,13 @@ jobs:
         run: |
           .venv/bin/python -m test.utils.reset_server_state --best-effort --label "ubuntu router"
           .venv/bin/python test/server_router.py --cli-binary lemonade
+
+      - name: Test routing telemetry
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        shell: bash
+        run: |
+          .venv/bin/python -m test.utils.reset_server_state --best-effort --label "ubuntu routing-telemetry"
+          .venv/bin/python -m unittest -v test.server_telemetry.RoutingTelemetryTests
 
       # The full smoke test can be added to a different GPU equipped pipeline
       # as well if needed, but it would significantly add to the pipeline runtime.
@@ -2486,7 +2599,7 @@ jobs:
     name: Test CLI/Endpoints (windows-latest)
     runs-on: windows-latest
     needs: build-lemonade-server-installer
-    timeout-minutes: 30
+    timeout-minutes: 60
     env:
       LEMONADE_CI_MODE: "True"
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
@@ -2531,6 +2644,11 @@ jobs:
           venv-name: '.venv'
           python-version: '3.10'
           requirements-file: 'test/requirements.txt'
+
+      - name: Measure Hugging Face download speed
+        continue-on-error: true
+        shell: bash
+        run: bash .github/scripts/measure_hf_speed.sh
 
       # All test scripts run in one job so they share a single setup and model
       # cache (issue #2103). Each step runs even if an earlier test failed; the
@@ -2612,7 +2730,7 @@ jobs:
     if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:macos')
     runs-on: macos-latest
     needs: build-lemonade-macos-dmg
-    timeout-minutes: 45
+    timeout-minutes: 75
     env:
       LEMONADE_CI_MODE: "True"
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
@@ -2716,6 +2834,11 @@ jobs:
           venv-name: '.venv'
           python-version: '3.10'
           requirements-file: 'test/requirements.txt'
+
+      - name: Measure Hugging Face download speed
+        continue-on-error: true
+        shell: bash
+        run: bash .github/scripts/measure_hf_speed.sh
 
       # All test scripts run in one job so they share a single setup and model
       # cache (issue #2103). Each step runs even if an earlier test failed; the

@@ -139,7 +139,7 @@ void resolve_and_register_local_model(ModelManager& model_manager,
                                       const std::string& dest_path,
                                       const std::string& model_name,
                                       const json& model_data,
-                                      const std::string& hf_cache) {
+                                      const std::string& hf_cache, bool allow_backend_args) {
     std::string mmproj = model_data.value("mmproj", "");
     std::string recipe = model_data.value("recipe", "");
     bool vision = model_data.value("vision", false);
@@ -190,7 +190,8 @@ void resolve_and_register_local_model(ModelManager& model_manager,
         actual_model_data["mmproj"] = resolved_mmproj;
     }
 
-    model_manager.register_user_model(model_name, actual_model_data, "local_upload");
+    model_manager.register_user_model(model_name, actual_model_data, "local_upload",
+                                      allow_backend_args);
 
     LOG(INFO, "Server") << "Model registered successfully" << std::endl;
 }
@@ -199,7 +200,7 @@ void resolve_and_register_local_model(ModelManager& model_manager,
 
 std::string register_model_definition(ServerContext& ctx, const std::string& model_name,
                                       json& request_json, bool require_definition,
-                                      bool allow_embedded_models, bool local_import) {
+                                      bool allow_embedded_models, bool local_import, bool allow_backend_args) {
     ModelManager& model_manager = *ctx.model_manager;
     if (!request_json.is_object()) {
         throw std::invalid_argument("Request body must be a JSON object");
@@ -259,13 +260,13 @@ std::string register_model_definition(ServerContext& ctx, const std::string& mod
         LOG(INFO, "Server") << "Local import mode - resolving files in: "
                             << dest_path << std::endl;
         resolve_and_register_local_model(model_manager, dest_path, model_name, request_json,
-                                         hf_cache);
+                                         hf_cache, allow_backend_args);
     } else {
         model_manager.register_model(
             model_name,
             request_json,
             /*allow_missing_checkpoint=*/require_definition,
-            /*replace_existing=*/require_definition);
+            /*replace_existing=*/require_definition, allow_backend_args);
     }
 
     return model_manager.get_public_model_name(model_name);
@@ -274,10 +275,13 @@ std::string register_model_definition(ServerContext& ctx, const std::string& mod
 std::optional<std::string> try_register_model_definition(
     ServerContext& ctx, const std::string& model_name, json& request_json,
     bool require_definition, bool allow_embedded_models, bool local_import,
-    httplib::Response& res) {
+    httplib::Response& res, bool allow_backend_args) {
     try {
         return register_model_definition(ctx, model_name, request_json, require_definition,
-                                         allow_embedded_models, local_import);
+                                         allow_embedded_models, local_import, allow_backend_args);
+    } catch (const BackendArgsAuthorizationError& e) {
+        write_plain_error(res, kBackendArgsAdminRequired, e.what());
+        return std::nullopt;
     } catch (const std::invalid_argument& e) {
         write_plain_error(res, kInvalidModelDefinition, e.what());
         return std::nullopt;

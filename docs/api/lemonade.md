@@ -205,7 +205,7 @@ The `lemonade check-updates` command uses this endpoint.
 ## `POST /v1/models/register`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Registers or updates a `user.*` model definition in `user_models.json` without downloading any files, for clients that register and install as separate steps. [`POST /v1/pull`](#post-v1pull) registers the same way and then downloads.
+Registers or updates a `user.*` model definition in `user_models.json` without downloading any files, for clients that register and install as separate steps. [`POST /v1/pull`](#post-v1pull) registers the same way and then downloads. Backend arguments (including legacy option blocks) and collection manifest checkpoints require [admin authorization](../guide/configuration/README.md#admin-api-key).
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -331,6 +331,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | The definition is malformed and nothing is registered, for example a name outside the `user.` namespace or with a reserved `extra.`/`builtin.` prefix, an empty `recipe` where one is required, `checkpoints` without `main`, an unsupported `source`, `components` that are empty or name the collection itself, another collection or an unregistered model, or an invalid routing policy |
 | `400` |  | A field not listed above has the wrong JSON type |
+| `403` | `admin_required` | The request changes backend arguments or a collection manifest source without admin authorization |
 | `500` |  | The definition is invalid in another way and nothing is registered, for example a GGUF `checkpoint` without a variant, a recipe this system cannot run, or labels that name two deployment modes |
 <!-- END GENERATED: lemonade.models_register -->
 
@@ -338,7 +339,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 ## `POST /v1/pull`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Installs a model from the built-in registry, or registers a new `user.*` model from a Hugging Face or ModelScope checkpoint and installs it.
+Installs a model from the built-in registry, or registers a new `user.*` model from a Hugging Face or ModelScope checkpoint and installs it. Backend arguments in imported definitions, including embedded models and legacy option blocks, require [admin authorization](../guide/configuration/README.md#admin-api-key). Defining or changing a collection manifest checkpoint or registry source also requires admin authorization; pulling an existing collection without these overrides remains available.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -626,6 +627,7 @@ A `progress` event reports one file; a `complete` event follows the last one, an
 | `400` | `lemond_offline` | `offline` is set to `true` |
 | `400` | `unknown_model` | Without `stream`, the model is not registered and its name has no `user.` prefix |
 | `400` |  | Labels or `embedding`/`reranking` flags name a deployment mode the recipe cannot serve, or name two |
+| `403` | `admin_required` | The request changes backend arguments or a collection manifest source without admin authorization |
 | `500` |  | Another failure occurs, for example a failed download, a model this system cannot run, a new `user.*` model without `recipe` or `checkpoint`, or a GGUF `checkpoint` without a variant; a new definition stays registered |
 | `503` | `registry_unavailable` | Without `stream`, the model registry rate-limits or is temporarily unavailable; the `Retry-After` header and the body's `upstream_status_code` carry the details |
 <!-- END GENERATED: lemonade.pull -->
@@ -864,7 +866,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `query` or `q` (query) | Yes | Search text, minimum 3 characters after trimming. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `source` (query) | No | Registry to search: `huggingface` or `modelscope`, also accepted as `hf` and `ms`. Defaults to `huggingface`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `limit` (query) | No | Maximum number of results, from `1` to `50`. Defaults to `12`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `format` (query) | No | Only `gguf`, which limits a Hugging Face search to GGUF repositories and favors them in a ModelScope search. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `format` (query) | No | `gguf` limits a Hugging Face search to GGUF repositories and favors them in a ModelScope search. `loom` limits a Hugging Face search to repositories tagged `loom-serve`, the bundles the `loom` recipe runs. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 ### Example
 
@@ -924,7 +926,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 - `source` - The registry searched, by its canonical name.
 - `query` - The query, trimmed.
-- `format` - Present only when `format=gguf` was requested.
+- `format` - Present only when `format` was requested.
 - `total` - Matches the registry reports; can exceed the results returned.
 - `results` - Up to `limit` repositories.
   - `repository_id` - Repository id, such as `unsloth/Qwen3-8B-GGUF`.
@@ -943,7 +945,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | Status | Code | When |
 |--------|------|------|
 | `400` |  | `query` (or `q`) is shorter than 3 characters after trimming |
-| `400` |  | `source` names an unsupported registry, `limit` is not an integer from 1 to 50, or `format` is not `gguf` |
+| `400` |  | `source` names an unsupported registry, `limit` is not an integer from 1 to 50, or `format` is not `gguf` or `loom`, or `format=loom` names a registry other than Hugging Face |
 | `400` | `lemond_offline` | `offline` is set to `true` |
 | `429` |  | The upstream registry rate-limits the request; `error.upstream_status_code` is its status |
 | `502` |  | The upstream registry answers with another error; `error.upstream_status_code` is its status |
@@ -1099,7 +1101,7 @@ A file still held open, for example by a download that was just cancelled, is re
 ## `POST /v1/load`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Loads a registered model into memory, downloading it first when needed, so it is ready before the first request.
+Loads a registered model into memory, downloading it first when needed, so it is ready before the first request. Request-supplied `*_args` and `merge_args` require [admin authorization](../guide/configuration/README.md#admin-api-key), including empty or `null` values.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -1120,6 +1122,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `width` | No | `sd-cpp`: image width in pixels. Defaults to the model's own, else `512`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `height` | No | `sd-cpp`: image height in pixels. Defaults to the model's own, else `512`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `merge_args` | No | If `true`, server-wide `*_args` still apply when the request sends `*_args`. If `false`, the request's `*_args` are the only arguments passed: server-wide, saved and architecture `*_args` are dropped, as are the arguments Lemonade adds to `llama-server` by default, such as `--parallel 1`. Defaults to `true`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `backend_source` | No | Where to download the model's backend from if this load installs it, `github` or `modelscope`, for this load only. Defaults to the server's `backend_source`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 Loading a collection (`recipe: "collection.omni"`) loads each component in turn with the component's own saved options; options in the request are not forwarded. A `collection.router` model loads nothing until a request routes to a candidate.
 
@@ -1246,6 +1249,7 @@ A collection, which has no checkpoint of its own.
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | On-demand models cannot be loaded through /v1/load |
 | `400` | `model_load_refused` | The backend refuses the requested model as it is registered, before it starts anything, such as a decision model whose GGUF type the bundled llama.cpp does not support |
+| `403` | `admin_required` | The request changes backend arguments or a collection manifest source without admin authorization |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `409` | `router_residency_conflict` | Loading the requested model would evict a model that a `collection.router` model needs resident on the same NPU |
@@ -2465,6 +2469,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `backend` | Yes | The backend within the recipe, such as `vulkan`, `rocm`, `cpu` or `default`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `stream` | No | `true` sends the response as server-sent events as it progresses; `false` sends one response once complete. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `force` | No | Local backends: if `true`, installs a backend this system does not support anyway. Defaults to `false`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `source` | No | Local backends: where the backend's files come from, `github` or the `modelscope` mirror, for this request only. Defaults to the server's `backend_source`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `provider` | No | Cloud providers, which take `backend: "cloud"`, required: a short identifier matching `[a-z0-9_-]+`, such as `fireworks`, used as the provider's model-name prefix. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `base_url` | No | Cloud providers, required: the provider's base URL, such as one ending in `/v1`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `api_key` | No | Cloud providers: an API key, held in `lemond`'s memory. The provider's environment variable takes precedence; see [`POST /v1/cloud/auth`](#post-v1cloudauth). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -2738,6 +2743,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `recipe` | Yes | The recipe, such as `llamacpp`, `whispercpp` or `vllm`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `backend` | Yes | The backend within the recipe, such as `vulkan`, `rocm`, `cpu` or `default`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `arch` | No | A ROCm GPU architecture, such as `gfx1201`, to resolve for in place of this host's detected one, so CI can check an architecture's asset on a runner without that GPU. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `source` | No | Local backends: where the backend's files come from, `github` or the `modelscope` mirror, for this request only. Defaults to the server's `backend_source`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 Errors carry an `error` string.
 
@@ -2789,7 +2795,7 @@ Lemonade does not check that the asset exists; fetch `url`, or its split-archive
 - `repo` - GitHub repository of the release.
 - `version` - Release version: the pin in `backend_versions.json` unless runtime version policy overrides it.
 - `filename` - Release asset name.
-- `url` - Download URL built from `repo`, `version` and `filename`.
+- `url` - Download URL built from `repo`, `version` and `filename`, from the configured `backend_source` (GitHub, or the ModelScope mirror).
 - `supported` - Whether Lemonade's recipe/backend support matrix accepts the architecture. An unsupported `arch` still resolves, with `false`; without `arch`, a successful answer is always `true`.
 - `supports_split_archive` - Whether the recipe supports assets published as multiple archive parts. When `true`, the real download path can consult a `.partcount` manifest.
 
@@ -3176,7 +3182,7 @@ The endpoints below create and manage persistent server-side jobs.
 ## `POST /v1/jobs`
 <sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
 
-Creates a job: a sequence of server operations that runs in the background, passing data between steps and branching on results. A job survives client disconnects and server restarts (a restart leaves an active job interrupted), and can be paused, interrupted, resumed, read and deleted.
+Creates a job: a sequence of server operations that runs in the background, passing data between steps and branching on results. A job survives client disconnects and server restarts (a restart leaves an active job interrupted), and can be paused, interrupted, resumed, read and deleted. A `load` step supplying `*_args` or `merge_args` requires [admin authorization](../guide/configuration/README.md#admin-api-key), including empty, `null` or referenced values.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -3232,6 +3238,7 @@ A job with any `load`, `unload` or `chat` step holds the Router's exclusive slot
 | `400` | `invalid_json` | The body is not a JSON object |
 | `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 | `400` |  | The step graph is invalid, for example no steps, a duplicate step id or an unknown `op` |
+| `403` | `admin_required` | The request changes backend arguments or a collection manifest source without admin authorization |
 | `429` |  | All 50 jobs in the store are still active or resumable |
 | `503` |  | The server is shutting down |
 <!-- END GENERATED: lemonade.jobs_create -->

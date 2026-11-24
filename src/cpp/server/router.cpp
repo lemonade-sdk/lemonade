@@ -1906,6 +1906,7 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
 json Router::chat_completion(const json& request, std::atomic<bool>* cancel) {
     std::string requested_model = request.value("model", "");
     std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("LLM", "chat.completions", requested_model, request);
+    if (span) telemetry::apply_route_attributes(*span);
 
     std::optional<WrappedServer::RequestCancelScope> cancel_scope;
     if (cancel) {
@@ -2030,6 +2031,7 @@ json Router::chat_completion(const json& request, std::atomic<bool>* cancel) {
 json Router::completion(const json& request) {
     std::string requested_model = request.value("model", "");
     std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("LLM", "completions", requested_model, request);
+    if (span) telemetry::apply_route_attributes(*span);
 
     try {
         WrappedServer* active_server = nullptr;
@@ -2761,6 +2763,7 @@ void Router::chat_completion_stream(const std::string& request_body, httplib::Da
     std::string requested_model = request_json.value("model", "");
 
     std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("LLM", "chat.completions", requested_model, request_json);
+    if (span) telemetry::apply_route_attributes(*span);
     auto live_request = live_throughput_.start();
 
     bool hide_outputs = false;
@@ -2917,6 +2920,7 @@ void Router::completion_stream(const std::string& request_body, httplib::DataSin
     std::string requested_model = request_json.value("model", "");
 
     std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("LLM", "completions", requested_model, request_json);
+    if (span) telemetry::apply_route_attributes(*span);
     auto live_request = live_throughput_.start();
 
     bool hide_outputs = false;
@@ -3034,6 +3038,7 @@ void Router::responses_stream(const std::string& request_body, httplib::DataSink
     std::string requested_model = request_json.value("model", "");
 
     std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("LLM", "responses", requested_model, request_json);
+    if (span) telemetry::apply_route_attributes(*span);
     auto live_request = live_throughput_.start();
 
     bool hide_outputs = false;

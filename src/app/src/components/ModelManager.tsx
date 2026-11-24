@@ -1685,17 +1685,25 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       // The collection itself stays the selected virtual model in the UI.
       for (const componentName of components) {
         const componentInfo = findCurrentModel(componentName);
-        await loadModelRuntime(componentInfo || componentName, visited);
+        await loadModelRuntime(componentInfo || componentName, visited,
+          overrideOptions === undefined ? undefined : {});
       }
       visited.delete(key);
       return;
     }
 
-    // overrideOptions (the settings shown in the detail panel) win over the
-    // custom model's own load options, which still supply everything else.
     const custom = info ? customLoadOptions(info) : undefined;
     const options = overrideOptions || custom ? { ...custom, ...overrideOptions } : undefined;
-    await api.loadModel(name, options, info);
+    const argumentSource = overrideOptions === undefined ? 'local-overrides' : 'server-config';
+    if (options) {
+      for (const key of Object.keys(options)) {
+        if ((key.endsWith('_args') || key === 'merge_args')
+          && !Object.prototype.hasOwnProperty.call(overrideOptions ?? {}, key)) {
+          delete options[key];
+        }
+      }
+    }
+    await api.loadModel(name, options, info, argumentSource);
     visited.delete(key);
   };
 
@@ -1756,7 +1764,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     const info = allModels.find(m => modelName(m) === name) ?? null;
     markBusy(name);
     try {
-      await api.reloadModel(name, recipeOptions, info);
+      await api.reloadModel(name, recipeOptions, info,
+        recipeOptions === undefined ? 'local-overrides' : 'server-config');
     } finally {
       await refresh();
       clearBusy(name);

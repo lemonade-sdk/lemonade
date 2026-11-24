@@ -4,11 +4,16 @@
 #include <lemon/models/registry_id.h>
 #include <lemon/utils/cancel_token.h>
 
+#include <memory>
+
 namespace lemon {
 
 struct ModelInfo;
 
 namespace models {
+
+struct ArtifactRef;
+class FetchableRepository;
 
 // The two things a backend needs while it fetches: which registry a model's bytes
 // come from, and the engine that writes them into the models directory. Handing
@@ -26,6 +31,10 @@ class ArtifactFetchService {
     virtual void fetch_registry_artifacts(const ModelInfo& info,
                                           DownloadProgressCallback progress,
                                           const utils::CancelToken& cancel) = 0;
+
+    // The resolver's repository for a ref, for a backend that lays out a repository's
+    // files itself. Never null; throws when the ref's registry has no repository.
+    virtual std::unique_ptr<FetchableRepository> repository_for(const ArtifactRef& ref) const = 0;
 };
 
 }  // namespace models
