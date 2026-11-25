@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const Module = require('node:module');
+const { setTimeout: nativeSetTimeout, clearTimeout: nativeClearTimeout } = require('node:timers');
 
 const appRoot = path.resolve(__dirname, '..');
 const hookPath = path.join(appRoot, 'src', 'hooks', 'useMonitorData.ts');
@@ -448,6 +449,31 @@ const tests = [
     },
   },
 ];
+
+for (const test of tests) {
+  const run = test.run;
+  test.run = async () => {
+    const timers = {
+      setTimeout: global.setTimeout,
+      clearTimeout: global.clearTimeout,
+      setInterval: global.setInterval,
+      clearInterval: global.clearInterval,
+    };
+    let watchdog;
+    try {
+      await Promise.race([
+        run(),
+        new Promise((_, reject) => {
+          watchdog = nativeSetTimeout(() => reject(new Error(`Timed out: ${test.name}`)), 5000);
+        }),
+      ]);
+    } finally {
+      nativeClearTimeout(watchdog);
+      Object.assign(global, timers);
+      delete require.cache[hookPath];
+    }
+  };
+}
 
 module.exports = { tests };
 
