@@ -2695,6 +2695,34 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="NDJSON">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#line" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Line
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#error-line" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Error line
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
         
       </ul>
@@ -2811,6 +2839,34 @@
       </span>
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="NDJSON">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#line_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Line
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#error-line_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Error line
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
         
@@ -3981,6 +4037,34 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="NDJSON">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#line" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Line
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#error-line" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Error line
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
         
       </ul>
@@ -4097,6 +4181,34 @@
       </span>
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="NDJSON">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#line_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Line
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#error-line_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Error line
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
         
@@ -5046,6 +5158,8 @@
 <li><code>eval_duration</code> - Generation time in nanoseconds, when the backend reports timings; otherwise <code>0</code>.</li>
 </ul>
 <h4 id="ndjson">NDJSON</h4>
+<p>One JSON object per line.</p>
+<h5 id="line">Line</h5>
 <p>Each line carries the next message piece with <code>done: false</code>. When the message ends, a line with <code>done: true</code> and the real <code>done_reason</code> follows, then a last <code>done: true</code> line with the token counts, which are <code>0</code> when the backend reports no usage, and <code>done_reason</code> <code>stop</code>.</p>
 <ul>
 <li><code>model</code> - The model that generated the response.</li>
@@ -5062,6 +5176,11 @@
 <li><code>total_duration</code>, <code>load_duration</code> - Always <code>0</code>.</li>
 <li><code>prompt_eval_duration</code> - Prompt processing time in nanoseconds on a request with tools, when the backend reports timings; otherwise <code>0</code>.</li>
 <li><code>eval_duration</code> - Generation time in nanoseconds on a request with tools, when the backend reports timings; otherwise <code>0</code>.</li>
+</ul>
+<h5 id="error-line">Error line</h5>
+<p>Sent in place of the rest of the stream when the backend fails after the stream has started. No <code>done: true</code> line follows it, and the status stays <code>200</code>.</p>
+<ul>
+<li><code>error</code> - What failed, such as the backend's message.</li>
 </ul>
 <h3 id="errors">Errors</h3>
 <table>
@@ -5087,6 +5206,11 @@
 <td><code>400</code></td>
 <td><code>invalid_argument</code></td>
 <td>An argument or a value nested in it has the wrong JSON type, or a value its schema does not list</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td></td>
+<td><code>model</code> is any model other than an LLM, such as an image, embedding or transcription model, which is checked before it loads</td>
 </tr>
 <tr>
 <td><code>404</code></td>
@@ -5138,6 +5262,12 @@
 <td><code>prompt</code></td>
 <td>No</td>
 <td>Text to continue, or the image to generate for an image model.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
+<td><code>images</code></td>
+<td>No</td>
+<td>Base64-encoded images, or WAV audio, for models that take them. A request with <code>images</code> runs as a one-message chat, as in Ollama, so the model's chat template applies.</td>
 <td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
 </tr>
 <tr>
@@ -5307,6 +5437,8 @@
 <li><code>total_duration</code>, <code>load_duration</code>, <code>prompt_eval_duration</code>, <code>eval_duration</code> - Always <code>0</code>.</li>
 </ul>
 <h4 id="ndjson_1">NDJSON</h4>
+<p>One JSON object per line.</p>
+<h5 id="line_1">Line</h5>
 <p>Each line carries the next piece of text with <code>done: false</code>. When the text ends, a line with <code>done: true</code> and the real <code>done_reason</code> follows, then a last <code>done: true</code> line with the token counts and <code>done_reason</code> <code>stop</code>.</p>
 <ul>
 <li><code>model</code> - The model that generated the response.</li>
@@ -5319,6 +5451,11 @@
 <li><code>prompt_eval_count</code> - Prompt tokens.</li>
 <li><code>eval_count</code> - Generated tokens.</li>
 <li><code>total_duration</code>, <code>load_duration</code>, <code>prompt_eval_duration</code>, <code>eval_duration</code> - Always <code>0</code>.</li>
+</ul>
+<h5 id="error-line_1">Error line</h5>
+<p>Sent in place of the rest of the stream when the backend fails after the stream has started. No <code>done: true</code> line follows it, and the status stays <code>200</code>.</p>
+<ul>
+<li><code>error</code> - What failed, such as the backend's message.</li>
 </ul>
 <h3 id="errors_1">Errors</h3>
 <table>
@@ -5344,6 +5481,11 @@
 <td><code>400</code></td>
 <td><code>invalid_argument</code></td>
 <td>An argument or a value nested in it has the wrong JSON type, or a value its schema does not list</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td></td>
+<td><code>model</code> is any model other than an LLM or an image generation model, such as an embedding, transcription or upscaling model, which is checked before it loads</td>
 </tr>
 <tr>
 <td><code>404</code></td>
@@ -5524,7 +5666,7 @@
 <li><code>families</code> - A list holding only <code>family</code>.</li>
 <li><code>parameter_size</code> - From the model name, e.g. <code>0.6B</code>; empty when the name has none.</li>
 <li><code>quantization_level</code> - From the checkpoint, e.g. <code>Q4_0</code>; empty when the checkpoint has none.</li>
-<li><code>capabilities</code> - From the model's labels: <code>completion</code> for chat models, <code>embedding</code> for embedding models, plus <code>tools</code>, <code>vision</code> and <code>thinking</code> for the <code>tool-calling</code> (or <code>tools</code>), <code>vision</code> and <code>reasoning</code> labels.</li>
+<li><code>capabilities</code> - From the model's labels: <code>completion</code> for chat models, <code>embedding</code> for embedding models, <code>image</code> for image generation models, <code>speech</code> for text-to-speech models, plus <code>tools</code>, <code>vision</code> and <code>thinking</code> for the <code>tool-calling</code> (or <code>tools</code>), <code>vision</code> and <code>reasoning</code> labels, and <code>audio</code> for llama.cpp models with the <code>chat-transcription</code> label. A SystemOne decision model reports only <code>decision</code>, plus <code>vision</code> when it has that label.</li>
 <li><code>model_info</code> - <code>general.architecture</code> (the recipe) and <code>&lt;recipe&gt;.context_length</code> (the context size in <code>parameters</code>); the other keys are always <code>0</code>.</li>
 </ul>
 <h3 id="errors_3">Errors</h3>

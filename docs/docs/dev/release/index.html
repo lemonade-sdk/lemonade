@@ -3556,8 +3556,8 @@ python<span class="w"> </span>tools/release.py<span class="w"> </span>--sign
 <p>It prints the selected branch, commit, and computed version, then prompts <code>Create and push v&lt;year&gt;.&lt;week&gt;.&lt;number&gt;?</code> before tagging. Because the version is derived from the branch, you cannot promote a candidate by typing the wrong number. Signed tags remain available via <code>--sign</code> for operators who have git tag signing configured locally.</p>
 <p>The <a href="https://github.com/lemonade-sdk/lemonade/blob/main/.github/workflows/cpp_server_build_test_release.yml">cpp_server_build_test_release.yml workflow</a> creates the stable GitHub release and publishes the stable artifacts.</p>
 <h3 id="6-approve-windows-signing">6. Approve Windows Signing</h3>
-<p>Lemonade .msi artifacts are signed by SignPath.io under their SignPath Foundation program. Thank you SignPath!</p>
-<p>Every release must be manually approved on SignPath. After the Windows installer is built by the release action, a job called Sign MSI Installers with SignPath will start.</p>
+<p>Lemonade's Windows release files (both .msi installers and the <code>lemond.exe</code> and <code>lemonade.exe</code> binaries in the Windows embeddable .zip) are signed by SignPath.io under their SignPath Foundation program. Thank you SignPath!</p>
+<p>Every release must be manually approved on SignPath. All Windows files go out in a single signing request, so there is one approval per release. After the Windows installers and embeddable archive are built by the release action, a job called Sign Windows Release with SignPath will start.</p>
 <p>Example from v10.7.0: https://github.com/lemonade-sdk/lemonade/actions/runs/27283434473/job/80587971984</p>
 <p>The log will include a link like this:</p>
 <div class="highlight"><pre><span></span><code>You can view the signing request here: https://app.signpath.io/Web/8103545b-7814-4edc-86d6-a91dc2a2291b/SigningRequests/7eab3b1c-0ad2-4a65-93a5-683a8065e926

@@ -9796,7 +9796,7 @@ data: {"file": "", "file_index": 2, "total_files": 2, "bytes_downloaded": 0, "by
 <tr>
 <td><code>400</code></td>
 <td></td>
-<td><code>source</code> names an unsupported registry, or the Hugging Face GGUF repository is one llama.cpp cannot run</td>
+<td><code>source</code> names an unsupported registry, the repository has no GGUF, ONNX RyzenAI or collection files, its collection manifest is invalid or too large, or the Hugging Face GGUF repository is one llama.cpp cannot run</td>
 </tr>
 <tr>
 <td><code>400</code></td>
@@ -9811,7 +9811,7 @@ data: {"file": "", "file_index": 2, "total_files": 2, "bytes_downloaded": 0, "by
 <tr>
 <td><code>500</code></td>
 <td></td>
-<td>Another failure occurs, for example a repository with no GGUF, ONNX RyzenAI or collection files, or a network error</td>
+<td>Another failure occurs, for example a network error</td>
 </tr>
 </tbody>
 </table>
@@ -11328,6 +11328,7 @@ lemonade_loaded_models 4
 <li><code>display_name</code> - The recipe's name for people, such as <code>Llama.cpp GPU</code>.</li>
 <li><code>web_display_name</code> - The recipe's name on the Lemonade website.</li>
 <li><code>modality</code> - The kind of model the recipe mainly serves, such as <code>Text generation</code>.</li>
+<li><code>supported_modes</code> - Deployment modes the recipe serves (such as <code>chat</code> or <code>image</code>), distinct from model capability labels like <code>edit</code> and <code>upscaling</code>.</li>
 <li><code>selectable_backend</code> - Whether a <code>&lt;recipe&gt;_backend</code> option chooses the recipe's backend.</li>
 <li><code>uses_ctx_size</code> - Whether the recipe accepts the shared <code>ctx_size</code> option.</li>
 <li><code>slot_policy</code> - How the recipe's models count against loaded-model limits: <code>standard</code>, <code>exclusive_npu</code> (loading one evicts every NPU model), <code>coexist_by_type</code> (one per model type), <code>exclusive_host</code> (shares the machine with no other local model) or <code>unmetered</code> (never counted or evicted).</li>

@@ -1877,6 +1877,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#small-docs-only-prs" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Small docs-only PRs
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#what-defers-to-the-merge-queue" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -3336,6 +3347,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#small-docs-only-prs" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Small docs-only PRs
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#what-defers-to-the-merge-queue" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -3566,13 +3588,17 @@ python<span class="w"> </span>test/test_schema_lock.py
 </ul>
 <hr />
 <h2 id="ci-expectations">CI Expectations</h2>
-<p>Every PR runs the C++ <code>cpp-ci</code> tests, the endpoint/CLI suites on Windows and Linux, routing schema checks, app typecheck and regression tests, and the docs drift and link checks. Inference suites run on self-hosted AMD hardware runners (<a href=".././self-hosted-runners/">details</a>); <a href="#what-defers-to-the-merge-queue">What defers to the merge queue</a> covers when they run.</p>
+<p>Except for the <a href="#small-docs-only-prs">small docs-only fast path</a> below, PRs run the C++ <code>cpp-ci</code> tests, endpoint/CLI suites on Windows and Linux, routing schema checks, app typecheck and regression tests, and docs drift and link checks. Inference suites run on self-hosted AMD hardware runners (<a href=".././self-hosted-runners/">details</a>); <a href="#what-defers-to-the-merge-queue">What defers to the merge queue</a> covers when they run.</p>
 <ul>
 <li>Relevant local tests should pass before requesting review. All required CI must be green before final approval and merge.</li>
 <li>Claiming a failure is a pre-existing flake requires evidence: link a <code>main</code> run with the identical failure signature. Fix flaky tests at the root cause; don't widen thresholds or add retries.</li>
 <li>The PR description states how the change was tested and which platforms you could not cover. Ask in the <a href="https://discord.gg/5xXzkMu8Zk">Discord</a> for help testing on hardware you don't have.</li>
 <li>A silently-skipped test is a bug: if your change should be exercised by an existing CI job, confirm the job actually ran it rather than skipping.</li>
 </ul>
+<h3 id="small-docs-only-prs">Small docs-only PRs</h3>
+<p>On ordinary pull requests, reduced CI is used only for 1 to 5 changed Markdown files under <code>docs/</code>. Renames are checked using both old and new paths. Generated references (<code>README.md</code>, <code>docs/dev/backends-reference.md</code>, <code>docs/dev/model-registries.md</code>, <code>docs/guide/cli.md</code>, <code>docs/guide/configuration/README.md</code>, <code>docs/guide/configuration/custom-models.md</code>, <code>docs/guide/configuration/multi-model.md</code>, and everything under <code>docs/api/</code>) require full CI. Markdown files outside <code>docs/</code>, including test fixtures, also require full CI.</p>
+<p>The labels <code>ci:distros</code>, <code>ci:macos</code>, <code>ci:backends</code>, and <code>ci:upgrades</code> force full CI and trigger re-evaluation of the affected workflows. An API error or uncertain classification also runs full CI. Merge queue, push, release and manual runs are never reduced.</p>
+<p>Eligible PRs skip the expensive server, packaging, runtime and generated-docs drift jobs. Pre-commit, Markdown links, and vendored asset integrity still run. The Linux embeddable build and its downstream tests remain active to preserve the required matrix check names. Other path-filtered workflows may still run when applicable.</p>
 <h3 id="what-defers-to-the-merge-queue">What defers to the merge queue</h3>
 <p>Packaging, distro, PPA, backend-validation, self-hosted inference and most macOS jobs do <strong>not</strong> run on PR pushes. They run in the merge queue, so a break there blocks the merge rather than every push. Each group reports through one aggregate check whose name is stable enough to be required:</p>
 <table>
@@ -3606,7 +3632,7 @@ python<span class="w"> </span>test/test_schema_lock.py
 </tr>
 </tbody>
 </table>
-<p>Every gated job is reachable from a PR by label — nothing is merge-queue-only. Apply the label when your change plausibly affects that surface (a backend version pin wants <code>ci:upgrades</code>, packaging or install-path changes want <code>ci:distros</code>, <code>#ifdef __APPLE__</code> or CMake changes want <code>ci:macos</code>, a wrapped-server or inference-path change wants <code>ci:backends</code>); the label takes effect immediately, without a push. Fork contributors can't apply labels themselves — ask a maintainer (or the <a href="https://discord.gg/5xXzkMu8Zk">Discord</a>) to add one. Note that <code>Test .dmg - macOS inference</code> exercises several of the same wrapped servers (llama.cpp, whisper.cpp, moonshine, kokoro) on Metal but lives in the macOS group — a change to one of those that could break on Metal wants <code>ci:macos</code> too. <code>Build Embeddable Lemonade (macOS)</code> still runs on every PR as the AppleClang compile check.</p>
+<p>Every gated job is reachable from a PR by label — nothing is merge-queue-only. Apply the label when your change plausibly affects that surface (a backend version pin wants <code>ci:upgrades</code>, packaging or install-path changes want <code>ci:distros</code>, <code>#ifdef __APPLE__</code> or CMake changes want <code>ci:macos</code>, a wrapped-server or inference-path change wants <code>ci:backends</code>); the label takes effect immediately, without a push. Fork contributors can't apply labels themselves — ask a maintainer (or the <a href="https://discord.gg/5xXzkMu8Zk">Discord</a>) to add one. Note that <code>Test .dmg - macOS inference</code> exercises several of the same wrapped servers (llama.cpp, whisper.cpp, moonshine, kokoro) on Metal but lives in the macOS group — a change to one of those that could break on Metal wants <code>ci:macos</code> too. <code>Build Embeddable Lemonade (macOS)</code> still runs on PRs outside the small-docs fast path as the AppleClang compile check.</p>
 <p>Two consequences worth knowing:</p>
 <ul>
 <li><strong>A green PR does not mean macOS, packaging or hardware inference are green.</strong> If your change touches those surfaces, label it rather than discovering the break in the queue.</li>

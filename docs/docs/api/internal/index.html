@@ -5916,7 +5916,7 @@
 <p>Requires <code>LEMONADE_ADMIN_API_KEY</code> when it is set, otherwise <code>LEMONADE_API_KEY</code> when that is set.</p>
 <h3 id="parameters_10">Parameters</h3>
 <p>This endpoint does not take any parameters.</p>
-<p>An alias stands in for its target in the <code>model</code> field of inference requests and of <a href=".././lemonade/#post-v1load"><code>POST /v1/load</code></a> and <a href=".././lemonade/#post-v1unload"><code>POST /v1/unload</code></a>; the Ollama and Anthropic gateways do not resolve aliases. Aliases live in <code>&lt;cache_dir&gt;/aliases.json</code>; see <a href="../../guide/configuration/custom-models/">Model Aliases</a>.</p>
+<p>An alias stands in for its target in the <code>model</code> field of inference requests on every gateway, of <a href=".././lemonade/#post-v1load"><code>POST /v1/load</code></a> and <a href=".././lemonade/#post-v1unload"><code>POST /v1/unload</code></a>, and of Ollama's <a href=".././ollama/#post-apishow"><code>POST /api/show</code></a>; Ollama's <code>/api/pull</code> and <code>/api/delete</code> take only model names. Aliases live in <code>&lt;cache_dir&gt;/aliases.json</code>; see <a href="../../guide/configuration/custom-models/">Model Aliases</a>.</p>
 <h3 id="example_10">Example</h3>
 <div class="tabbed-set tabbed-alternate" data-tabs="11:2"><input checked="checked" id="__tabbed_11_1" name="__tabbed_11" type="radio" /><input id="__tabbed_11_2" name="__tabbed_11" type="radio" /><div class="tabbed-labels"><label for="__tabbed_11_1">PowerShell</label><label for="__tabbed_11_2">Bash</label></div>
 <div class="tabbed-content">
