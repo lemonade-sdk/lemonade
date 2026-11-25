@@ -48,7 +48,8 @@ public:
         s.description =
             "Registers or updates a `user.*` model definition in `user_models.json` without "
             "downloading any files, for clients that register and install as separate steps. "
-            "[`POST /v1/pull`](#post-v1pull) registers the same way and then downloads.";
+            "[`POST /v1/pull`](#post-v1pull) registers the same way and then downloads. Backend arguments "
+            "(including legacy option blocks) and collection manifest checkpoints require [admin authorization](../guide/configuration/README.md#admin-api-key).";
         s.args = {kModelName, kRecipe, kCheckpoint, kCheckpoints, kSource, kLabels, kComponents};
 
         RouteResponse response;
@@ -80,12 +81,16 @@ public:
         })");
         s.examples = {example};
         s.errors = {kBodyNotJson, kArgMissing, kArgInvalid, kInvalidModelDefinition, kUnlistedFieldInvalid,
-                    kRegisterFailed};
+                    kRegisterFailed, kBackendArgsAdminRequired};
         s.request_format = RequestFormat::Json;
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
+        if (!authorize_backend_args(req, res)) {
+            return;
+        }
+
         try {
             const std::string model_name = req.arg(kModelName).get<std::string>();
             const auto registered = try_register_model_definition(
@@ -95,7 +100,7 @@ public:
                 /*require_definition=*/true,
                 /*allow_embedded_models=*/false,
                 /*local_import=*/false,
-                res);
+                res, is_admin_request(req));
             if (!registered) {
                 return;
             }

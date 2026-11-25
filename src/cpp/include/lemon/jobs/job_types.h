@@ -14,6 +14,10 @@ namespace jobs {
 
 using json = nlohmann::ordered_json;
 
+// The running job's id, added to the context an op receives and never persisted. The
+// leading underscore keeps it apart from step ids, which name the other context entries.
+inline constexpr const char* kJobIdContextKey = "_job_id";
+
 class JobError : public std::runtime_error {
 public:
     JobError(int status, std::string message)
@@ -149,6 +153,9 @@ struct Job {
     std::string created_at;
     std::string started_at;
     std::string finished_at;
+    // When the job last became paused or interrupted; cleared on resume. Both states can
+    // resume, so finished_at stays empty for them.
+    std::string stopped_at;
     std::string summary;
     std::string error;
 
@@ -185,6 +192,7 @@ struct Job {
         if (deleted) j["deleted"] = true;
         if (!started_at.empty()) j["started_at"] = started_at;
         if (!finished_at.empty()) j["finished_at"] = finished_at;
+        if (!stopped_at.empty()) j["stopped_at"] = stopped_at;
         if (!summary.empty()) j["summary"] = summary;
         if (!error.empty()) j["error"] = error;
         return j;
@@ -212,6 +220,7 @@ struct Job {
         job.created_at = j.value("created_at", "");
         job.started_at = j.value("started_at", "");
         job.finished_at = j.value("finished_at", "");
+        job.stopped_at = j.value("stopped_at", "");
         job.summary = j.value("summary", "");
         job.error = j.value("error", "");
         return job;

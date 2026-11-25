@@ -37,8 +37,11 @@ public:
 
     // Same server-owned job, but waits for an install required by a model load.
     // No-op installations without a download stay hidden from the download list.
+    // A set `cancel` stops this caller's wait with "load cancelled"; the job itself
+    // goes on, since other callers may be waiting for the same install.
     void run_tracked(const std::string& id, const std::string& type,
-                     const std::string& display_name, Operation operation);
+                     const std::string& display_name, Operation operation,
+                     std::atomic<bool>* cancel = nullptr);
 
     // Snapshots of every visible job, expiring completed jobs past their grace period.
     nlohmann::json list();

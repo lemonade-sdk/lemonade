@@ -32,7 +32,12 @@ inline const BackendDescriptor descriptor = {
         {"cfg_scale", "", 7.0, "SIZE", "CFG scale (<= 1.0 disables CFG)", "TheNoise Options"},
         {"width", "", 512, "SIZE", "Output image width", "TheNoise Options"},
         {"height", "", 512, "SIZE", "Output image height", "TheNoise Options"},
-        {"sampler", "", "", "ARGS", "Denoising solver (euler | er_sde)", "TheNoise Options"},
+        {"sampler", "", "", "ARGS", "Denoising solver (e.g. euler, er_sde, unipc)", "TheNoise Options"},
+        // Shared defaults must match sd-cpp: RecipeOptions keys are global.
+        // TheNoise forwards only stored overrides; otherwise use native defaults.
+        {"video_frames", "", 33, "SIZE", "Number of video frames", "TheNoise Options"},
+        {"fps", "", 16, "SIZE", "Video frames per second", "TheNoise Options"},
+        {"flow_shift", "", 0.0, "SIZE", "Video flow shift (0 = model default)", "TheNoise Options"},
         {"negative_prompt", "", "", "ARGS", "Negative prompt", "TheNoise Options"},
         {"qwen_vae_enhance", "", false, "BOOL", "Nyquist notch post-filter (removes 2px grid artifacts)", "TheNoise Options"},
         {"film_grain", "", 0.0, "SIZE", "Film grain strength (0.0-10.0)", "TheNoise Options"},
@@ -47,14 +52,14 @@ inline const BackendDescriptor descriptor = {
 #endif
     },
     /*about*/ {
-        {"rocm", {"Lemonade's PyTorch text-to-image diffusion engine, tuned for AMD GPUs.",
+        {"rocm", {"Lemonade's PyTorch image and video diffusion engine, tuned for AMD GPUs.",
                   "lemonade-sdk", "lemonade-sdk", "Apache-2.0", "https://github.com/lemonade-sdk/thenoise"}},
 #if defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64)
-        {"cuda", {"Lemonade's PyTorch text-to-image diffusion engine, on NVIDIA GPUs.",
+        {"cuda", {"Lemonade's PyTorch image and video diffusion engine, on NVIDIA GPUs.",
                   "lemonade-sdk", "lemonade-sdk", "Apache-2.0", "https://github.com/lemonade-sdk/thenoise"}},
 #endif
     },
-    /*supported_modes*/ {"image"},
+    /*supported_modes*/ {"image", "video"},
     /*required_checkpoints*/ {"main"},  // text_encoder+vae validated together in load()
     /*default_capabilities*/ {},
     /*web_display_name*/ "thenoise",

@@ -44,6 +44,7 @@ struct OpProviders {
     std::function<json(const json& params, CancelFlag& cancel)> load_op;
     std::function<json(const json& params, CancelFlag& cancel)> unload_op;
     std::function<json(const json& params, CancelFlag& cancel)> chat_op;
+    std::function<json(const json& params, const std::string& job_id, CancelFlag& cancel)> video_op;
 
     std::function<json(const json& params, CancelFlag& cancel)> image_generations_op;
     std::function<json(const json& params, CancelFlag& cancel)> image_edits_op;

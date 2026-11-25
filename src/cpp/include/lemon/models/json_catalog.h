@@ -74,6 +74,7 @@ struct RegistryRowRules {
     // are illegal, empty when they are not.
     std::function<std::string(ModelInfo& info)> stamp_labels;
 
+    std::function<void(ModelInfo& info)> resolve_source;
     std::function<void(ModelInfo& info)> populate_components;
     std::function<void(ModelInfo& info)> resolve_paths;
 

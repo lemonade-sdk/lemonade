@@ -740,12 +740,41 @@ std::optional<json> fetch_huggingface_compatibility_metadata(
         is_official_huggingface_endpoint(endpoint));
 }
 
+bool probe_model_registry(RegistryId source, long timeout_seconds,
+                          const utils::CancelToken& cancel) {
+    const bool huggingface = source == models::huggingface_descriptor().id;
+    std::string endpoint = trim_trailing_slash(env_string(
+        huggingface ? "HF_ENDPOINT" : "MODELSCOPE_ENDPOINT"));
+    if (endpoint.empty()) {
+        endpoint = huggingface ? models::huggingface_descriptor().endpoint_default
+                               : kModelScopeEndpoint;
+    }
+    const std::string path = huggingface ? "/api/models?limit=1"
+        : "/openapi/v1/models?page_number=1&page_size=1&sort=downloads";
+    try {
+        const auto response = HttpClient::get(endpoint + path,
+            model_registry(source).auth_headers(), timeout_seconds,
+            utils::HttpSecurityPolicy::ExternalHttpsOnly, 64 * 1024, cancel);
+        if (response.status_code != 200) return false;
+        const auto body = JsonUtils::parse(response.body);
+        if (huggingface) return body.is_array();
+        normalize_registry_search_response(source, body, 1);
+        return true;
+    } catch (const std::exception&) {
+        return false;
+    }
+}
+
 RegistrySearchResponse search_registry_models(RegistryId source,
                                               const std::string& query,
                                               std::size_t limit,
-                                              bool gguf_only) {
+                                              RegistrySearchFormat format) {
     if (query.empty()) throw std::invalid_argument("Search query must not be empty");
     limit = std::clamp<std::size_t>(limit, 1, 50);
+    const bool gguf_only = format == RegistrySearchFormat::Gguf;
+    if (format == RegistrySearchFormat::Loom && source != models::huggingface_descriptor().id) {
+        throw std::invalid_argument("Loom bundles are searched on Hugging Face only");
+    }
 
     struct SearchRequest {
         std::string url;
@@ -761,6 +790,7 @@ RegistrySearchResponse search_registry_models(RegistryId source,
         std::string url = endpoint + "/api/models?search=" + percent_encode(query) +
                           "&sort=downloads&direction=-1&limit=" + std::to_string(limit);
         if (gguf_only) url += "&filter=gguf";
+        if (format == RegistrySearchFormat::Loom) url += "&filter=loom-serve";
         requests.push_back({std::move(url), gguf_only, false});
     } else {
         endpoint = trim_trailing_slash(env_string("MODELSCOPE_ENDPOINT"));
@@ -984,6 +1014,11 @@ std::optional<RegistryId> explicit_registry_source(const json& request_json) {
 }  // namespace
 
 void apply_default_pull_source(json& request_json, const std::string& default_source) {
+    apply_default_pull_source(request_json, [&default_source] { return default_source; });
+}
+
+void apply_default_pull_source(json& request_json,
+                               const std::function<std::string()>& default_source) {
     if (request_json.value("local_import", false)) return;
 
     // Explicit source fields must be strings when present; reject non-string
@@ -1108,7 +1143,7 @@ void apply_default_pull_source(json& request_json, const std::string& default_so
 
     if (!checkpoint_looks_like_repo_id(*primary_slot)) return;
 
-    request_json["source"] = default_source;
+    request_json["source"] = default_source();
 }
 
 std::string registry_tree_snapshot_id(RegistryId source,

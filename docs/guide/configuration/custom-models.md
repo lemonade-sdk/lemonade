@@ -99,7 +99,7 @@ Supported registration flags:
 |------|-------------|
 | `--source SOURCE` | Remote registry for every checkpoint in this model: <!-- BEGIN GENERATED: remote-registry-tokens -->`huggingface` or `modelscope`<!-- END GENERATED: remote-registry-tokens -->. When omitted, the server's configured `default_model_source` applies. |
 | `--checkpoint TYPE CHECKPOINT` | Add a checkpoint entry. Repeat for multi-file models such as `main` + `mmproj` or `main` + `vae`. |
-| `--recipe RECIPE` | Recipe to associate with the new `user.*` model. Common values: <!-- BEGIN GENERATED: recipe-values -->`llamacpp`, `llamacpp-hrx`, `whispercpp`, `moonshine`, `kokoro`, `sd-cpp`, `flm`, `ryzenai-llm`, `vllm`, `thenoise`, `ds4`, `rocmfpx`, `halogen`, `gufo`, `thinksound`, `acestep`, `onnxruntime`, `trellis`, `openmoss`, `collection.omni`<!-- END GENERATED: recipe-values -->. |
+| `--recipe RECIPE` | Recipe to associate with the new `user.*` model. Common values: <!-- BEGIN GENERATED: recipe-values -->`llamacpp`, `llamacpp-hrx`, `loom`, `whispercpp`, `moonshine`, `kokoro`, `sd-cpp`, `flm`, `ryzenai-llm`, `vllm`, `thenoise`, `ds4`, `rocmfpx`, `halogen`, `gufo`, `thinksound`, `acestep`, `onnxruntime`, `trellis`, `openmoss`, `collection.omni`<!-- END GENERATED: recipe-values -->. |
 | `--label LABEL` | Add a label to the new model. Repeatable. Valid labels include `chat`, `coding`, `dflash`, `embeddings`, `hot`, `mtp`, `reasoning`, `reranking`, `tool-calling`, `vision`. When no [deployment label](../../api/openai.md#model-labels) is given, the recipe's default is added — `chat` for `llamacpp`, `flm`, `ryzenai-llm` and `vllm`; `transcription` for `whispercpp`; `image` for `sd-cpp`; and so on. |
 | `--components MODEL [MODEL ...]` | Components for an omni collection (see below). Use with `--recipe collection.omni`. |
 
@@ -585,8 +585,9 @@ Supported checkpoint keys:
 | `main` | All | Primary model file |
 | `npu_cache` | whispercpp | NPU-accelerated encoder cache |
 | `lora` | llamacpp | GGUF LoRA adapter applied over `main` with `--lora` |
-| `text_encoder` | sd-cpp | Text encoder for image generation models |
-| `vae` | sd-cpp | VAE for image generation models |
+| `text_encoder` | sd-cpp | LLM-style text encoder (e.g. Qwen for Flux/Qwen-Image), passed as `--llm` |
+| `t5xxl` | sd-cpp | T5-family text encoder (e.g. umt5 for Wan), passed as `--t5xxl`. Independent of `text_encoder` -- set whichever slots the model expects, or both; sd-server rejects an encoder in the wrong slot |
+| `vae` | sd-cpp | VAE for image and video generation models |
 
 ### Collections
 

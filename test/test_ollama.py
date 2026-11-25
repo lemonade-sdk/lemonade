@@ -31,6 +31,7 @@ from utils.server_base import (
 )
 from utils.test_models import (
     PORT,
+    DELETE_TEST_MODEL,
     ENDPOINT_TEST_MODEL,
     TOOL_CALLING_MODEL,
     VISION_MODEL,
@@ -1494,23 +1495,19 @@ class OllamaTests(ServerTestBase):
 
     def test_099_delete_go_client_request(self):
         """`ollama rm X` sends /api/delete with name set and model empty."""
-        self.ensure_model_pulled()
-        try:
-            response = requests.delete(
-                f"{OLLAMA_BASE_URL}/api/delete",
-                json={"model": "", "name": ENDPOINT_TEST_MODEL},
-                timeout=TIMEOUT_MODEL_OPERATION,
-            )
-            self.assertEqual(response.status_code, 200, response.text)
+        pull_model_with_retry(DELETE_TEST_MODEL)
+        response = requests.delete(
+            f"{OLLAMA_BASE_URL}/api/delete",
+            json={"model": "", "name": DELETE_TEST_MODEL},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
 
-            tags = requests.get(f"{OLLAMA_BASE_URL}/api/tags", timeout=TIMEOUT_DEFAULT)
-            names = [m["name"] for m in tags.json()["models"]]
-            self.assertFalse(
-                any(n.split(":")[0] == ENDPOINT_TEST_MODEL for n in names), names
-            )
-        finally:
-            OllamaTests._model_pulled = False
-            self.ensure_model_pulled()
+        tags = requests.get(f"{OLLAMA_BASE_URL}/api/tags", timeout=TIMEOUT_DEFAULT)
+        names = [m["name"] for m in tags.json()["models"]]
+        self.assertFalse(
+            any(n.split(":")[0] == DELETE_TEST_MODEL for n in names), names
+        )
 
 
 if __name__ == "__main__":

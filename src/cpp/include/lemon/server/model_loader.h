@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <string>
 #include <vector>
 
@@ -27,7 +28,8 @@ public:
     // out of persistent recipe options.
     void ensure_loaded(const std::string& model,
                        const nlohmann::json& load_options = nlohmann::json::object(),
-                       LoadPurpose purpose = LoadPurpose::UserInference);
+                       LoadPurpose purpose = LoadPurpose::UserInference,
+                       std::atomic<bool>* cancel = nullptr);
 
     // A collection has no backend of its own, so loading one loads each component.
     void ensure_collection_loaded(const ModelInfo& info);
