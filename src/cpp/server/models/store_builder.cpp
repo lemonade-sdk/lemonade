@@ -170,6 +170,7 @@ FilterResult filter_hardware(const std::map<std::string, ModelInfo>& models,
 
         if (filter_out) {
             result.rejected.push_back(RejectedModel{name, filter_reason, cause});
+            result.hidden[name] = info;
             continue;
         }
 
@@ -226,6 +227,7 @@ HostFilter filter_for_host(const std::map<std::string, ModelInfo>& models,
     auto reasons = std::make_shared<FilterReasons>();
     reasons->rejected = std::move(result.rejected);
     reasons->empty_recipes = std::move(result.empty_recipes);
+    reasons->hidden = std::move(result.hidden);
 
     HostFilter outcome;
     outcome.visible = std::move(result.visible);
