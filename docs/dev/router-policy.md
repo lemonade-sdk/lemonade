@@ -447,7 +447,8 @@ cost_output_per_million` — the same per-million prices behind
 `outputs.estimated_cost` — and routes to the cheapest. A candidate whose
 model entry sets `cost_tier: "free"` always scores as the cheapest,
 regardless of any per-million fields — this is how a free local model wins
-against a priced cloud one. Cloud models get their prices from the provider
+against a priced cloud one. The exception is a cloud model the provider
+prices: the provider's price wins, and the entry's `cost_tier` is ignored. Cloud models get their prices from the provider
 (see the [cloud guide](../guide/configuration/cloud.md)). A local model gets
 them from its own entry: pass the fields to `/v1/pull` when you register it,
 or write them in `user_models.json`, which is read at startup (see
@@ -467,6 +468,12 @@ as the `"llm"` router when it can't use a reply.
 `routing.router.type` must be `"llm"` or `"cost_select"`, and the block
 remains **mutually exclusive** with `routing.rules` and
 `routing.classifiers`.
+
+`cost_select` ranks by price only. It does not look at `has_images`,
+`has_tools` or any other request feature, and since the block cannot be
+combined with `routing.rules`, a policy cannot add a guard in front of it.
+List only candidates that can serve every request the collection receives:
+if some requests carry images, every candidate must accept images.
 
 ## Request Cancellation & Connection Robustness
 
