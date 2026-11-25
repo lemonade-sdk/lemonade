@@ -1,8 +1,9 @@
 import React, { useId, useState } from 'react';
+import { friendlyErrorMessage } from '../api';
 import { useI18n } from '../i18n';
 import { useNexusAccount } from '../features/nexus/NexusAccountContext';
 import {
-  isNexusDesktop, prepareNexus, refreshNexus, useNexusNetwork, usesNexusDeviceKey,
+  NEXUS_NAME_MAX_BYTES, isNexusDesktop, prepareNexus, refreshNexus, useNexusNetwork, usesNexusDeviceKey,
 } from '../features/nexus/nexus';
 import { NexusHierarchy } from './NexusHierarchy';
 import { NexusPortSetting } from './NexusMesh';
@@ -25,7 +26,7 @@ export function NexusNetwork({ advanced, showCompact = true }: { advanced: boole
   const prepare = async () => {
     setBusy(true); setError('');
     try { await prepareNexus(deviceName.trim() || status?.device_name || t('My Lemonade device'), false); }
-    catch (error) { setError(error instanceof Error ? error.message : String(error)); }
+    catch (error) { setError(friendlyErrorMessage(error)); }
     finally { await refreshNexus(); setBusy(false); }
   };
   return <>
@@ -37,7 +38,7 @@ export function NexusNetwork({ advanced, showCompact = true }: { advanced: boole
       {status && !status.enabled && <p>{t('Create a network for this device, then invite your other devices.')}</p>}
       {reconnecting ? <p>{t(connecting ? 'The server is joining its network.' : 'The server has a network but is not connected to it.')}</p>
         : status?.available ? <form onSubmit={event => { event.preventDefault(); void prepare(); }}>
-        {!status.enabled && <><label htmlFor={id}>{t('Device name')}</label><input id={id} className="input" value={deviceName} maxLength={128} placeholder={t('My Lemonade device')} onChange={event => setDeviceName(event.target.value)} /><p className="nexus-hint">{t('Other devices in the mesh see this computer by this name.')}</p></>}
+        {!status.enabled && <><label htmlFor={id}>{t('Device name')}</label><input id={id} className="input" value={deviceName} maxLength={NEXUS_NAME_MAX_BYTES} placeholder={t('My Lemonade device')} onChange={event => setDeviceName(event.target.value)} /><p className="nexus-hint">{t('Other devices in the mesh see this computer by this name.')}</p></>}
         <WorkspaceActionButton type="submit" disabled={busy}>{busy ? t('Connecting…') : status.enabled && status.locked ? (deviceKey ? t('Use this device’s key') : t('Unlock with passkey')) : t('Create my network')}</WorkspaceActionButton>
       </form> : <p className="nexus-hint">{network.error || (status && !status.available) ? t('Nexus is not available on this server. Connect to a server with Nexus support to continue.') : t('Checking network status…')}</p>}
       {error && <p className="nexus-error" role="alert">{error}</p>}

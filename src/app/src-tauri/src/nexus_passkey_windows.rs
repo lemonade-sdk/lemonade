@@ -1,4 +1,4 @@
-use super::{check_options, PasskeyOptions, PasskeyState};
+use super::{check_options, lock_slot, PasskeyOptions, PasskeyState, PASSKEY_TIMEOUT_MS, STATUS_EVENT, USER_PRESENT_AND_VERIFIED};
 use authenticator::{
     crypto::{COSEAlgorithm, COSEKeyType, Curve},
     ctap2::attestation::AuthenticatorData,
@@ -14,23 +14,22 @@ use windows::{
     Win32::{Foundation::HWND, Networking::WindowsWebServices::*},
 };
 
+/// rpIdHash (32), flags (1) and signCount (4) precede any attested credential data.
+const MIN_AUTHENTICATOR_DATA_LEN: usize = 37;
+
 struct Cancellation<'a>(&'a PasskeyState);
 
 impl Drop for Cancellation<'_> {
     fn drop(&mut self) {
-        *self
-            .0
-            .cancellation
-            .lock()
-            .unwrap_or_else(|e| e.into_inner()) = None;
+        *lock_slot(&self.0.cancellation) = None;
     }
 }
 
 fn verified_data<'a>(bytes: &'a [u8], rp_id: &str) -> Result<&'a [u8], String> {
-    if bytes.len() < 37 || bytes[..32] != Sha256::digest(rp_id.as_bytes())[..] {
+    if bytes.len() < MIN_AUTHENTICATOR_DATA_LEN || bytes[..32] != Sha256::digest(rp_id.as_bytes())[..] {
         return Err("The passkey returned an invalid relying party".into());
     }
-    if bytes[32] & 5 != 5 {
+    if bytes[32] & USER_PRESENT_AND_VERIFIED != USER_PRESENT_AND_VERIFIED {
         return Err("User verification is required".into());
     }
     Ok(bytes)
@@ -65,7 +64,7 @@ fn registration_reply(bytes: &[u8], rp_id: &str) -> Result<Value, String> {
 }
 
 pub(super) fn cancel(state: &PasskeyState) -> Result<(), String> {
-    if let Some(id) = *state.cancellation.lock().unwrap_or_else(|e| e.into_inner()) {
+    if let Some(id) = *lock_slot(&state.cancellation) {
         unsafe { WebAuthNCancelCurrentOperation(&id) }
             .map_err(|_| "Cannot cancel the Windows passkey request")?;
     }
@@ -81,14 +80,14 @@ pub(super) fn perform(
     let state = app.state::<PasskeyState>();
     let mut cancellation = unsafe { WebAuthNGetCancellationId() }
         .map_err(|_| "Cannot start the Windows passkey service")?;
-    *state.cancellation.lock().unwrap_or_else(|e| e.into_inner()) = Some(cancellation);
+    *lock_slot(&state.cancellation) = Some(cancellation);
     let _cancellation = Cancellation(&state);
     if state.cancelled.load(Ordering::Acquire) {
         return Err("Passkey operation cancelled or timed out".into());
     }
     let _ = app.emit_to(
         "main",
-        "nexus:passkey-status",
+        STATUS_EVENT,
         json!({
             "message": "Complete verification in the Windows passkey dialog.", "needs_pin": false
         }),
@@ -134,7 +133,7 @@ pub(super) fn perform(
         };
         let settings = WEBAUTHN_AUTHENTICATOR_MAKE_CREDENTIAL_OPTIONS {
             dwVersion: WEBAUTHN_AUTHENTICATOR_MAKE_CREDENTIAL_OPTIONS_VERSION_2,
-            dwTimeoutMilliseconds: 60000,
+            dwTimeoutMilliseconds: PASSKEY_TIMEOUT_MS,
             dwAuthenticatorAttachment: WEBAUTHN_AUTHENTICATOR_ATTACHMENT_ANY,
             dwUserVerificationRequirement: WEBAUTHN_USER_VERIFICATION_REQUIREMENT_REQUIRED,
             dwAttestationConveyancePreference: WEBAUTHN_ATTESTATION_CONVEYANCE_PREFERENCE_NONE,
@@ -157,7 +156,7 @@ pub(super) fn perform(
         }
         let result = unsafe {
             let credential = &*credential;
-            if credential.pbAuthenticatorData.is_null() || credential.cbAuthenticatorData < 37 {
+            if credential.pbAuthenticatorData.is_null() || (credential.cbAuthenticatorData as usize) < MIN_AUTHENTICATOR_DATA_LEN {
                 Err("The passkey returned invalid credential data".into())
             } else {
                 registration_reply(
@@ -186,7 +185,7 @@ pub(super) fn perform(
         };
         let settings = WEBAUTHN_AUTHENTICATOR_GET_ASSERTION_OPTIONS {
             dwVersion: WEBAUTHN_AUTHENTICATOR_GET_ASSERTION_OPTIONS_VERSION_2,
-            dwTimeoutMilliseconds: 60000,
+            dwTimeoutMilliseconds: PASSKEY_TIMEOUT_MS,
             CredentialList: WEBAUTHN_CREDENTIALS {
                 cCredentials: 1,
                 pCredentials: &mut credential,
@@ -213,7 +212,7 @@ pub(super) fn perform(
             if assertion.pbAuthenticatorData.is_null()
                 || assertion.pbSignature.is_null()
                 || assertion.Credential.pbId.is_null()
-                || assertion.cbAuthenticatorData < 37
+                || (assertion.cbAuthenticatorData as usize) < MIN_AUTHENTICATOR_DATA_LEN
                 || assertion.cbSignature == 0
             {
                 Err("The passkey returned invalid credential data".into())
@@ -282,10 +281,10 @@ mod tests {
     #[test]
     fn clears_the_cancellation_id_when_an_operation_ends() {
         let state = PasskeyState::default();
-        *state.cancellation.lock().unwrap() = Some(windows::core::GUID::zeroed());
+        *lock_slot(&state.cancellation) = Some(windows::core::GUID::zeroed());
         {
             let _operation = Cancellation(&state);
         }
-        assert!(state.cancellation.lock().unwrap().is_none());
+        assert!(lock_slot(&state.cancellation).is_none());
     }
 }

@@ -1,7 +1,8 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { friendlyErrorMessage } from '../api';
 import { useI18n } from '../i18n';
 import {
-  NEXUS_GROUP_PERMISSIONS, NEXUS_SERVICE_PERMISSIONS, getNexusDeviceAccess, nexusConnectionLabel, nexusDeviceOnline,
+  NEXUS_GROUP_PERMISSIONS, NEXUS_NAME_MAX_BYTES, NEXUS_SERVICE_PERMISSIONS, getNexusDeviceAccess, nexusNameTooLong, nexusConnectionLabel, nexusDeviceOnline,
   setNexusDeviceAccess, setNexusMemberRole, type NexusAccessEntry, type NexusDeviceAccess, type NexusMemberRole, type NexusStatus,
 } from '../features/nexus/nexus';
 import {
@@ -55,7 +56,7 @@ export function NexusHierarchy({ status, advanced, service = nexusTreeService }:
         setExpanded(current => reset ? new Set([branch.parent.id]) : new Set(current).add(branch.parent.id));
       }
     } catch (error) {
-      if (request === generation.current) setErrors(current => ({ ...current, [key]: error instanceof Error ? error.message : String(error) }));
+      if (request === generation.current) setErrors(current => ({ ...current, [key]: friendlyErrorMessage(error) }));
     } finally {
       if (request === generation.current) {
         inFlight.current.delete(key);
@@ -234,7 +235,7 @@ function GroupManagement({ entry, entries, selfId, service, onSaved }: {
     setPermissions(assignment?.permissions.filter(permission => permission !== 'admin') || ['read']);
   };
   const canEdit = editor === 'create' ? entry.can_add_group : editor === 'rename' ? entry.can_rename : entry.can_manage;
-  const nameTooLong = new TextEncoder().encode(name.trim()).length > 128;
+  const nameTooLong = nexusNameTooLong(name);
   const run = async (event: React.FormEvent) => {
     event.preventDefault();
     if (busy || !canEdit) return;
@@ -248,7 +249,7 @@ function GroupManagement({ entry, entries, selfId, service, onSaved }: {
     } catch (error) {
       setError(error instanceof TypeError || (error instanceof DOMException && (error.name === 'TimeoutError' || error.name === 'AbortError'))
         ? t('The connection was interrupted. Refresh the group to check whether the change was saved before trying again.')
-        : error instanceof Error ? error.message : String(error));
+        : friendlyErrorMessage(error));
     }
     finally { setBusy(false); }
   };
@@ -263,7 +264,7 @@ function GroupManagement({ entry, entries, selfId, service, onSaved }: {
     {editor && <form className="nexus-group-editor" onSubmit={event => void run(event)}>
       <h5>{editor === 'create' ? t('Add a group inside {name}', { name: entry.name || t('Unnamed group') }) : editor === 'rename' ? t('Rename group') : t('Group permissions')}</h5>
       <fieldset disabled={busy || !canEdit}>
-        {editor !== 'permissions' ? <><label htmlFor={`${id}-name`}>{t('Group name')}</label><input autoFocus id={`${id}-name`} className="input" value={name} maxLength={128} onChange={event => setName(event.target.value)} placeholder={t('For example, Design team')} /></> : <>
+        {editor !== 'permissions' ? <><label htmlFor={`${id}-name`}>{t('Group name')}</label><input autoFocus id={`${id}-name`} className="input" value={name} maxLength={NEXUS_NAME_MAX_BYTES} onChange={event => setName(event.target.value)} placeholder={t('For example, Design team')} /></> : <>
           <label htmlFor={`${id}-member`}>{t('Device identity')}</label>
           <select id={`${id}-member`} className="input" value={memberId} onChange={event => chooseMember(event.target.value)}><option value="">{t('Choose a device')}</option>{members.map(member => <option key={member.id} value={member.id}>{member.name || member.id}</option>)}</select>
           <p className="nexus-hint">{t('Permissions belong to the device, not to a person.')}</p>
@@ -322,7 +323,7 @@ function MoveForm({ entry, entries, service, onMoved }: {
     if (busy || !target) return;
     setBusy(true); setError('');
     try { await service.move(entry.id, target); setOpen(false); setTarget(''); await onMoved(target); }
-    catch (error) { setError(error instanceof Error ? error.message : String(error)); }
+    catch (error) { setError(friendlyErrorMessage(error)); }
     finally { setBusy(false); }
   };
   return <div className="nexus-group-move">
@@ -365,13 +366,12 @@ function DeviceManagement({ entry, entries, status, service, onSaved }: {
   const assignment = group?.assignments.find(item => nexusKeysEqual(item.management_pubkey, entry.management_pubkey));
   const role: NexusMemberRole = assignment?.permissions.includes('admin') ? 'administrator'
     : assignment?.permissions.some(permission => permission === 'write' || permission === 'svc:mcp') ? 'moderator' : 'user';
-  const message = (error: unknown) => error instanceof Error ? error.message : String(error);
   useEffect(() => {
     if (self) return;
     let active = true;
     setLoadingAccess(true); setAccessError('');
     service.access(entry.id).then(result => { if (active) setAccess(result); })
-      .catch(error => { if (active) setAccessError(message(error)); })
+      .catch(error => { if (active) setAccessError(friendlyErrorMessage(error)); })
       .finally(() => { if (active) setLoadingAccess(false); });
     return () => { active = false; };
   }, [entry.id, self, service]);
@@ -379,7 +379,7 @@ function DeviceManagement({ entry, entries, status, service, onSaved }: {
     if (busy || next === role) return;
     setBusy(true); setError(''); setNotice('');
     try { await service.role(entry.id, next); await onSaved(t('Role saved.')); }
-    catch (error) { setError(message(error)); }
+    catch (error) { setError(friendlyErrorMessage(error)); }
     finally { setBusy(false); }
   };
   const changeAccess = async (member: NexusAccessEntry, see: boolean, connect: boolean) => {
@@ -389,7 +389,7 @@ function DeviceManagement({ entry, entries, status, service, onSaved }: {
     setAccess(current => current && { ...current, members: current.members.map(item =>
       item.node_id === member.node_id ? { ...item, see: see || connect, connect } : item) });
     try { setAccess(await service.setAccess(entry.id, member.node_id, see, connect)); setNotice(t('Access saved.')); }
-    catch (error) { setAccess(previous); setError(message(error)); }
+    catch (error) { setAccess(previous); setError(friendlyErrorMessage(error)); }
     finally { setBusy(false); }
   };
   return <div className="nexus-group-management nexus-device-management">

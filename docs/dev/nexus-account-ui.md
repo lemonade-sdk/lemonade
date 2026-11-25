@@ -35,8 +35,9 @@ on returned permissions, not on the selected form action.
 
 `features/nexus/accountSession.ts` owns this sequence. It pins requests to the
 controller and API key chosen at the start; a connection change or unexpected
-account ID fails verification. A five-second membership refresh updates device
-presence and capabilities. Lost access clears the UI session. Disconnect locks
+account ID fails verification. The network status poll runs every five seconds
+and the account refresh every fifteen; together they update device presence
+and capabilities. Lost access clears the UI session. Disconnect locks
 the shared server's device and disconnects it from the mesh, affecting all clients
 using that server. After the server confirms the lock, the app clears its session
 and network display and stops polling and event updates. Device registration and

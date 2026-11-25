@@ -16,9 +16,9 @@ import ChatReadinessProgress from './ChatReadinessProgress';
 type HostModel = { name: string; recipe?: string; loaded: boolean; info: ModelInfo };
 type HostModelList = { models?: HostModel[]; error?: string; connecting?: boolean };
 const hostModelRowId = (hostId: string, name: string) => `host:${hostId}:${name}`;
-// Waits between attempts to read a mesh host's models. The first request after a lemond
-// restart or over a freshly formed mesh path often gets no answer; about 22 s covers a
-// device whose connection is still forming when the picker opens.
+// The first request after a lemond restart or over a freshly formed mesh path often gets
+// no answer; about 22 s covers a device whose connection is still forming when the picker
+// opens.
 const HOST_MODEL_RETRY_MS = [1500, 3000, 6000, 12000];
 
 const Model3DResult = lazy(() => import(/* webpackChunkName: "chat-model3d" */ './Model3DResult'));
@@ -75,7 +75,7 @@ import type { DownloadListItem } from '../features/downloadManager/downloadStore
 import { findModelInfoByName, getAudioTranscriptionComponent, getPrimaryChatComponent, getVisionChatComponent, isCollectionModel, virtualLoadedCollection } from '../features/collections/collectionModels';
 import { LEMONADE_MCP_SERVER_ID, LEMONADE_MCP_TOOL_COUNT, MAX_MCP_SERVER_SELECTION, type McpServerToolOption } from '../tools/mcpMetadata';
 import { isRouterModelInfo, preflightRouter, routerPreflightError } from '../features/router/routerRuntime';
-import { NEXUS_CONNECTION_LABELS, nexusHostErrorRetryable, nexusHostRequest, nexusLemonadeServers, nexusServerUnavailable, selectNexusLemonadeServer, useNexusNetwork } from '../features/nexus/nexus';
+import { NEXUS_CONNECTION_LABELS, NEXUS_LOCAL_HOST, nexusHostErrorRetryable, nexusHostRequest, nexusLemonadeServers, nexusServerUnavailable, selectNexusLemonadeServer, useNexusNetwork } from '../features/nexus/nexus';
 import { TTS_SETTINGS_EVENT, loadTtsPlaybackSettings, ttsVoiceFromRecipeOptions } from '../features/audio/ttsSettings';
 import { selectDictationModel, updateDraftWithDictation } from '../features/audio/dictationModels';
 import {
@@ -1029,7 +1029,7 @@ const ChatView: React.FC<ChatViewProps> = ({
   const [modelPickerError, setModelPickerError] = useState<string | null>(null);
   const [modelPickerUnloading, setModelPickerUnloading] = useState<string | null>(null);
   const nexusNetwork = useNexusNetwork(false);
-  const chatHostId = nexusNetwork.selectedServerId || 'local';
+  const chatHostId = nexusNetwork.selectedServerId || NEXUS_LOCAL_HOST;
   const chatHosts = useMemo(() => nexusLemonadeServers(nexusNetwork.status), [nexusNetwork.status]);
   const unavailableHosts = useMemo(() => new Map(chatHosts.flatMap(device => {
     const reason = nexusServerUnavailable(nexusNetwork.status, device);
@@ -3712,8 +3712,7 @@ ${index}`;
     setModelPickerHostModels(current => ({ ...current, [hostId]: {} }));
     const attempt = (count: number) => {
       // The model list says what is downloaded; only the health report says what is loaded.
-      // Both are inference-family routes, so every role sees them. A model already loaded
-      // on that host is then selected as it is, not loaded again.
+      // Both are inference-family routes, so every role sees them.
       const loadedOnHost = nexusHostRequest<{ all_models_loaded?: { model_name?: string }[] }>(hostId, 'v1/health')
         .then(health => new Set((health?.all_models_loaded || []).map(model => String(model?.model_name || '').toLowerCase()).filter(Boolean)))
         .catch(() => new Set<string>());
@@ -3751,7 +3750,7 @@ ${index}`;
     if (hostId !== chatHostId && !unavailableHosts.has(hostId)) loadHostModels(hostId);
   }, [chatHostId, loadHostModels, unavailableHosts]);
 
-  const modelPickerHostIds = useMemo(() => ['local', ...chatHosts.map(device => device.node_id)], [chatHosts]);
+  const modelPickerHostIds = useMemo(() => [NEXUS_LOCAL_HOST, ...chatHosts.map(device => device.node_id)], [chatHosts]);
   const modelPickerUnavailableBefore = useRef(new Set<string>());
   useEffect(() => {
     const before = modelPickerUnavailableBefore.current;
@@ -4289,8 +4288,8 @@ ${index}`;
                     }}
                   >
                     {modelPickerHostIds.map(hostId => {
-                      const device = hostId === 'local' ? undefined : chatHosts.find(item => item.node_id === hostId);
-                      const hostTitle = hostId === 'local' ? t('This device') : device?.device_name || t('Unnamed device');
+                      const device = hostId === NEXUS_LOCAL_HOST ? undefined : chatHosts.find(item => item.node_id === hostId);
+                      const hostTitle = hostId === NEXUS_LOCAL_HOST ? t('This device') : device?.device_name || t('Unnamed device');
                       const serving = hostId === chatHostId;
                       const unavailable = unavailableHosts.get(hostId);
                       const query = modelPickerQuery.trim().toLowerCase();
@@ -4395,7 +4394,7 @@ ${index}`;
                       );
                     })}
                   </WorkspaceList>
-                  {modelPickerSwitching && <div className="composer__model-loading-bar">{t('Switching chat to {host}…', { host: modelPickerSwitching === 'local' ? t('This device') : chatHosts.find(item => item.node_id === modelPickerSwitching)?.device_name || t('Unnamed device') })}</div>}
+                  {modelPickerSwitching && <div className="composer__model-loading-bar">{t('Switching chat to {host}…', { host: modelPickerSwitching === NEXUS_LOCAL_HOST ? t('This device') : chatHosts.find(item => item.node_id === modelPickerSwitching)?.device_name || t('Unnamed device') })}</div>}
                   {modelPickerLoading && <div className="composer__model-loading-bar">{t('Loading {model}…', { model: modelPickerLoading })}</div>}
                   {modelPickerError && <div className="composer__model-error">{modelPickerError}</div>}
                 </div>

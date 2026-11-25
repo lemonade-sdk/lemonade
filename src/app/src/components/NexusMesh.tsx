@@ -1,10 +1,11 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
+import { friendlyErrorMessage } from '../api';
 import { copyTextToClipboard } from '../clipboard';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useI18n } from '../i18n';
 import { useNexusAccount, type NexusDevice as AccountDevice } from '../features/nexus/NexusAccountContext';
 import {
-  NEXUS_CONNECTION_LABELS, NEXUS_MAPPING_PROTOCOL_LABELS, dismissNexusNotice, nexusDeviceConnection, nexusDeviceTags, nexusLemonadeServers, nexusMeshPortUrl, nexusMeshSummary,
+  NEXUS_CONNECTION_LABELS, NEXUS_LOCAL_HOST, NEXUS_MAPPING_PROTOCOL_LABELS, dismissNexusNotice, nexusDeviceConnection, nexusDeviceTags, nexusLemonadeServers, nexusMeshPortUrl, nexusMeshSummary,
   nexusRequest, nexusServerUnavailable, refreshNexus, relayEndpoint, selectNexusLemonadeServer, setNexusMeshUdpPort, useNexusNetwork,
   type NexusConnection, type NexusDevice, type NexusMeshState, type NexusStatus,
 } from '../features/nexus/nexus';
@@ -13,6 +14,7 @@ import { WorkspaceActionButton } from './WorkspacePanels';
 type Tone = 'good' | 'warn' | 'accent' | 'info' | 'muted' | 'faint';
 const CONNECTION_TONES: Record<NexusConnection, Tone> = { p2p: 'good', relay: 'warn', connecting: 'accent', offline: 'muted' };
 const STATE_TONES: Record<NexusMeshState, Tone> = { off: 'faint', locked: 'faint', connecting: 'accent', connected: 'good', offline: 'muted' };
+const COPIED_FEEDBACK_MS = 1200;
 const tagTone = (tag: string): Tone => tag === 'This device' || tag === 'Admin' ? 'accent'
   : tag === 'Server' || tag === 'Joined network' ? 'info' : tag === 'Member' ? 'warn' : 'muted';
 
@@ -33,7 +35,7 @@ export function nexusListedDevices(status: NexusStatus | null | undefined, accou
   return status?.mesh_up && !status.locked ? status.members : accountDevices.map(placeholderDevice);
 }
 
-// `selected` is 'local' or a node id; `onChoose` and `onInfo` receive the same target form.
+// `selected` is NEXUS_LOCAL_HOST or a node id; `onChoose` and `onInfo` receive the same target form.
 export interface NexusChatHost { selected: string; disabled: boolean; onChoose: (target: string) => void; onInfo?: (target: string) => void }
 
 export function NexusDeviceRows({ status, devices, chat }: { status: NexusStatus | null | undefined; devices: readonly NexusDevice[]; chat?: NexusChatHost }) {
@@ -49,7 +51,7 @@ export function NexusDeviceRows({ status, devices, chat }: { status: NexusStatus
       const host = chat && (local || servers.has(device.node_id)) ? chat : undefined;
       const unavailable = host && !local ? nexusServerUnavailable(status, device) : undefined;
       const connection = unavailable ?? nexusDeviceConnection(status, device);
-      const target = local ? 'local' : device.node_id;
+      const target = local ? NEXUS_LOCAL_HOST : device.node_id;
       const selected = host?.selected === target;
       return <li key={`${device.group_id || 'home'}:${device.node_id}`} className={`nexus-mesh-row${selected ? ' is-selected' : ''}`}>
         <span className="nexus-mesh-row__body">
@@ -89,7 +91,7 @@ export function NexusPortSetting({ status }: { status: NexusStatus }) {
     if (busy) return;
     setBusy(true); setError('');
     try { await setNexusMeshUdpPort(Number(draft)); await refreshNexus(); }
-    catch (error) { setError(error instanceof Error ? error.message : String(error)); }
+    catch (error) { setError(friendlyErrorMessage(error)); }
     finally { setBusy(false); }
   };
   return <form className="nexus-port-setting" onSubmit={event => { event.preventDefault(); void save(); }}>
@@ -127,7 +129,7 @@ function ServerInfoDialog({ status, nodeId, onClose }: { status: NexusStatus; no
     document.addEventListener('keydown', escape);
     return () => document.removeEventListener('keydown', escape);
   }, [onClose]);
-  const self = nodeId === 'local';
+  const self = nodeId === NEXUS_LOCAL_HOST;
   const device = self ? undefined : status.members.find(member => member.node_id === nodeId);
   const serverId = self ? status.node_id || '' : nodeId;
   const name = self ? t('This device') : device?.device_name || t('Unnamed device');
@@ -137,7 +139,7 @@ function ServerInfoDialog({ status, nodeId, onClose }: { status: NexusStatus; no
   const connection = device && nexusDeviceConnection(status, device);
   const address = (self ? status.tunnel_ip : device?.tunnel_ip)?.split('/')[0];
   const copy = (value: string) => void copyTextToClipboard(value)
-    .then(() => { setError(''); setCopied(value); window.setTimeout(() => setCopied(current => current === value ? undefined : current), 1200); })
+    .then(() => { setError(''); setCopied(value); window.setTimeout(() => setCopied(current => current === value ? undefined : current), COPIED_FEEDBACK_MS); })
     .catch(() => setError(t('Could not copy. Select the address and copy it manually.')));
   const example = base && `curl ${base}/chat/completions \\\n  -H 'Content-Type: application/json' \\\n  -d '{"model":"<model id>","messages":[{"role":"user","content":"Hello"}]}'`;
   return <div className="nexus-account-dialog-backdrop" onPointerDown={event => { if (event.target === event.currentTarget) onClose(); }}>
@@ -197,28 +199,28 @@ export function NexusMeshPanel() {
   const id = useId();
   const summary = nexusMeshSummary(status, network.error);
   const connected = Boolean(status?.mesh_up && !status.locked);
-  const selected = network.selectedServerId || 'local';
+  const selected = network.selectedServerId || NEXUS_LOCAL_HOST;
   const choose = async (target: string, peerKey?: string) => {
     if (busy) return;
     setBusy(true); setError('');
     try {
       await selectNexusLemonadeServer(target, peerKey);
       if (peerKey !== undefined) setKey('');
-    } catch (error) { setError(error instanceof Error ? error.message : String(error)); }
+    } catch (error) { setError(friendlyErrorMessage(error)); }
     finally { setBusy(false); }
   };
   const leave = async (groupId: string) => {
     if (busy || !onLeaveNetwork) return;
     setBusy(true); setError('');
     try { await onLeaveNetwork(groupId); setLeaving(undefined); }
-    catch (error) { setError(error instanceof Error ? error.message : String(error)); }
+    catch (error) { setError(friendlyErrorMessage(error)); }
     finally { setBusy(false); }
   };
   const forget = async () => {
     if (busy) return;
     setBusy(true); setError('');
     try { await nexusRequest('forget', {}); await refreshNexus(); }
-    catch (error) { setError(error instanceof Error ? error.message : String(error)); }
+    catch (error) { setError(friendlyErrorMessage(error)); }
     finally { setBusy(false); }
   };
   return <section className="nexus-mesh" aria-labelledby={id}>
@@ -248,7 +250,7 @@ export function NexusMeshPanel() {
         <NexusDeviceRows status={status} devices={status.members} chat={{ selected, disabled: busy, onChoose: target => void choose(target), onInfo: setInfo }} />
         {info && <ServerInfoDialog status={status} nodeId={info} onClose={() => setInfo(undefined)} />}
         {!nexusLemonadeServers(status).length && <p className="nexus-mesh__empty">{t('No other Lemonade servers in this mesh yet.')}</p>}
-        {selected !== 'local' && <form className="nexus-mesh__key" onSubmit={event => { event.preventDefault(); void choose(selected, key); }}>
+        {selected !== NEXUS_LOCAL_HOST && <form className="nexus-mesh__key" onSubmit={event => { event.preventDefault(); void choose(selected, key); }}>
           <label className="sr-only" htmlFor={`${id}-key`}>{t('API key (only if that computer sets one)')}</label>
           <input id={`${id}-key`} className="input" type="password" autoComplete="off" placeholder={t('API key (only if that computer sets one)')}
             value={key} disabled={busy} onChange={event => setKey(event.target.value)} />
