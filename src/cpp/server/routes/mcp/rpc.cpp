@@ -480,7 +480,7 @@ nlohmann::json call_mcp_server_capability(ServerContext& ctx,
                 body, "/api/v1/audio/speech", "Generated speech audio.",
                 fallback_mime_type);
         }
-        
+
         if (tool_name == "lemonade_generate_video") {
             validate_mcp_model_arguments(arguments, {
                 "model", "prompt", "image", "negative_prompt", "duration", "video_frames",
