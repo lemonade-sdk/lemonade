@@ -80,7 +80,7 @@ bool resolve_mesh_device(const nlohmann::json& status, const std::string& wanted
             if (!member.is_object()) continue;
             if (lower(text(member, "device_name")) == name || lower(text(member, "node_id")) == name) {
                 error = "The device " + text(member, "device_name") +
-                        " is in your group but is offline, not an inference server, or not one this device may connect to. " + listed;
+                        " is in your group but is offline, not a Lemonade server, or not one this device may connect to. " + listed;
                 return false;
             }
         }

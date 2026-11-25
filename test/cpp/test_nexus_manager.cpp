@@ -154,11 +154,11 @@ void check_route_access(const std::function<void(bool, const char*)>& check) {
          {"can_connect", false}, {"can_connect_known", true}},
         {{"node_id", "unlisted"}, {"is_inference", true}, {"is_online", true}, {"tunnel_ip", "10.8.0.7/32"},
          {"can_connect", false}, {"can_connect_known", false}}});
-    check(access::relay_target(members, "self", "gpu") == std::make_pair(0, std::string("10.8.0.3")), "Relay targets an online inference peer");
+    check(access::relay_target(members, "self", "gpu") == std::make_pair(0, std::string("10.8.0.3")), "Relay targets an online Lemonade server");
     check(access::relay_target(members, "self", "self").first == 400, "Relay refuses this device");
     check(access::relay_target(members, "self", "missing").first == 404, "Relay refuses an unknown device");
     check(access::relay_target(members, "self", "sleeping").first == 409, "Relay refuses an offline device");
-    check(access::relay_target(members, "self", "laptop").first == 409, "Relay refuses a Tier 4 client");
+    check(access::relay_target(members, "self", "laptop").first == 409, "Relay refuses a client device");
     const auto refused = access::relay_target(members, "self", "private");
     check(refused.first == 409 && refused.second.find("Connect") != std::string::npos, "Relay refuses a device this device may not connect to");
     check(access::relay_target(members, "self", "unlisted") == std::make_pair(0, std::string("10.8.0.7")),
@@ -987,7 +987,7 @@ void check_access_rules(const std::function<void(bool, const char*)>& check) {
 
     const auto members = access::merge_members(group, children, peers, admin_key, "server");
     check(members.size() == 3, "Members list only endpoint devices");
-    check(members[0].at("tier") == 3 && members[1].at("tier") == 3 && members[2].at("tier") == 4, "Tier follows is_inference");
+    check(members[0].at("is_inference") && members[1].at("is_inference") && !members[2].at("is_inference"), "is_inference follows the node record");
     check(members[0].at("is_admin") && members[0].at("is_owner"), "Group creator is admin");
     check(!members[1].at("is_admin") && members[1].at("permissions") == json::array({"read", "write"}), "Member keeps group permissions");
     check(members[1].at("is_online") && members[1].at("latency_ms") == 12.5, "Peer state is merged");
@@ -1046,10 +1046,10 @@ void check_access_rules(const std::function<void(bool, const char*)>& check) {
     check(!merged[1].at("member") && merged[1].at("can_connect") && merged[1].at("group_role") == "home",
           "A child carries the network list's connect flag");
     check(merged[3].at("node_id") == "friend" && merged[3].at("member") && merged[3].at("is_online") &&
-              !merged[3].at("can_remove") && merged[3].at("tier") == 4,
+              !merged[3].at("can_remove") && !merged[3].at("is_inference"),
           "A member from another network is listed, online state merged, never removable here");
     check(merged[4].at("node_id") == "other-server" && merged[4].at("group_role") == "member" &&
-              merged[4].at("group_id") == "customer-other" && merged[4].at("tier") == 3,
+              merged[4].at("group_id") == "customer-other" && merged[4].at("is_inference"),
           "A server of a joined network is listed with its group");
     check(access::relay_target(merged, "server", "friend").first == 409, "A client device is never a relay target");
     check(merged[1].at("can_connect_known") && merged[4].at("can_connect_known"), "A fetched network list makes the connect flags known");

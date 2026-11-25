@@ -687,14 +687,13 @@ json merge_members(const json& group, const json& children, const json& peers,
                     {"permissions", string_list(entry.value("permissions", json::array()))}});
             }
         }
-        const bool is_inference = flag(child, "is_inference");
         const auto peer = peer_entry(id);
         const auto listed_device = network_entry(id);
         members.push_back({{"node_id", id}, {"device_name", text(child, "hostname")},
             {"tunnel_ip", text(child, "tunnel_ip")}, {"management_pubkey", key},
             {"permissions", ordered(permissions)}, {"permissions_known", permissions_known},
             {"is_admin", permissions_known ? contains(permissions, "admin") : owner}, {"is_owner", owner},
-            {"is_inference", is_inference}, {"tier", is_inference ? 3 : 4},
+            {"is_inference", flag(child, "is_inference")},
             {"access", access}, {"access_known", access_known},
             {"can_remove", !self && grants(own_device, "delete_node")},
             {"is_online", self || flag(peer, "is_online")},
@@ -711,14 +710,13 @@ json merge_members(const json& group, const json& children, const json& peers,
             if (!device.is_object()) continue;
             const auto id = text(device, "node_id");
             if (id.empty() || id == self_node_id || !listed.insert(id).second) continue;
-            const bool is_inference = flag(device, "is_inference");
             const auto peer = peer_entry(id);
             const auto role = text(device, "group_role");
             members.push_back({{"node_id", id}, {"device_name", text(device, "device_name")},
                 {"tunnel_ip", text(device, "tunnel_ip")}, {"management_pubkey", text(device, "mgmt_pubkey")},
                 {"permissions", json::array()}, {"permissions_known", false},
                 {"is_admin", flag(device, "admin")}, {"is_owner", false},
-                {"is_inference", is_inference}, {"tier", is_inference ? 3 : 4},
+                {"is_inference", flag(device, "is_inference")},
                 {"access", json::array()}, {"access_known", false},
                 {"can_remove", false},
                 {"is_online", flag(peer, "is_online")},
@@ -744,7 +742,7 @@ json device_access(const json& members, const std::string& device_id, const std:
         if (id == device_id || id == self_node_id) continue;
         const auto permissions = permissions_for(target.value("access", json::array()), member.value("management_pubkey", ""));
         rows.push_back({{"node_id", id}, {"device_name", member.value("device_name", "")},
-            {"is_admin", member.value("is_admin", false)}, {"tier", member.value("tier", 4)},
+            {"is_admin", member.value("is_admin", false)},
             {"see", grants(permissions, "read")}, {"connect", grants(permissions, "connect_private")},
             {"editable", can_manage && access_known && !contains(permissions, "admin")}});
     }
@@ -1022,7 +1020,7 @@ std::pair<int, std::string> relay_target(const json& members, const std::string&
     if (node_id == self_node_id) return {400, "Use this device directly instead of relaying to it"};
     const auto target = find_member(members, node_id);
     if (target.is_null()) return {404, "That device is not in your group"};
-    if (!target.value("is_inference", false)) return {409, "That device is not an inference server"};
+    if (!target.value("is_inference", false)) return {409, "That device is not a Lemonade server"};
     // The federation forwards mesh packets only between devices that may connect, so a
     // refused device would also time out; the clear refusal comes first. Without the
     // network list the flag is unknown and the online state decides.
@@ -1911,7 +1909,7 @@ struct NexusManager::Session {
         if (ingress_port <= 0) throw NexusError(503, "The mesh service listener is not running");
         detail = "joining";
         ln_set_link_token(client.get(), code.c_str());
-        if (ln_set_inference_node(client.get(), 1) != LN_OK) throw NexusError(500, "Cannot join as an inference node");
+        if (ln_set_inference_node(client.get(), 1) != LN_OK) throw NexusError(500, "Cannot join as a Lemonade server");
         // The join names the device; a name the SDK refuses (too long, or with a
         // character peers would drop) leaves the server default, renamed below.
         ln_set_device_name(client.get(), device_name().c_str());
