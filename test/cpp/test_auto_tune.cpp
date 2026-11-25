@@ -578,23 +578,23 @@ static void test_auto_context_budget() {
     // Strix Halo, 64 GB VGM on Windows: carve-out 63.8 (18.4 used), shared 47.8 (0.2 used),
     // OS-visible RAM 63.8 with 10.7 used.
     auto vgm64 = auto_context_available_split_gpu_gib(63.8, 18.4, 47.8, 0.2, 63.8, 10.7);
-    check("auto ctx split: carve-out free adds to shared, minus one heap block",
-          vgm64 && approx_eq(vgm64->available_gib, 45.4 + 47.6 - 1.0));
+    check("auto ctx split: carve-out free adds to shared, minus one heap block and headroom",
+          vgm64 && approx_eq(vgm64->available_gib, 45.4 + 47.6 - 1.0 - 63.8 / 32.0));
     auto vgm64_busy_ram = auto_context_available_split_gpu_gib(63.8, 18.4, 47.8, 0.2, 63.8, 30.0);
     check("auto ctx split: free RAM caps only the shared part",
-          vgm64_busy_ram && approx_eq(vgm64_busy_ram->available_gib, 45.4 + 33.8 - 1.0));
+          vgm64_busy_ram && approx_eq(vgm64_busy_ram->available_gib, 45.4 + 33.8 - 1.0 - 63.8 / 32.0));
     auto vgm96 = auto_context_available_split_gpu_gib(95.8, 0.5, 23.9, 0.1, 31.8, 9.0);
     check("auto ctx split: 96 GB carve-out is not limited by 32 GB OS RAM",
-          vgm96 && approx_eq(vgm96->available_gib, 95.3 + 22.8 - 1.0));
+          vgm96 && approx_eq(vgm96->available_gib, 95.3 + 22.8 - 1.0 - 2.0));
     auto carveout_full = auto_context_available_split_gpu_gib(63.8, 63.8, 47.8, 0.2, 63.8, 10.7);
     check("auto ctx split: full carve-out leaves shared only, no split loss",
-          carveout_full && approx_eq(carveout_full->available_gib, 47.6));
+          carveout_full && approx_eq(carveout_full->available_gib, 47.6 - 63.8 / 32.0));
     auto small_carveout = auto_context_available_split_gpu_gib(0.5, 0.3, 62.0, 2.0, 124.0, 20.0);
     check("auto ctx split: small carve-out loses at most its own free space",
-          small_carveout && approx_eq(small_carveout->available_gib, 0.2 + 60.0 - 0.2));
+          small_carveout && approx_eq(small_carveout->available_gib, 0.2 + 60.0 - 0.2 - 0.5 / 32.0));
     auto shared_usage_unknown = auto_context_available_split_gpu_gib(63.8, 18.4, 47.8, -1.0, 63.8, 10.7);
     check("auto ctx split: unknown shared usage is still capped by free RAM",
-          shared_usage_unknown && approx_eq(shared_usage_unknown->available_gib, 45.4 + 47.8 - 1.0));
+          shared_usage_unknown && approx_eq(shared_usage_unknown->available_gib, 45.4 + 47.8 - 1.0 - 63.8 / 32.0));
     check("auto ctx split: unknown carve-out usage falls back",
           !auto_context_available_split_gpu_gib(63.8, -1.0, 47.8, 0.2, 63.8, 10.7));
     check("auto ctx split: unknown RAM usage falls back",
@@ -622,6 +622,23 @@ static void test_auto_context_budget() {
     check("auto ctx split: memory-limited load scales headroom with the carve-out",
           approx_eq(halo_tight_budget.kv_gib,
                     (33.5 + 20.3) * (1.0 - 0.08) - 44.73 - 44.73 * 0.04));
+    // Strix Halo, 64 GB VGM on Linux: GTT is half of the OS-visible RAM, so the GPU limit binds.
+    auto linux64 = auto_context_available_split_gpu_gib(64.0, 0.8, 31.3, 0.1, 62.56, 5.6);
+    auto linux64_budget = estimate_auto_context_budget(
+        linux64->available_gib, 5.21, 294912.0, true, false, true, 62.56 - 5.6,
+        linux64->carveout_gib);
+    check("auto ctx split: a GPU-bound load leaves both the workspace and the headroom free",
+          approx_eq(63.2 + 31.2 - 1.0 - 5.21 - linux64_budget.kv_gib, 0.5 + 2.0));
+    auto heaps_exhausted = auto_context_available_split_gpu_gib(63.8, 63.8, 47.8, 47.0, 63.8, 60.0);
+    check("auto ctx split: headroom never makes the available memory negative",
+          heaps_exhausted && heaps_exhausted->available_gib == 0.0);
+    // Default firmware carve-out on a 128 GiB machine: weights nearly fill GTT.
+    auto default_gtt = auto_context_available_split_gpu_gib(0.5, 0.4, 62.5, 0.8, 124.9, 10.0);
+    auto default_gtt_budget = estimate_auto_context_budget(
+        default_gtt->available_gib, 59.03, 36864.0, true, false, true, 114.9,
+        default_gtt->carveout_gib);
+    check("auto ctx split: headroom does not push a default carve-out to the fallback",
+          default_gtt_budget.max_tokens > 8192);
     // With no usable carve-out the budget must equal the plain UMA budget.
     for (double weights : {20.0, 44.73, 80.0}) {
         auto uma = estimate_auto_context_budget(small_carveout->available_gib, weights, halo_kv,

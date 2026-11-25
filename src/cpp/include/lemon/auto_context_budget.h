@@ -108,8 +108,11 @@ inline std::optional<double> auto_context_available_gpu_gib(
 // cannot straddle the dedicated and shared heaps.
 inline constexpr double AUTO_CTX_HEAP_SPLIT_LOSS_GIB = 1.0;
 
+inline constexpr AutoContextReserveRange AUTO_CTX_CARVEOUT_GPU_HEADROOM{
+    1.0 / 32.0, 0.0, 2.0};
+
 struct AutoContextSplitGpuMemory {
-    double available_gib = 0.0;  // allocatable across both heaps
+    double available_gib = 0.0;  // allocatable across both heaps, minus headroom
     double carveout_gib = 0.0;   // the part of it that costs no OS-visible RAM
 };
 
@@ -137,7 +140,10 @@ inline std::optional<AutoContextSplitGpuMemory> auto_context_available_split_gpu
     const double split_loss =
         (std::min)({AUTO_CTX_HEAP_SPLIT_LOSS_GIB, dedicated_free, shared_free});
     const double carveout = dedicated_free - split_loss;
-    return AutoContextSplitGpuMemory{carveout + shared_free, carveout};
+    const double gpu_headroom =
+        AUTO_CTX_CARVEOUT_GPU_HEADROOM.estimate(dedicated_total_gib);
+    return AutoContextSplitGpuMemory{
+        (std::max)(0.0, carveout + shared_free - gpu_headroom), carveout};
 }
 
 inline AutoContextBudget estimate_auto_context_budget(double free_gib,
