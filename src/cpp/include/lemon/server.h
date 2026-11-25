@@ -22,6 +22,7 @@
 
 namespace lemon {
 
+class ModelSourceMonitor;
 class RequestMiddleware;
 class WebUi;
 
@@ -52,6 +53,8 @@ public:
     // rather than in utils::get_config_dir().
     const std::string& config_dir() const { return config_dir_; }
 
+    void refresh_model_source();
+
     // Set once the startup model update check completes.
     bool update_check_done() const { return update_check_done_.load(); }
 
@@ -63,11 +66,14 @@ public:
     double get_cpu_usage();
 
 private:
+    std::string effective_default_model_source() const;
+    std::string wait_for_default_model_source();
     void start_model_cache_warmup();
 
     // Declared so that destruction runs the listeners first and the subsystems last.
     std::shared_ptr<RuntimeConfig> config_;
     std::string config_dir_;
+    std::unique_ptr<ModelSourceMonitor> model_source_monitor_;
     std::unique_ptr<Router> router_;
     std::unique_ptr<ModelManager> model_manager_;
     std::unique_ptr<BackendManager> backend_manager_;

@@ -224,6 +224,7 @@ set(LEMON_BACKENDS
     # "<recipe>|<stem>"
     "llamacpp|llamacpp"
     "llamacpp-hrx|hrx"
+    "loom|loom"
     "whispercpp|whispercpp"
     "moonshine|moonshine"
     "kokoro|kokoro"
@@ -2535,6 +2536,15 @@ if(BUILD_TESTING AND EXISTS "${_CUSTOM_ARGS_TEST_SRC}")
     add_cpp_ci_test(CustomArgsTest CI ON COMMAND test_custom_args)
 endif()
 
+if(BUILD_TESTING)
+    add_cpp_ci_test(BackendArgsAuthorizationTest CI ON
+        COMMAND ${Python3_EXECUTABLE}
+            "${CMAKE_CURRENT_SOURCE_DIR}/test/server_backend_args_auth.py"
+            --server-binary "$<TARGET_FILE:lemond>"
+        DEPENDS lemond
+    )
+endif()
+
 # Recipe custom-argument scope resolution.
 set(_RECIPE_ARG_RESOLVER_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_recipe_arg_resolution.cpp"
@@ -2812,6 +2822,15 @@ if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_hrx_contr
     add_cpp_ci_test(HrxContractTest CI ON COMMAND test_hrx_contract)
 endif()
 
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_loom_contract.cpp")
+    add_executable(test_loom_contract test/cpp/test_loom_contract.cpp)
+    target_link_libraries(test_loom_contract PRIVATE lemonade-server-core)
+    target_compile_definitions(test_loom_contract PRIVATE
+        LOOM_TEST_CATALOG_PATH="${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/server_models.json"
+        LOOM_TEST_BACKEND_VERSIONS_PATH="${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/backend_versions.json")
+    add_cpp_ci_test(LoomContractTest CI ON COMMAND test_loom_contract)
+endif()
+
 # Job engine pure core: the `when`/`branch` expression evaluator + reference
 # resolution, and step-graph validation (forward-only ⇒ no loops). Header-only,
 # so these link only nlohmann/json.
@@ -2825,6 +2844,22 @@ if(BUILD_TESTING AND EXISTS "${_JOB_EXPR_TEST_SRC}")
     target_link_libraries(test_job_expr PRIVATE nlohmann_json::nlohmann_json)
     include(CTest)
     add_cpp_ci_test(JobExprTest CI ON COMMAND test_job_expr)
+endif()
+
+# Where video clips are kept, and the file names allowed to reach the disk.
+set(_VIDEO_STORE_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_video_store.cpp")
+if(BUILD_TESTING AND EXISTS "${_VIDEO_STORE_TEST_SRC}")
+    add_executable(test_video_store test/cpp/test_video_store.cpp)
+    target_link_libraries(test_video_store PRIVATE lemonade-server-core)
+    add_cpp_ci_test(VideoStoreTest CI ON COMMAND test_video_store)
+endif()
+
+# A load that stops waiting for a shared backend install leaves the install running.
+set(_DOWNLOAD_WAIT_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_download_wait.cpp")
+if(BUILD_TESTING AND EXISTS "${_DOWNLOAD_WAIT_TEST_SRC}")
+    add_executable(test_download_wait test/cpp/test_download_wait.cpp)
+    target_link_libraries(test_download_wait PRIVATE lemonade-server-core)
+    add_cpp_ci_test(DownloadWaitTest CI ON COMMAND test_download_wait)
 endif()
 
 set(_JOB_GRAPH_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_job_graph.cpp")
@@ -3884,6 +3919,13 @@ if(BUILD_TESTING AND EXISTS "${_CONFIG_DEFAULT_SOURCE_TEST_SRC}")
     add_cpp_ci_test(ConfigDefaultSourceTest CI ON COMMAND test_config_default_source)
 endif()
 
+set(_BACKEND_SOURCE_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_source.cpp")
+if(BUILD_TESTING AND EXISTS "${_BACKEND_SOURCE_TEST_SRC}")
+    add_executable(test_backend_source test/cpp/test_backend_source.cpp)
+    target_link_libraries(test_backend_source PRIVATE lemonade-server-core)
+    add_cpp_ci_test(BackendSourceTest CI ON COMMAND test_backend_source)
+endif()
+
 set(_CLI_RUNTIME_OVERRIDE_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_cli_runtime_override.cpp")
 if(BUILD_TESTING AND EXISTS "${_CLI_RUNTIME_OVERRIDE_TEST_SRC}")
     add_executable(test_cli_runtime_override test/cpp/test_cli_runtime_override.cpp)
@@ -4020,6 +4062,14 @@ if(BUILD_TESTING AND EXISTS "${_HTTP_CLIENT_SECURITY_TEST_SRC}")
     add_cpp_ci_test(HttpClientSecurityTest CI OFF COMMAND test_http_client_security)
 endif()
 
+# Network-free fixtures for the built-in web search result parser.
+set(_WEB_SEARCH_PARSER_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_web_search_parser.cpp")
+if(BUILD_TESTING AND EXISTS "${_WEB_SEARCH_PARSER_TEST_SRC}")
+    add_executable(test_web_search_parser test/cpp/test_web_search_parser.cpp)
+    target_link_libraries(test_web_search_parser PRIVATE lemonade-server-core)
+    add_cpp_ci_test(WebSearchParserTest CI ON COMMAND test_web_search_parser)
+endif()
+
 set(_HTTP_CLIENT_TIMEOUT_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_http_client_timeout.cpp")
 if(BUILD_TESTING AND EXISTS "${_HTTP_CLIENT_TIMEOUT_TEST_SRC}")
     add_executable(test_http_client_timeout test/cpp/test_http_client_timeout.cpp)
@@ -4035,6 +4085,20 @@ if(BUILD_TESTING AND EXISTS "${_REQUEST_CANCELLATION_TEST_SRC}")
     add_executable(test_request_cancellation test/cpp/test_request_cancellation.cpp)
     target_link_libraries(test_request_cancellation PRIVATE lemonade-server-core)
     add_cpp_ci_test(RequestCancellationTest CI ON COMMAND test_request_cancellation)
+endif()
+
+set(_SDCPP_VIDEO_POLL_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_sdcpp_video_poll.cpp")
+if(BUILD_TESTING AND EXISTS "${_SDCPP_VIDEO_POLL_TEST_SRC}")
+    add_executable(test_sdcpp_video_poll test/cpp/test_sdcpp_video_poll.cpp)
+    target_link_libraries(test_sdcpp_video_poll PRIVATE lemonade-server-core)
+    add_cpp_ci_test(SdcppVideoPollTest CI ON COMMAND test_sdcpp_video_poll)
+endif()
+
+set(_THENOISE_VIDEO_POLL_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_thenoise_video_poll.cpp")
+if(BUILD_TESTING AND EXISTS "${_THENOISE_VIDEO_POLL_TEST_SRC}")
+    add_executable(test_thenoise_video_poll test/cpp/test_thenoise_video_poll.cpp)
+    target_link_libraries(test_thenoise_video_poll PRIVATE lemonade-server-core)
+    add_cpp_ci_test(TheNoiseVideoPollTest CI ON COMMAND test_thenoise_video_poll)
 endif()
 
 set(_STREAMING_HEARTBEAT_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_streaming_heartbeat.cpp")

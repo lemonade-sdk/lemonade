@@ -299,6 +299,7 @@ const CUSTOM_RECIPE_OPTIONS: Record<CustomModelCapability, CustomRecipeOption[]>
   chat: CHAT_RECIPE_OPTIONS,
   omni: CHAT_RECIPE_OPTIONS,
   classification: [customRecipeOption('onnxruntime', 'ONNX Runtime', 'Text classification through /classify')],
+  video: [customRecipeOption('sd-cpp', 'Stable Diffusion', 'Text-to-video generation through /videos')],
   image: [
     customRecipeOption('sd-cpp', 'Stable Diffusion', 'Stable Diffusion C++ backend'),
     customRecipeOption('thenoise', 'TheNoise', 'PyTorch image generation backend'),
@@ -1162,6 +1163,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const [modelScopeLoading, setModelScopeLoading] = useState(false);
   const [modelScopeError, setModelScopeError] = useState<string | null>(null);
   const [selectedRemoteModel, setSelectedRemoteModel] = useState<HFModelResult | null>(null);
+  const selectedRemoteModelRef = useRef(selectedRemoteModel);
+  selectedRemoteModelRef.current = selectedRemoteModel;
   const [selectedRemoteProvider, setSelectedRemoteProvider] = useState<ModelRegistryProvider>('huggingface');
   const [pullingRemote, setPullingRemote] = useState<Record<string, { percent: number; modelName: string; checkpoint: string }>>({});
   const pullRemoteAbortRef = useRef<Record<string, AbortController>>({});
@@ -1684,17 +1687,25 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       // The collection itself stays the selected virtual model in the UI.
       for (const componentName of components) {
         const componentInfo = findCurrentModel(componentName);
-        await loadModelRuntime(componentInfo || componentName, visited);
+        await loadModelRuntime(componentInfo || componentName, visited,
+          overrideOptions === undefined ? undefined : {});
       }
       visited.delete(key);
       return;
     }
 
-    // overrideOptions (the settings shown in the detail panel) win over the
-    // custom model's own load options, which still supply everything else.
     const custom = info ? customLoadOptions(info) : undefined;
     const options = overrideOptions || custom ? { ...custom, ...overrideOptions } : undefined;
-    await api.loadModel(name, options, info);
+    const argumentSource = overrideOptions === undefined ? 'local-overrides' : 'server-config';
+    if (options) {
+      for (const key of Object.keys(options)) {
+        if ((key.endsWith('_args') || key === 'merge_args')
+          && !Object.prototype.hasOwnProperty.call(overrideOptions ?? {}, key)) {
+          delete options[key];
+        }
+      }
+    }
+    await api.loadModel(name, options, info, argumentSource);
     visited.delete(key);
   };
 
@@ -1755,7 +1766,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     const info = allModels.find(m => modelName(m) === name) ?? null;
     markBusy(name);
     try {
-      await api.reloadModel(name, recipeOptions, info);
+      await api.reloadModel(name, recipeOptions, info,
+        recipeOptions === undefined ? 'local-overrides' : 'server-config');
     } finally {
       await refresh();
       clearBusy(name);
@@ -1948,6 +1960,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     // Models already known to lemond are downloaded by their server-owned ID.
     const registeredModel = findRegisteredRemoteModel(allModels, provider, modelId, variantName, recipe, vdata);
     if (registeredModel) {
+      setSelectedRemoteModel(null);
+      setSelectedDetailModelId(modelName(registeredModel));
       await handlePull(registeredModel);
       return;
     }
@@ -1970,11 +1984,18 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
           },
         }));
       },
-      onComplete: (data) => {
+      onComplete: async (data) => {
         downloadStore.wake(targetModelName, 'model');
         delete pullRemoteAbortRef.current[key];
         setPullingRemote(p => { const next = { ...p }; delete next[key]; return next; });
-        refresh();
+        await refresh();
+        if (selectedRemoteModelRef.current?.id === modelId) {
+          const targetKey = customModelNameKey(targetModelName);
+          const fresh = await api.models(true).catch(() => null);
+          const pulled = fresh?.data.find(m => customModelNameKey(modelName(m)) === targetKey);
+          setSelectedRemoteModel(null);
+          setSelectedDetailModelId(pulled ? modelName(pulled) : targetModelName);
+        }
       },
       onError: (err) => {
         downloadStore.wake(targetModelName, 'model');
@@ -2598,7 +2619,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       const disp = String(m.display_name || '').toLowerCase();
       const recipe = String((m as any).recipe || '').toLowerCase();
       const labels = (m.labels || []).join(' ').toLowerCase();
-      return `${mName} ${disp} ${recipe} ${labels}`.includes(q);
+      return `${mName} ${disp} ${recipe} ${labels} ${modelCheckpoint(m).toLowerCase()}`.includes(q);
     });
   }, [allModels, searchQuery]);
   const selectedDetailModel = selectedDetailModelId

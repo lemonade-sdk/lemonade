@@ -66,7 +66,7 @@ static json priced_model(const std::string& name) {
 }
 
 static void test_registration_preserves_cost_props(ModelManager& manager) {
-    manager.register_user_model("user.PricedModel", priced_model("user.PricedModel"), "test");
+    manager.register_user_model("user.PricedModel", priced_model("user.PricedModel"), "test", /*allow_backend_args=*/false);
 
     const auto& e = manager.get_model_info("user.PricedModel").extras;
     check("cost_tier survives registration",
@@ -114,7 +114,7 @@ static void test_cost_cache_sees_new_price(ModelManager& manager) {
 
     json repriced = priced_model("user.PricedModel");
     repriced["cost_input_per_million"] = 0.75;
-    manager.register_user_model("user.PricedModel", repriced, "test");
+    manager.register_user_model("user.PricedModel", repriced, "test", /*allow_backend_args=*/false);
 
     check("cost_of returns the new price after re-registration",
           approx_equal(services.cost_of("user.PricedModel").cost_input_per_million, 0.75));
@@ -185,7 +185,7 @@ static void test_unusable_values_are_dropped_on_read(ModelManager& manager) {
     json doc = priced_model("user.BadlyPricedModel");
     doc["cost_tier"] = "cheapish";
     doc["cost_input_per_million"] = -3.0;
-    manager.register_user_model("user.BadlyPricedModel", doc, "test");
+    manager.register_user_model("user.BadlyPricedModel", doc, "test", /*allow_backend_args=*/false);
 
     const lemon::CostInfo cost =
         lemon::resolve_model_cost_info(manager.get_model_info("user.BadlyPricedModel"));

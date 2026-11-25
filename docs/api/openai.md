@@ -172,11 +172,11 @@ Both non-streaming and `stream: true` are supported. In streaming mode the media
 **Response:** `200 OK`
 
 ```text
-data: {"id": "chatcmpl-NoEWRv1s5czlHNYL4Vp5FhTw91Ou8XM1", "object": "chat.completion.chunk", "created": 1793827645, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b12109-13ec8f614", "choices": [{"index": 0, "delta": {"role": "assistant", "content": null}, "finish_reason": null}]}
-data: {"id": "chatcmpl-NoEWRv1s5czlHNYL4Vp5FhTw91Ou8XM1", "object": "chat.completion.chunk", "created": 1793827645, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b12109-13ec8f614", "choices": [{"index": 0, "delta": {"reasoning_content": "Okay"}, "finish_reason": null}]}
-data: {"id": "chatcmpl-NoEWRv1s5czlHNYL4Vp5FhTw91Ou8XM1", "object": "chat.completion.chunk", "created": 1793827645, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b12109-13ec8f614", "choices": [{"index": 0, "delta": {"reasoning_content": ","}, "finish_reason": null}]}
+data: {"id": "chatcmpl-wxj9daQs3ergHalVloBeoyJ4OdbfJERB", "object": "chat.completion.chunk", "created": 1795449067, "model": "~\\.cache\\huggingface\\hub/models--unsloth--Qwen3-0.6B-GGUF\\snapshots\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b12633-9c10c94e1", "choices": [{"index": 0, "delta": {"role": "assistant", "content": null}, "finish_reason": null}]}
+data: {"id": "chatcmpl-wxj9daQs3ergHalVloBeoyJ4OdbfJERB", "object": "chat.completion.chunk", "created": 1795449067, "model": "~\\.cache\\huggingface\\hub/models--unsloth--Qwen3-0.6B-GGUF\\snapshots\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b12633-9c10c94e1", "choices": [{"index": 0, "delta": {"reasoning_content": "Okay"}, "finish_reason": null}]}
+data: {"id": "chatcmpl-wxj9daQs3ergHalVloBeoyJ4OdbfJERB", "object": "chat.completion.chunk", "created": 1795449067, "model": "~\\.cache\\huggingface\\hub/models--unsloth--Qwen3-0.6B-GGUF\\snapshots\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b12633-9c10c94e1", "choices": [{"index": 0, "delta": {"reasoning_content": ","}, "finish_reason": null}]}
 ...
-data: {"id": "chatcmpl-NoEWRv1s5czlHNYL4Vp5FhTw91Ou8XM1", "object": "chat.completion.chunk", "created": 1793827647, "model": "~/.cache/huggingface/hub/models--unsloth--Qwen3-0.6B-GGUF/snapshots/50968a4468ef4233ed78cd7c3de230dd1d61a56b/Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b12109-13ec8f614", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}], "timings": {"cache_n": 14, "prompt_n": 1, "prompt_ms": 13.334, "prompt_per_token_ms": 13.334, "prompt_per_second": 74.99625018749063, "predicted_n": 179, "predicted_ms": 1827.578, "predicted_per_token_ms": 10.267292134831461, "predicted_per_second": 97.39666378124491}}
+data: {"id": "chatcmpl-wxj9daQs3ergHalVloBeoyJ4OdbfJERB", "object": "chat.completion.chunk", "created": 1795449067, "model": "~\\.cache\\huggingface\\hub/models--unsloth--Qwen3-0.6B-GGUF\\snapshots\\50968a4468ef4233ed78cd7c3de230dd1d61a56b\\Qwen3-0.6B-Q4_0.gguf", "system_fingerprint": "b12633-9c10c94e1", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}], "timings": {"cache_n": 14, "prompt_n": 1, "prompt_ms": 3.862, "prompt_per_token_ms": 3.862, "prompt_per_second": 258.9331952356292, "predicted_n": 220, "predicted_ms": 607.302, "predicted_per_token_ms": 2.773068493150685, "predicted_per_second": 360.6113597518204}}
 data: [DONE]
 ```
 
@@ -859,14 +859,14 @@ A request that continues earlier responses, through `previous_response_id`, `con
 
 ```text
 event: response.created
-data: {"type": "response.created", "response": {"id": "resp_L7uzVj7alzqP0uYc4HYBpvdp60tAsd1Z", "object": "response", "status": "in_progress"}}
+data: {"type": "response.created", "response": {"id": "resp_6rGgQX8oQrdxXK2GVq5Bl3IyNNuJtlib", "object": "response", "status": "in_progress"}}
 event: response.in_progress
-data: {"type": "response.in_progress", "response": {"id": "resp_L7uzVj7alzqP0uYc4HYBpvdp60tAsd1Z", "object": "response", "status": "in_progress"}}
+data: {"type": "response.in_progress", "response": {"id": "resp_6rGgQX8oQrdxXK2GVq5Bl3IyNNuJtlib", "object": "response", "status": "in_progress"}}
 event: response.output_item.added
-data: {"type": "response.output_item.added", "item": {"content": [], "id": "msg_depHpGR0ZqLNdgRXk7wGBHbhXKjkiC0M", "role": "assistant", "status": "in_progress", "type": "message"}, "output_index": 0}
+data: {"type": "response.output_item.added", "item": {"content": [], "id": "msg_jitUQYoxxFtguuoteSOdYKfhBYzWNMB6", "role": "assistant", "status": "in_progress", "type": "message"}, "output_index": 0}
 ...
 event: response.completed
-data: {"type": "response.completed", "response": {"id": "resp_L7uzVj7alzqP0uYc4HYBpvdp60tAsd1Z", "object": "response", "created_at": 1793827678, "status": "completed", "model": "~/.cache/huggingface/hub/models--unsloth--Llama-3.2-1B-Instruct-GGUF/snapshots/b69aef112e9f895e6f98d7ae0949f72ff09aa401/Llama-3.2-1B-Instruct-UD-Q4_K_XL.gguf", "output": [{"type": "message", "status": "completed", "id": "msg_depHpGR0ZqLNdgRXk7wGBHbhXKjkiC0M", "content": [{"type": "output_text", "annotations": [], "logprobs": [], "text": "As of my knowledge cutoff in December 2023, the population of Paris, France is approximately 2.1 million people within the city limits and 12.2 million people in the larger metropolitan area, according to official statistics from the French National Institute for Statistics and Economic Studies (INSEE)."}], "role": "assistant"}], "usage": {"input_tokens": 42, "output_tokens": 61, "total_tokens": 103, "input_tokens_details": {"cached_tokens": 41}}}, "timings": {"cache_n": 41, "prompt_n": 1, "prompt_ms": 16.128, "prompt_per_token_ms": 16.128, "prompt_per_second": 62.00396825396825, "predicted_n": 61, "predicted_ms": 375.356, "predicted_per_token_ms": 6.255933333333333, "predicted_per_second": 159.84825072730953}}
+data: {"type": "response.completed", "response": {"id": "resp_6rGgQX8oQrdxXK2GVq5Bl3IyNNuJtlib", "object": "response", "created_at": 1795449099, "status": "completed", "model": "~\\.cache\\huggingface\\hub/models--unsloth--Llama-3.2-1B-Instruct-GGUF\\snapshots\\b69aef112e9f895e6f98d7ae0949f72ff09aa401\\Llama-3.2-1B-Instruct-UD-Q4_K_XL.gguf", "output": [{"type": "message", "status": "completed", "id": "msg_jitUQYoxxFtguuoteSOdYKfhBYzWNMB6", "content": [{"type": "output_text", "annotations": [], "logprobs": [], "text": "As of my knowledge cutoff in December 2023, the estimated population of Paris is approximately 2.1 million people within the city limits. However, the larger metropolitan area of Paris, also known as Île-de-France, has a population of over 12.2 million people, making it one of the most populous metropolitan areas in Europe."}], "role": "assistant"}], "usage": {"input_tokens": 42, "output_tokens": 72, "total_tokens": 114, "input_tokens_details": {"cached_tokens": 41}}}, "timings": {"cache_n": 41, "prompt_n": 1, "prompt_ms": 4.94, "prompt_per_token_ms": 4.94, "prompt_per_second": 202.42914979757083, "predicted_n": 72, "predicted_ms": 313.894, "predicted_per_token_ms": 4.421042253521127, "predicted_per_second": 226.1910071552817}}
 data: [DONE]
 ```
 
@@ -1212,10 +1212,36 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 ```json
 {
-  "created": 1791943145,
+  "created": 1795370112,
   "data": [
     {
-      "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAIAAAB7GkOtAAAEgnRFWHRwYXJhbWV0ZXJzAEEgc2VyZW5l... (886,104 characters)"
+      "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAIAAAB7GkOtAAACwnRFWHRwYXJhbWV0ZXJzAEEgc2VyZW5l... (838,928 characters)",
+      "generation_info": {
+        "clip_skip": 2,
+        "height": 512,
+        "kind": "image",
+        "models": {"model": "sd_turbo.safetensors"},
+        "negative_prompt": "",
+        "prompt": "A serene mountain landscape at sunset ",
+        "sample_params": {
+          "eta": 1.0,
+          "guidance": {"distilled_guidance": 3.5, "txt_cfg": 1.0},
+          "sample_method": "euler_a",
+          "sample_steps": 4,
+          "scheduler": "discrete"
+        },
+        "schema": "sdcpp.generation/v1",
+        "seed": "7262",
+        "vae_tiling_params": {
+          "enabled": true,
+          "rel_size_h": 0.0,
+          "rel_size_w": 0.0,
+          "target_overlap": 0.5,
+          "tile_size_h": 0,
+          "tile_size_w": 0
+        },
+        "width": 512
+      }
     }
   ],
   "output_format": "png"
@@ -1325,10 +1351,41 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 ```json
 {
-  "created": 1791943169,
+  "created": 1795370150,
   "data": [
     {
-      "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAIAAAB7GkOtAAAFR3RFWHRwYXJhbWV0ZXJzAEFkZCBhIHJl... (689,496 characters)"
+      "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAIAAAB7GkOtAAADYHRFWHRwYXJhbWV0ZXJzAEFkZCBhIHJl... (776,060 characters)",
+      "generation_info": {
+        "clip_skip": 0,
+        "height": 512,
+        "kind": "image",
+        "models": {
+          "diffusion_model": "flux-2-klein-4b.safetensors",
+          "llm": "qwen_3_4b.safetensors",
+          "vae": "flux2-vae.safetensors"
+        },
+        "negative_prompt": "",
+        "prompt": "Add a red barn and mountains in the background, photorealistic ",
+        "sample_params": {
+          "eta": 0.0,
+          "flow_shift": 1.0,
+          "guidance": {"distilled_guidance": 3.5, "txt_cfg": 1.0},
+          "sample_method": "euler",
+          "sample_steps": 4,
+          "scheduler": "flux2"
+        },
+        "schema": "sdcpp.generation/v1",
+        "seed": "7282",
+        "vae_tiling_params": {
+          "enabled": true,
+          "rel_size_h": 0.0,
+          "rel_size_w": 0.0,
+          "target_overlap": 0.5,
+          "tile_size_h": 0,
+          "tile_size_w": 0
+        },
+        "width": 512
+      }
     }
   ],
   "output_format": "png"
@@ -1429,10 +1486,41 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 ```json
 {
-  "created": 1791943188,
+  "created": 1795370167,
   "data": [
     {
-      "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAIAAAB7GkOtAAAE3XRFWHRwYXJhbWV0ZXJzAHZhcmlhdGlv... (204,076 characters)"
+      "b64_json": "iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAIAAAB7GkOtAAAC9nRFWHRwYXJhbWV0ZXJzAHZhcmlhdGlv... (272,020 characters)",
+      "generation_info": {
+        "clip_skip": 0,
+        "height": 512,
+        "kind": "image",
+        "models": {
+          "diffusion_model": "flux-2-klein-4b.safetensors",
+          "llm": "qwen_3_4b.safetensors",
+          "vae": "flux2-vae.safetensors"
+        },
+        "negative_prompt": "",
+        "prompt": "variation ",
+        "sample_params": {
+          "eta": 0.0,
+          "flow_shift": 1.0,
+          "guidance": {"distilled_guidance": 3.5, "txt_cfg": 1.0},
+          "sample_method": "euler",
+          "sample_steps": 4,
+          "scheduler": "flux2"
+        },
+        "schema": "sdcpp.generation/v1",
+        "seed": "7403",
+        "vae_tiling_params": {
+          "enabled": true,
+          "rel_size_h": 0.0,
+          "rel_size_w": 0.0,
+          "target_overlap": 0.5,
+          "tile_size_h": 0,
+          "tile_size_w": 0
+        },
+        "width": 512
+      }
     }
   ],
   "output_format": "png"
@@ -1788,6 +1876,7 @@ labels that name different modes:
 | `audio-generation` | `/audio/generations` | Text-to-audio generation model (e.g. music, sound effects). |
 | `classification` | `/classify` | Text classification model. Also accepted as `classifier`. |
 | `3d` | `/3d/generations` | Text- or image-to-3D mesh generation model. |
+| `video` | `/videos` | Text-to-video generation model, run as an asynchronous job. |
 
 When a model declares no deployment label at all, it inherits its recipe's
 default: `chat` for `llamacpp`, `flm`, `ryzenai-llm`, `vllm` and `cloud`,
@@ -2110,7 +2199,7 @@ Per-architecture defaults are chosen by the architecture in the model's GGUF met
 ## `POST /v1/models/{id}/options`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Saves recipe options for a model without loading it. The body is a flat object of the recipe options [`/v1/load`](./lemonade.md#post-v1load) accepts.
+Saves recipe options for a model without loading it. The body is a flat object of the recipe options [`/v1/load`](./lemonade.md#post-v1load) accepts. Sending `*_args` or `merge_args` requires [admin authorization](../guide/configuration/README.md#admin-api-key), including empty or `null` values.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -2209,6 +2298,7 @@ A running model keeps its current options until it is next loaded.
 | `400` |  | The body sets `pinned`, which belongs to `/v1/load` and `/internal/pin` |
 | `400` |  | A field not listed above has the wrong JSON type |
 | `400` |  | `ctx_size` is not a positive whole number or `-1`, or a whole-number option has a fractional value |
+| `403` | `admin_required` | The request changes backend arguments or a collection manifest source without admin authorization |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `500` | `internal_error` | Reading or saving the model's options fails, for example on an unwritable options file |
@@ -2218,7 +2308,7 @@ A running model keeps its current options until it is next loaded.
 ## `DELETE /v1/models/{id}/options`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Resets a model to its defaults by erasing its `recipe_options.json` entry. Defaults from its registry entry and the server's configuration still apply.
+Resets a model to its defaults by erasing its `recipe_options.json` entry. Defaults from its registry entry and the server's configuration still apply. Clearing saved backend arguments requires [admin authorization](../guide/configuration/README.md#admin-api-key).
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -2294,6 +2384,7 @@ Requires `LEMONADE_API_KEY` when it is set.
 
 | Status | Code | When |
 |--------|------|------|
+| `403` | `admin_required` | The request changes backend arguments or a collection manifest source without admin authorization |
 | `404` | `model_not_supported` | The requested model is filtered out on this system, such as an NPU model without an NPU |
 | `404` | `model_not_found` | The requested model is not in the registry |
 | `500` | `internal_error` | Reading or saving the model's options fails, for example on an unwritable options file |
