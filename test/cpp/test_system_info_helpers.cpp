@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <set>
 #include <string>
 #include <utility>
@@ -127,6 +128,15 @@ public:
         std::ofstream(device / "mem_info_vram_total") << total << "\n";
     }
 
+    void add_gtt(const std::string& drm_render_minor,
+                 const std::string& used,
+                 const std::string& total) const {
+        const fs::path device = drm() / ("renderD" + drm_render_minor) / "device";
+        fs::create_directories(device);
+        std::ofstream(device / "mem_info_gtt_used") << used << "\n";
+        std::ofstream(device / "mem_info_gtt_total") << total << "\n";
+    }
+
 private:
     fs::path root_;
 };
@@ -136,11 +146,12 @@ static bool expect_device_memory(const char* name,
                                  const std::string& arch,
                                  bool expected_found,
                                  uint64_t expected_free = 0,
-                                 uint64_t expected_total = 0) {
+                                 uint64_t expected_total = 0,
+                                 const std::function<bool(const fs::path&)>& is_apu = {}) {
     uint64_t free_bytes = 0;
     uint64_t total_bytes = 0;
     const bool found = rocm_device_memory_from_sysfs(
-        sysfs.kfd_nodes(), sysfs.drm(), arch, free_bytes, total_bytes);
+        sysfs.kfd_nodes(), sysfs.drm(), arch, free_bytes, total_bytes, is_apu);
 
     bool ok = found == expected_found;
     if (ok && found) {
@@ -315,6 +326,55 @@ int main() {
         failures += !expect_device_memory(
             "an exhausted second GPU does not affect the requested one",
             sysfs, "gfx1151", true, 34359738368ULL, 34359738368ULL);
+    }
+
+    {
+        // Strix Halo with a 512 MiB carve-out: ROCm reports the 124 GiB GTT pool.
+        FakeSysfs sysfs("apu");
+        sysfs.add_node("0", "0", "-1");
+        sysfs.add_node("1", "110501", "128");
+        sysfs.add_memory("128", "497958912", "536870912");
+        sysfs.add_gtt("128", "104983764992", "133143986176");
+        std::string probed;
+        const auto apu = [&probed](const fs::path& render_dir) {
+            probed = render_dir.filename().string();
+            return true;
+        };
+        const auto not_apu = [](const fs::path&) { return false; };
+        failures += !expect_device_memory(
+            "an APU reports its GTT pool when it is larger than the carve-out",
+            sysfs, "gfx1151", true, 133143986176ULL - 104983764992ULL, 133143986176ULL, apu);
+        failures += !expect_string(
+            "the APU check receives the matching render node",
+            probed, "renderD128");
+        failures += !expect_device_memory(
+            "a discrete GPU keeps its VRAM even when GTT is larger",
+            sysfs, "gfx1151", true, 536870912ULL - 497958912ULL, 536870912ULL, not_apu);
+        failures += !expect_device_memory(
+            "without an APU check the VRAM reading is kept",
+            sysfs, "gfx1151", true, 536870912ULL - 497958912ULL, 536870912ULL);
+    }
+
+    {
+        // An APU with a large carve-out allocates from VRAM, as the eviction monitor assumes.
+        FakeSysfs sysfs("apu-carveout");
+        sysfs.add_node("1", "110501", "128");
+        sysfs.add_memory("128", "1073741824", "103079215104");
+        sysfs.add_gtt("128", "0", "17179869184");
+        failures += !expect_device_memory(
+            "an APU whose carve-out exceeds GTT keeps its VRAM reading",
+            sysfs, "gfx1151", true, 103079215104ULL - 1073741824ULL, 103079215104ULL,
+            [](const fs::path&) { return true; });
+    }
+
+    {
+        FakeSysfs sysfs("apu-nogtt");
+        sysfs.add_node("1", "110501", "128");
+        sysfs.add_memory("128", "0", "536870912");
+        failures += !expect_device_memory(
+            "an APU with no GTT reading keeps its VRAM reading",
+            sysfs, "gfx1151", true, 536870912ULL, 536870912ULL,
+            [](const fs::path&) { return true; });
     }
 
     {

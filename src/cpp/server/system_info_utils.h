@@ -245,11 +245,17 @@ inline std::string gpu_display_name(const std::string& marketing_name,
 //
 // Reports nothing unless exactly one GPU matches: two of the same ISA leave no way to say
 // which one a launch lands on, and guessing would size against the wrong device.
-inline bool rocm_device_memory_from_sysfs(const std::filesystem::path& kfd_nodes_dir,
-                                          const std::filesystem::path& drm_dir,
-                                          const std::string& arch,
-                                          uint64_t& free_bytes,
-                                          uint64_t& total_bytes) {
+//
+// An APU's VRAM is only the BIOS carve-out (often 512 MiB). When GTT is larger, ROCm
+// allocates from GTT and reports it as the device's memory, so that is the pool read
+// here. `is_apu` receives the matching /sys/class/drm/renderD<N> directory.
+inline bool rocm_device_memory_from_sysfs(
+    const std::filesystem::path& kfd_nodes_dir,
+    const std::filesystem::path& drm_dir,
+    const std::string& arch,
+    uint64_t& free_bytes,
+    uint64_t& total_bytes,
+    const std::function<bool(const std::filesystem::path&)>& is_apu = {}) {
     namespace fs = std::filesystem;
 
     if (arch.empty()) {
@@ -315,14 +321,25 @@ inline bool rocm_device_memory_from_sysfs(const std::filesystem::path& kfd_nodes
         return file.is_open() && static_cast<bool>(file >> value);
     };
 
-    const fs::path device_dir =
-        drm_dir / ("renderD" + matching_render_minors.front()) / "device";
+    const fs::path render_dir = drm_dir / ("renderD" + matching_render_minors.front());
+    const fs::path device_dir = render_dir / "device";
     uint64_t used = 0;
     uint64_t total = 0;
     if (!read_u64(device_dir / "mem_info_vram_used", used) ||
         !read_u64(device_dir / "mem_info_vram_total", total) ||
         total == 0 || used > total) {
         return false;
+    }
+
+    // GTT usage also counts graphics buffers, so this can read less free memory than
+    // ROCm reports. Under-reading only lowers the budget asked for, which is the safe side.
+    uint64_t gtt_used = 0;
+    uint64_t gtt_total = 0;
+    if (is_apu && read_u64(device_dir / "mem_info_gtt_used", gtt_used) &&
+        read_u64(device_dir / "mem_info_gtt_total", gtt_total) &&
+        gtt_total > total && gtt_used <= gtt_total && is_apu(render_dir)) {
+        used = gtt_used;
+        total = gtt_total;
     }
 
     free_bytes = total - used;

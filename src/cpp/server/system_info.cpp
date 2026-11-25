@@ -4522,9 +4522,15 @@ double SystemInfo::get_global_vram_usage_pct() {
 bool SystemInfo::get_rocm_device_memory(const std::string& arch,
                                         uint64_t& free_bytes,
                                         uint64_t& total_bytes) {
+#ifdef __linux__
+    return system_info_detail::rocm_device_memory_from_sysfs(
+        "/sys/class/kfd/kfd/topology/nodes", "/sys/class/drm",
+        arch, free_bytes, total_bytes, query_amdgpu_is_apu);
+#else
     return system_info_detail::rocm_device_memory_from_sysfs(
         "/sys/class/kfd/kfd/topology/nodes", "/sys/class/drm",
         arch, free_bytes, total_bytes);
+#endif
 }
 
 } // namespace lemon
