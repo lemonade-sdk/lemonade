@@ -21,7 +21,7 @@ use sha2::{Digest, Sha256};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     mpsc::Sender,
-    Mutex,
+    Mutex, MutexGuard,
 };
 #[cfg(not(target_os = "windows"))]
 use std::sync::{mpsc::channel, Arc};
@@ -34,6 +34,16 @@ use tauri::Emitter;
 #[cfg(target_os = "windows")]
 #[path = "nexus_passkey_windows.rs"]
 mod windows_passkey;
+
+pub(crate) const PASSKEY_TIMEOUT_MS: u32 = 60_000;
+/// Authenticator data flags: user present (bit 0) and user verified (bit 2).
+pub(crate) const USER_PRESENT_AND_VERIFIED: u8 = 0b0000_0101;
+pub(crate) const STATUS_EVENT: &str = "nexus:passkey-status";
+
+/// A poisoned lock still holds a usable slot: the panicking thread owned no invariant here.
+pub(crate) fn lock_slot<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(|e| e.into_inner())
+}
 
 #[derive(Default)]
 pub struct PasskeyState {
@@ -109,11 +119,11 @@ fn perform(app: tauri::AppHandle, options: PasskeyOptions) -> Result<Value, Stri
             let (message, needs_pin) = match status {
                 StatusUpdate::PresenceRequired | StatusUpdate::SelectDeviceNotice => ("Touch your FIDO2 security key.".to_string(), false),
                 StatusUpdate::PinUvError(StatusPinUv::PinRequired(sender)) => {
-                    *state.pin.lock().unwrap_or_else(|e| e.into_inner()) = Some(sender);
+                    *lock_slot(&state.pin) = Some(sender);
                     ("Enter your security key PIN.".to_string(), true)
                 }
                 StatusUpdate::PinUvError(StatusPinUv::InvalidPin(sender, attempts)) => {
-                    *state.pin.lock().unwrap_or_else(|e| e.into_inner()) = Some(sender);
+                    *lock_slot(&state.pin) = Some(sender);
                     (format!("Incorrect PIN. {}", attempts.map(|n| format!("{n} attempts remaining.")).unwrap_or_default()), true)
                 }
                 StatusUpdate::PinUvError(StatusPinUv::InvalidUv(_)) => ("Verification failed. Touch your key again.".to_string(), false),
@@ -123,14 +133,14 @@ fn perform(app: tauri::AppHandle, options: PasskeyOptions) -> Result<Value, Stri
             };
             let _ = event_app.emit_to(
                 "main",
-                "nexus:passkey-status",
+                STATUS_EVENT,
                 json!({"message": message, "needs_pin": needs_pin}),
             );
         }
     });
     let (result_tx, result_rx) = channel::<Result<Value, String>>();
     let start = if options.registration {
-        service.register(60000, RegisterArgs {
+        service.register(PASSKEY_TIMEOUT_MS.into(), RegisterArgs {
             client_data_hash: hash,
             relying_party: RelyingParty { id: options.rp_id.clone(), name: Some("Lemonade Nexus".into()) },
             origin: origin.clone(),
@@ -142,7 +152,7 @@ fn perform(app: tauri::AppHandle, options: PasskeyOptions) -> Result<Value, Stri
         }, status_tx, StateCallback::new(Box::new(move |result: authenticator::Result<authenticator::RegisterResult>| {
             let value = result.map_err(|_| "Passkey registration failed or was cancelled".to_string()).and_then(|result| {
                 let data = result.att_obj.auth_data;
-                if data.flags.bits() & 5 != 5 { return Err("User verification is required".into()); }
+                if data.flags.bits() & USER_PRESENT_AND_VERIFIED != USER_PRESENT_AND_VERIFIED { return Err("User verification is required".into()); }
                 let credential = data.credential_data.ok_or("Security key returned no credential")?;
                 match credential.credential_public_key.key {
                     COSEKeyType::EC2(key) if key.x.len() == 32 && key.y.len() == 32 => {
@@ -155,7 +165,7 @@ fn perform(app: tauri::AppHandle, options: PasskeyOptions) -> Result<Value, Stri
             let _ = result_tx.send(value);
         })))
     } else {
-        service.sign(60000, SignArgs {
+        service.sign(PASSKEY_TIMEOUT_MS.into(), SignArgs {
             client_data_hash: hash, origin, relying_party_id: options.rp_id,
             allow_list: vec![PublicKeyCredentialDescriptor { id: credential_id, transports: vec![Transport::USB] }],
             user_verification_req: UserVerificationRequirement::Required, user_presence_req: true,
@@ -163,7 +173,7 @@ fn perform(app: tauri::AppHandle, options: PasskeyOptions) -> Result<Value, Stri
         }, status_tx, StateCallback::new(Box::new(move |result: authenticator::Result<authenticator::SignResult>| {
             let value = result.map_err(|_| "Passkey verification failed or was cancelled".to_string()).and_then(|result| {
                 let assertion = result.assertion;
-                if assertion.auth_data.flags.bits() & 5 != 5 { return Err("User verification is required".into()); }
+                if assertion.auth_data.flags.bits() & USER_PRESENT_AND_VERIFIED != USER_PRESENT_AND_VERIFIED { return Err("User verification is required".into()); }
                 let id = assertion.credentials.ok_or("Security key returned no credential")?.id;
                 Ok(json!({"credential_id": URL_SAFE_NO_PAD.encode(id), "authenticator_data": URL_SAFE_NO_PAD.encode(assertion.auth_data.to_vec()),
                     "signature": URL_SAFE_NO_PAD.encode(assertion.signature), "client_data_json": URL_SAFE_NO_PAD.encode(client_data)}))
@@ -171,7 +181,7 @@ fn perform(app: tauri::AppHandle, options: PasskeyOptions) -> Result<Value, Stri
             let _ = result_tx.send(value);
         })))
     };
-    let deadline = Instant::now() + Duration::from_secs(65);
+    let deadline = Instant::now() + Duration::from_millis(PASSKEY_TIMEOUT_MS.into()) + Duration::from_secs(5);
     let result = if start.is_err() {
         Err("Cannot start passkey verification".into())
     } else {
@@ -189,7 +199,7 @@ fn perform(app: tauri::AppHandle, options: PasskeyOptions) -> Result<Value, Stri
     let _ = service.cancel();
     finished.store(true, Ordering::Release);
     let _ = status_thread.join();
-    *state.pin.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    *lock_slot(&state.pin) = None;
     result
 }
 

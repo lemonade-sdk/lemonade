@@ -199,7 +199,7 @@ const ZH_CN: Record<string, string> = {
   "Group hierarchy": "组层级",
   "This device": "此设备",
   "Group path": "组路径",
-  "Inference server": "推理服务器",
+  "Lemonade server": "Lemonade 服务器",
   "Device node": "设备节点",
   "Loading group…": "正在加载组…",
   "{count} groups": "{count} 个组",

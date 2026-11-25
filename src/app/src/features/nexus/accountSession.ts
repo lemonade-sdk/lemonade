@@ -1,8 +1,15 @@
 import type { NexusAccount, NexusDevice } from './NexusAccountContext';
 import {
   acceptNexusInvite, getNexusMemberships, isNexusDesktop, leaveNexusMembership, nexusAccountController, NexusRequestError, normalizeNexusInvitation, prepareNexus, usesNexusDeviceKey,
+  NEXUS_INVITE_CODE, NEXUS_INVITE_TOKEN, NEXUS_INVITE_TTL_SEC, nexusNameTooLong,
   type NexusDevice as NetworkDevice, type NexusInvite, type NexusJoinMembership, type NexusMembership, type NexusStatus,
 } from './nexus';
+import { NEXUS_ROLES } from './routePermissions';
+
+export const NEXUS_AVATAR_MAX_BYTES = 128 * 1024;
+export const NEXUS_JOINED_AS_MEMBER = 'This device joined the invited network as a member and keeps its own network.';
+const INVITATION_FORMAT_ERROR = 'Enter an 8-digit invitation code or a full invitation token.';
+const MEMBERSHIP_CHANGED_ERROR = 'The account membership changed. Enable Mesh again.';
 
 export type NexusAvatarState = { state: 'ready'; image: string | null; revision: number; can_write: boolean; pending?: boolean }
   | { state: 'unsupported' | 'unavailable' };
@@ -43,7 +50,7 @@ export function nexusJoinNotice(membership: NexusJoinMembership | undefined): { 
     return { error: true, message: membership.error?.trim() ? `The invite was not accepted (${membership.error.trim()}). This device stays in its own network.` : 'The invite was not accepted. This device stays in its own network.' };
   }
   if (membership.status === 'pending') return { error: false, message: 'The invite is waiting for the network to confirm it. This device stays in its own network and joins the invited one as a member once confirmed.' };
-  return { error: false, message: 'This device joined the invited network as a member and keeps its own network.' };
+  return { error: false, message: NEXUS_JOINED_AS_MEMBER };
 }
 export interface NexusFailureNotice { message: string; detail?: string }
 const INVITE_FAILURES: readonly (readonly [RegExp, string])[] = [
@@ -52,8 +59,7 @@ const INVITE_FAILURES: readonly (readonly [RegExp, string])[] = [
   [/could not establish connection|connection error|unreachable/i, 'Could not reach the Nexus servers. Check the network and try again.'],
   [/not allowed|permission|forbidden/i, 'The inviting device may not add devices. Ask an administrator of the network for an invitation.'],
 ];
-// Server and SDK invitation failures are terse. Each known one becomes a sentence with the
-// next step; the raw text stays available as the detail.
+// Server and SDK invitation failures are terse.
 export function nexusInviteFailure(error: unknown): NexusFailureNotice {
   const detail = error instanceof Error ? error.message : String(error);
   const known = INVITE_FAILURES.find(([pattern]) => pattern.test(detail))
@@ -67,7 +73,7 @@ export function verifyAvatarReply(value: unknown): NexusAvatarState {
   if (reply.state === 'unavailable') return { state: 'unavailable' };
   if (reply.state !== 'ready' || !Number.isSafeInteger(reply.revision) || reply.revision! < 0 || typeof reply.can_write !== 'boolean'
     || (reply.pending !== undefined && (typeof reply.pending !== 'boolean' || (reply.pending && reply.image !== null)))
-    || (reply.image !== null && (typeof reply.image !== 'string' || reply.image.length > 128 * 1024
+    || (reply.image !== null && (typeof reply.image !== 'string' || reply.image.length > NEXUS_AVATAR_MAX_BYTES
       || !/^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(reply.image)))) {
     throw new Error('The mesh returned invalid profile image data.');
   }
@@ -75,14 +81,13 @@ export function verifyAvatarReply(value: unknown): NexusAvatarState {
 }
 
 interface AccountReply { id: string; member_id: string; device_node_id: string; role: NonNullable<NexusAccount['role']>; devices: NetworkDevice[]; avatar?: unknown }
-// lemond reports no account name. `deviceName` is this device's name from the membership
-// reply; `fallbackName` covers a reply without one (the name the user entered). `expectedId`
-// is the account of a running session: lemond replaces the device key, and with it the
-// account, when the network revokes it, so a changed id ends that session.
+// lemond reports no account name. `expectedId` is the account of a running session: lemond
+// replaces the device key, and with it the account, when the network revokes it, so a
+// changed id ends that session.
 export function verifyAccountReply(value: unknown, source: string, expectedId?: string, fallbackName = ''): VerifiedNexusAccount {
   const reply = value as AccountReply | null;
   if (!reply || typeof reply.id !== 'string' || !reply.id || typeof reply.member_id !== 'string' || !reply.member_id
-    || typeof reply.device_node_id !== 'string' || !reply.device_node_id || !['admin', 'moderator', 'user'].includes(reply.role) || !Array.isArray(reply.devices)) {
+    || typeof reply.device_node_id !== 'string' || !reply.device_node_id || !NEXUS_ROLES.includes(reply.role) || !Array.isArray(reply.devices)) {
     throw new Error('The server did not return a verified account. Update the server and try again.');
   }
   if (expectedId && reply.id !== expectedId) throw new Error('The account on this device changed. Enable Mesh again.');
@@ -102,8 +107,11 @@ export function verifyAccountReply(value: unknown, source: string, expectedId?: 
     canInvite: Boolean(self.permissions?.includes('admin') || self.permissions?.includes('add_child')) };
 }
 
-export const validNexusInvitation = (value: string) => /^(?:[0-9]{8}|lnk_[0-9a-f]{64})$/.test(normalizeNexusInvitation(value));
-const boundedName = (name: string) => Boolean(name.trim()) && new TextEncoder().encode(name.trim()).length <= 128;
+export const validNexusInvitation = (value: string) => {
+  const code = normalizeNexusInvitation(value);
+  return NEXUS_INVITE_CODE.test(code) || NEXUS_INVITE_TOKEN.test(code);
+};
+const boundedName = (name: string) => Boolean(name.trim()) && !nexusNameTooLong(name);
 
 export function createNexusAccountService(dependencies = { controller: nexusAccountController, desktop: isNexusDesktop, prepare: prepareNexus }): NexusAccountService {
   const currentController = async (source: string) => {
@@ -141,7 +149,7 @@ export function createNexusAccountService(dependencies = { controller: nexusAcco
     },
     async signIn(input) {
       if (!boundedName(input.deviceName)) throw new Error('Enter a device name of up to 128 bytes.');
-      if (input.action === 'join' && !validNexusInvitation(input.invitation || '')) throw new Error('Enter an 8-digit invitation code or a full invitation token.');
+      if (input.action === 'join' && !validNexusInvitation(input.invitation || '')) throw new Error(INVITATION_FORMAT_ERROR);
       const controller = await requireController(input.source);
       const { status } = controller;
       if (!status.available) throw new Error('This server does not include Nexus account support.');
@@ -161,7 +169,7 @@ export function createNexusAccountService(dependencies = { controller: nexusAcco
       return session;
     },
     async joinNetwork(session, invitation) {
-      if (!validNexusInvitation(invitation)) throw new Error('Enter an 8-digit invitation code or a full invitation token.');
+      if (!validNexusInvitation(invitation)) throw new Error(INVITATION_FORMAT_ERROR);
       const controller = await requireController(session.source);
       const reply = await acceptNexusInvite(invitation, controller.request);
       const status = typeof reply?.status === 'string' ? reply.status : 'member';
@@ -191,15 +199,15 @@ export function createNexusAccountService(dependencies = { controller: nexusAcco
     async refresh(session) {
       const controller = await requireController(session.source);
       const next = verifyAccountReply(await controller.request('account'), session.source, session.account.id, session.account.deviceName);
-      if (next.memberId !== session.memberId || next.deviceNodeId !== session.deviceNodeId) throw new Error('The account membership changed. Enable Mesh again.');
+      if (next.memberId !== session.memberId || next.deviceNodeId !== session.deviceNodeId) throw new Error(MEMBERSHIP_CHANGED_ERROR);
       if (next.avatar.state === 'unavailable') next.account.avatarUrl = session.account.avatarUrl;
       return next;
     },
     async invite(session, role) {
       const controller = await requireController(session.source);
       const current = verifyAccountReply(await controller.request('account'), session.source, session.account.id, session.account.deviceName);
-      if (current.memberId !== session.memberId || current.deviceNodeId !== session.deviceNodeId) throw new Error('The account membership changed. Enable Mesh again.');
-      const invite = await controller.request<NexusInvite>('invites', { ttl_sec: 600, ...(role ? { role } : {}) });
+      if (current.memberId !== session.memberId || current.deviceNodeId !== session.deviceNodeId) throw new Error(MEMBERSHIP_CHANGED_ERROR);
+      const invite = await controller.request<NexusInvite>('invites', { ttl_sec: NEXUS_INVITE_TTL_SEC, ...(role ? { role } : {}) });
       if (!invite || !validNexusInvitation(invite.code || invite.link_token || '') || !Number.isFinite(invite.expires_at)) {
         throw new Error('The server returned an invalid invitation. Try again.');
       }

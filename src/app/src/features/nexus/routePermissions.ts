@@ -13,7 +13,7 @@ export interface NexusRoutePermissions {
   roles: { id: NexusRole; permissions: string[] }[];
   routes: NexusRoutePermission[];
 }
-const roles = ['admin', 'moderator', 'user'];
+export const NEXUS_ROLES: readonly NexusRole[] = ['admin', 'moderator', 'user'];
 const strings = (value: unknown): value is string[] => Array.isArray(value) && value.every(item => typeof item === 'string');
 
 export async function getNexusRoutePermissions(): Promise<NexusRoutePermissions> {
@@ -25,12 +25,12 @@ export async function getNexusRoutePermissions(): Promise<NexusRoutePermissions>
     throw error;
   }
   if (!value || !Number.isSafeInteger(value.catalog_version) || !['enforced', 'unavailable'].includes(value.route_policy) ||
-      !Array.isArray(value.roles) || value.roles.length !== roles.length ||
-      !roles.every(id => value.roles.filter(role => role?.id === id && strings(role.permissions)).length === 1) ||
+      !Array.isArray(value.roles) || value.roles.length !== NEXUS_ROLES.length ||
+      !NEXUS_ROLES.every(id => value.roles.filter(role => role?.id === id && strings(role.permissions)).length === 1) ||
       !Array.isArray(value.routes) || !value.routes.every(route => route && typeof route.family === 'string' &&
         ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'].includes(route.method) &&
         strings(route.paths) && route.paths.length > 0 && route.paths.every(path => path.startsWith('/')) &&
-        strings(route.roles) && route.roles.every(role => roles.includes(role)))) {
+        strings(route.roles) && route.roles.every(role => (NEXUS_ROLES as readonly string[]).includes(role)))) {
     throw new Error('The server returned an invalid route permission list.');
   }
   return value;

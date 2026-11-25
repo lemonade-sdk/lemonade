@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { friendlyErrorMessage } from '../../api';
 import { NexusAccountInviteDialog, NexusDeleteAccountDialog, NexusJoinNetworkDialog, NexusSignInDialog } from '../../components/NexusSignInDialog';
 import { NexusPasskeyDialog } from '../../components/NexusPasskeyDialog';
 import { nexusAccountService, type NexusAccountService, type VerifiedNexusAccount } from './accountSession';
@@ -39,6 +40,7 @@ export interface NexusAccountConnection {
 }
 
 const SIGNED_OUT: NexusAccountConnection = { account: null, devices: [] };
+const ACCOUNT_REFRESH_MS = 15000;
 
 const NexusAccountContext = createContext<NexusAccountConnection & {
   avatarUrl?: string;
@@ -104,7 +106,7 @@ function ConnectedAccountProvider({ service, children }: { service: NexusAccount
       clearNexusNetwork();
       setSession(undefined); setDialog(undefined); setNotice(''); restoreFocus();
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'The device did not disconnect. Try again.');
+      setNotice(error instanceof Error ? friendlyErrorMessage(error) : 'The device did not disconnect. Try again.');
     } finally { disconnecting.current = false; }
   };
   const meshUp = Boolean(network.status?.mesh_up && !network.status.locked);
@@ -142,7 +144,7 @@ function ConnectedAccountProvider({ service, children }: { service: NexusAccount
         }
       } finally { running = false; }
     };
-    const timer = window.setInterval(() => void refresh(), 15000);
+    const timer = window.setInterval(() => void refresh(), ACCOUNT_REFRESH_MS);
     return () => { stopped = true; window.clearInterval(timer); };
   }, [session?.account.id, session?.memberId, session?.deviceNodeId, session?.source, service]);
   return <AccountStateProvider connection={{

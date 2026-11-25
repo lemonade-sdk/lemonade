@@ -1,13 +1,18 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { friendlyErrorMessage } from '../api';
+import { NEXUS_AVATAR_MAX_BYTES } from '../features/nexus/accountSession';
 import { useNexusAccount } from '../features/nexus/NexusAccountContext';
-import { isLoopbackUrl, selectNexusInferenceServer, useNexusNetwork } from '../features/nexus/nexus';
+import { NEXUS_LOCAL_HOST, isLoopbackUrl, selectNexusLemonadeServer, useNexusNetwork } from '../features/nexus/nexus';
 import { useI18n } from '../i18n';
 import { Icon } from './Icon';
 import { WorkspaceActionButton } from './WorkspacePanels';
 import { NexusNetwork } from './NexusNetwork';
 import { NexusDeviceRows, NexusMeshPanel, nexusListedDevices, type NexusChatHost } from './NexusMesh';
 import '../styles/nexus.css';
+
+const AVATAR_SOURCE_MAX_BYTES = 5 * 1024 * 1024;
+const AVATAR_SIZE_PX = 128;
 
 // The account's profile image, shared by its devices. Without one the mark is generic: the
 // account has no name, and a device name's initial would present the device as a person.
@@ -34,7 +39,7 @@ function AvatarPicker({ errorId, onError }: { errorId: string; onError: (error: 
   const chooseImage = async (file: File) => {
     const request = ++requestRef.current;
     onError(undefined);
-    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024) {
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > AVATAR_SOURCE_MAX_BYTES) {
       onError(t('Choose a PNG, JPEG or WebP image under 5 MB.'));
       return;
     }
@@ -46,17 +51,17 @@ function AvatarPicker({ errorId, onError }: { errorId: string; onError: (error: 
       image.src = url;
       await image.decode();
       const canvas = document.createElement('canvas');
-      canvas.width = canvas.height = 128;
+      canvas.width = canvas.height = AVATAR_SIZE_PX;
       const context = canvas.getContext('2d');
       if (!context) throw new Error('Canvas unavailable');
       const side = Math.min(image.naturalWidth, image.naturalHeight);
-      context.drawImage(image, (image.naturalWidth - side) / 2, (image.naturalHeight - side) / 2, side, side, 0, 0, 128, 128);
+      context.drawImage(image, (image.naturalWidth - side) / 2, (image.naturalHeight - side) / 2, side, side, 0, 0, AVATAR_SIZE_PX, AVATAR_SIZE_PX);
       const data = canvas.toDataURL('image/png');
-      if (data.length > 128 * 1024) throw new Error('Profile image is too large');
+      if (data.length > NEXUS_AVATAR_MAX_BYTES) throw new Error('Profile image is too large');
       decoded = true;
       if (request === requestRef.current) await setAvatar(data);
     } catch (error) {
-      if (request === requestRef.current) onError(decoded && error instanceof Error ? error.message : t('This image could not be opened. Choose another image.'));
+      if (request === requestRef.current) onError(decoded && error instanceof Error ? friendlyErrorMessage(error) : t('This image could not be opened. Choose another image.'));
     } finally {
       URL.revokeObjectURL(url);
       if (request === requestRef.current) setBusy(false);
@@ -70,7 +75,7 @@ function AvatarPicker({ errorId, onError }: { errorId: string; onError: (error: 
       await setAvatar(null);
       if (request === requestRef.current) buttonRef.current?.focus();
     } catch (error) {
-      if (request === requestRef.current) onError(error instanceof Error ? error.message : t('The profile image could not be removed. Try again.'));
+      if (request === requestRef.current) onError(error instanceof Error ? friendlyErrorMessage(error) : t('The profile image could not be removed. Try again.'));
     } finally { if (request === requestRef.current) setBusy(false); }
   };
 
@@ -152,13 +157,13 @@ function MyDevices() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const listed = account ? nexusListedDevices(status, devices) : [];
-  const selected = network.selectedServerId || 'local';
+  const selected = network.selectedServerId || NEXUS_LOCAL_HOST;
   const disabled = busy || Boolean(network.switchingServer);
   const choose = async (target: string) => {
     if (disabled || target === selected) return;
     setBusy(true); setError('');
-    try { await selectNexusInferenceServer(target); }
-    catch (error) { setError(error instanceof Error ? error.message : String(error)); }
+    try { await selectNexusLemonadeServer(target); }
+    catch (error) { setError(friendlyErrorMessage(error)); }
     finally { setBusy(false); }
   };
   const chat: NexusChatHost | undefined = account && status?.mesh_up && !status.locked ? { selected, disabled, onChoose: target => void choose(target) } : undefined;

@@ -210,7 +210,7 @@ test('a browser on the local network manages a device-key server through its pub
   await expect(dialog).not.toContainText('local controller or SSH forwarding');
   await expect(dialog.getByRole('radio', { name: 'Use this device’s key' })).toBeChecked();
   await dialog.getByRole('button', { name: 'Enable Mesh', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Mesh: Inference server', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Mesh: Remote server', exact: true })).toBeVisible();
   expect(fixture.calls.filter(call => call.path.endsWith('/key/unlock')).map(call => call.body)).toEqual([{ defer_join: false }]);
   expect(fixture.calls.some(call => call.path.includes('/passkey/'))).toBe(false);
   expect(fixture.calls.every(call => call.origin === 'http://192.168.10.20:13305')).toBe(true);

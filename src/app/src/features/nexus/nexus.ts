@@ -10,7 +10,6 @@ export interface NexusDevice {
   is_admin?: boolean;
   is_owner?: boolean;
   is_inference?: boolean;
-  tier?: 3 | 4;
   access_known?: boolean;
   can_remove: boolean;
   is_online?: boolean;
@@ -33,7 +32,6 @@ export interface NexusAccessEntry {
   node_id: string;
   device_name: string;
   is_admin: boolean;
-  tier: 3 | 4;
   see: boolean;
   connect: boolean;
   editable: boolean;
@@ -70,11 +68,15 @@ export const NEXUS_SERVICE_PERMISSIONS: { name: string; label: string }[] = [
   { name: 'svc:management', label: 'Manage Nexus' },
   { name: 'svc:internal', label: 'Access internal endpoints' },
 ];
+export const NEXUS_LOCAL_HOST = 'local';
+export const NEXUS_NAME_MAX_BYTES = 128;
+export const nexusNameTooLong = (name: string) => new TextEncoder().encode(name.trim()).length > NEXUS_NAME_MAX_BYTES;
+export const NEXUS_INVITE_CODE = /^[0-9]{8}$/;
+export const NEXUS_INVITE_TOKEN = /^lnk_[0-9a-f]{64}$/;
+export const NEXUS_INVITE_TOKEN_LENGTH = 68;
+export const NEXUS_INVITE_TTL_SEC = 600;
 export function hasNexusPermission(permissions: string[] | undefined, name: string): boolean {
   return Boolean(permissions?.includes(name) || permissions?.includes('admin'));
-}
-export function nexusTierLabel(device: NexusDevice): string {
-  return device.is_inference ? 'Tier 3 · Inference server' : 'Tier 4 · Client';
 }
 export interface NexusMeshPortUrl { device_name: string; node_id: string; self: boolean; url: string }
 export interface NexusMeshPort {
@@ -144,7 +146,7 @@ export function nexusDeviceTags(status: NexusStatus | null | undefined, device: 
     ...(device.is_admin ? ['Admin'] : []),
   ];
 }
-export function nexusInferenceServers(status: NexusStatus | null | undefined): NexusDevice[] {
+export function nexusLemonadeServers(status: NexusStatus | null | undefined): NexusDevice[] {
   if (!status?.mesh_up || status.locked) return [];
   const seen = new Set<string>();
   return status.members.filter(device => device.node_id !== status.node_id && device.is_inference && device.can_connect !== false && seen.size < seen.add(device.node_id).size);
@@ -159,7 +161,7 @@ export function nexusMeshSummary(status: NexusStatus | null | undefined, error?:
   if (status.locked) return { state: 'locked', label: 'Locked' };
   if (status.mesh_up) {
     if (error) return { state: 'offline', label: 'Offline' };
-    const servers = nexusInferenceServers(status);
+    const servers = nexusLemonadeServers(status);
     const online = servers.filter(device => { const connection = nexusDeviceConnection(status, device); return connection === 'p2p' || connection === 'relay'; }).length;
     if (online === 1) return { state: 'connected', label: '1 server online' };
     if (online) return { state: 'connected', label: '{count} servers online', count: online };
@@ -179,10 +181,7 @@ export function nexusConnectionLabel(status: NexusStatus | null | undefined, nod
   const member = status.members.find(device => device.node_id === nodeId);
   return member?.connection_type === 'p2p' ? 'P2P' : member?.connection_type === 'relay' ? 'Relay' : undefined;
 }
-// A device unlocks with its device key or with a passkey, never both. lemond reports
-// `unlock: device_key` once the key has unlocked the device; a `user` or `handoff`
-// identity source means the key is the only option even before the first unlock. A
-// `system` identity (a packaged server) reports `unlock: passkey` until its first
+// A `system` identity (a packaged server) reports `unlock: passkey` until its first
 // key/unlock, which lemond accepts as long as no passkey is registered; only a registered
 // passkey keeps that identity on the passkey path.
 export function usesNexusDeviceKey(status: NexusStatus): boolean {
@@ -229,11 +228,18 @@ let eventStream: AbortController | undefined;
 interface Controller { mode: NexusManagementMode; source: string; endpoint: string; key: string }
 let knownController: Controller | undefined;
 const API_KEY_ERROR = 'The server requires a valid API key. Check it in Settings > Server, then try again.';
+const SWITCH_IN_PROGRESS_ERROR = 'A server switch is already in progress.';
+const DISCOVERY_TIMEOUT_MS = 10000;
+const REQUEST_TIMEOUT_MS = 35000;
+const RATE_LIMIT_RETRY_MS = 5000;
+const POLL_INTERVAL_MS = 5000;
+const EVENT_BUFFER_LIMIT = 65536;
+const PASSKEY_TIMEOUT_MS = 60000;
+const STARTUP_POLL_ATTEMPTS = 20;
+const STARTUP_POLL_MS = 250;
+const nexusUrl = (endpoint: string, path: string) => `${endpoint}/v1/nexus/${path}`;
 let home: { endpoint: string; key: string } | undefined;
-export const relayEndpoint = (endpoint: string, nodeId: string) => `${endpoint}/v1/nexus/peers/${encodeURIComponent(nodeId)}`;
-export function isNexusInferencePeer(device: NexusDevice, selfId?: string): boolean {
-  return device.node_id !== selfId && Boolean(device.is_inference) && device.is_online === true;
-}
+export const relayEndpoint = (endpoint: string, nodeId: string) => nexusUrl(endpoint, `peers/${encodeURIComponent(nodeId)}`);
 let lastMemberIds: Set<string> | undefined;
 const publish = (next: NetworkState) => { state = next; listeners.forEach(listener => listener()); };
 
@@ -251,11 +257,10 @@ export function isLoopbackUrl(value: string): boolean {
   return ['localhost', '127.0.0.1', '[::1]'].includes(new URL(value).hostname);
 }
 // lemond names its controller only to a local operator: a loopback client, or a client on
-// the server's local network (RFC 1918). Remote status omits controller_url, and the server
-// is then managed through the mesh with its own authorization policy.
+// the server's local network (RFC 1918). Remote status omits controller_url.
 async function discoverController(endpoint: string, key: string): Promise<Controller | undefined> {
   const loopback = isLoopbackUrl(endpoint);
-  const response = await fetch(`${endpoint}/v1/nexus/status`, { headers: key ? { Authorization: `Bearer ${key}` } : {}, signal: AbortSignal.timeout(10000) });
+  const response = await fetch(nexusUrl(endpoint, 'status'), { headers: key ? { Authorization: `Bearer ${key}` } : {}, signal: AbortSignal.timeout(DISCOVERY_TIMEOUT_MS) });
   if (response.status === 401) throw new Error(API_KEY_ERROR);
   if (!response.ok) {
     if (loopback) throw new Error(`Cannot access the local network controller (${response.status}).`);
@@ -276,7 +281,7 @@ async function discoverController(endpoint: string, key: string): Promise<Contro
 async function controller(): Promise<Controller> {
   const { default: api } = await import('../../api');
   await api.loadConnectionSettings();
-  if (home && !state.switchingServer && !api.baseUrl.startsWith(`${home.endpoint}/v1/nexus/peers/`)) {
+  if (home && !state.switchingServer && !api.baseUrl.startsWith(nexusUrl(home.endpoint, 'peers/'))) {
     home = undefined;
     if (state.selectedServerId) publish({ ...state, selectedServerId: undefined });
   }
@@ -297,13 +302,13 @@ export async function nexusRequest<T>(path: string, body?: unknown, pinnedContro
   const send = async () => {
     const target = pinnedController || await controller();
     if (state.mode !== target.mode) publish({ ...state, mode: target.mode });
-    return { target, response: await fetch(`${target.endpoint}/v1/nexus/${path}`, {
+    return { target, response: await fetch(nexusUrl(target.endpoint, path), {
       method: body === undefined ? 'GET' : 'POST',
       headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
         ...(target.key ? { Authorization: `Bearer ${target.key}` } : {}) },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       cache: 'no-store',
-      signal: AbortSignal.timeout(35000),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     }) };
   };
   let response: Response;
@@ -311,17 +316,16 @@ export async function nexusRequest<T>(path: string, body?: unknown, pinnedContro
     ({ response } = await send());
   } catch (error) {
     // A lost POST response may already have changed the server; only reads can be retried
-    // safely. A read goes out once more: to a rediscovered controller, or to the pinned one
-    // of an account flow. The desktop webview has no warm same-origin connection pool, so a
-    // read there often opens a fresh connection, and one that the server closes must not
-    // end the Enable Mesh dialog by itself.
+    // safely. The desktop webview has no warm same-origin connection pool, so a read there
+    // often opens a fresh connection, and one that the server closes must not end the
+    // Enable Mesh dialog by itself.
     const previousController = knownController;
     knownController = undefined;
     if (body !== undefined || (!pinnedController && !previousController)) throw error;
     ({ response } = await send());
   }
   if (body === undefined && response.status === 429) {
-    await new Promise(resolve => setTimeout(resolve, 5000));
+    await new Promise(resolve => setTimeout(resolve, RATE_LIMIT_RETRY_MS));
     ({ response } = await send());
   }
   if (response.status === 401) throw new Error(API_KEY_ERROR);
@@ -354,7 +358,7 @@ async function streamEvents() {
   try {
     const local = await controller();
     if (local.mode === 'remote') return;
-    const response = await fetch(`${local.endpoint}/v1/nexus/events?after=${state.status?.event_sequence || 0}`, {
+    const response = await fetch(nexusUrl(local.endpoint, `events?after=${state.status?.event_sequence || 0}`), {
       headers: local.key ? { Authorization: `Bearer ${local.key}` } : {}, signal: abort.signal,
     });
     if (!response.ok || !response.body) return;
@@ -370,7 +374,7 @@ async function streamEvents() {
         const event = buffer.slice(0, boundary); buffer = buffer.slice(boundary + 2);
         if (event.includes('\ndata: ')) void refreshNexus();
       }
-      if (buffer.length > 65536) break;
+      if (buffer.length > EVENT_BUFFER_LIMIT) break;
     }
     await reader.cancel();
   } catch { /* Polling continues when the event stream is unavailable. */ }
@@ -378,7 +382,7 @@ async function streamEvents() {
 }
 async function poll() {
   await refreshNexus();
-  if (subscribers && !networkPaused) timer = setTimeout(poll, 5000);
+  if (subscribers && !networkPaused) timer = setTimeout(poll, POLL_INTERVAL_MS);
 }
 const subscribe = (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; };
 export function useNexusNetwork(active = true): NetworkState {
@@ -437,7 +441,7 @@ export async function registerNexusPasskey(deviceName: string, request = nexusRe
     user: { id: new TextEncoder().encode(options.user_id), name: options.user_id, displayName: deviceName },
     pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
     authenticatorSelection: { authenticatorAttachment: 'platform', residentKey: 'discouraged', userVerification: 'required' },
-    attestation: 'none', timeout: 60000,
+    attestation: 'none', timeout: PASSKEY_TIMEOUT_MS,
   } }) as PublicKeyCredential | null;
   if (!credential) throw new Error('Passkey registration was cancelled.');
   const response = credential.response as AuthenticatorAttestationResponse;
@@ -461,7 +465,7 @@ export async function unlockNexus(deferJoin = false, request = nexusRequest): Pr
   const credential = await navigator.credentials.get({ publicKey: {
     challenge: decodeBase64Url(options.challenge), rpId: options.rp_id,
     allowCredentials: [{ id: decodeBase64Url(options.credential_id), type: 'public-key' }],
-    userVerification: 'required', timeout: 60000,
+    userVerification: 'required', timeout: PASSKEY_TIMEOUT_MS,
   } }) as PublicKeyCredential | null;
   if (!credential) throw new Error('Passkey confirmation was cancelled.');
   const response = credential.response as AuthenticatorAssertionResponse;
@@ -474,10 +478,10 @@ export async function prepareNexus(deviceName: string, joining: boolean, request
   beforeUnlock?: (status: NexusStatus) => void, desktop = isNexusDesktop()) {
   await request('enable', {});
   let status: NexusStatus | undefined;
-  for (let attempt = 0; attempt < 20; attempt++) {
+  for (let attempt = 0; attempt < STARTUP_POLL_ATTEMPTS; attempt++) {
     status = await request<NexusStatus>('status');
     if (status.status !== 'starting') break;
-    await new Promise(resolve => setTimeout(resolve, 250));
+    await new Promise(resolve => setTimeout(resolve, STARTUP_POLL_MS));
   }
   if (!status || status.status === 'starting') throw new Error('Network is still starting. Try again shortly.');
   beforeUnlock?.(status);
@@ -528,22 +532,23 @@ export function nexusHostErrorRetryable(error: unknown): boolean {
   if (error instanceof NexusHostError) return error.status === 0 || error.status === 502 || error.status === 503 || error.status === 504;
   return false;
 }
-const PEER_PERMISSION_ERROR = 'That device does not allow this device to use its models. Ask the network administrator for inference access.';
+const PEER_PERMISSION_ERROR = 'That Lemonade server does not allow this device to use its models. Ask the network administrator for access.';
 export async function nexusHostRequest<T>(hostId: string, path: string): Promise<T> {
   const server = await homeServer();
-  const peerKey = hostId === 'local' ? '' : peerKeys.get(hostId) ?? '';
-  const base = hostId === 'local' ? server.endpoint : relayEndpoint(server.endpoint, hostId);
+  const local = hostId === NEXUS_LOCAL_HOST;
+  const peerKey = local ? '' : peerKeys.get(hostId) ?? '';
+  const base = local ? server.endpoint : relayEndpoint(server.endpoint, hostId);
   let response: Response;
   try {
     response = await fetch(`${base}/${path}`, {
       headers: { ...(server.key ? { Authorization: `Bearer ${server.key}` } : {}), ...(peerKey ? { 'X-Lemonade-Peer-Authorization': `Bearer ${peerKey}` } : {}) },
       cache: 'no-store',
-      signal: AbortSignal.timeout(35000),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
   } catch (error) {
     throw new NexusHostError(error instanceof Error && error.name === 'TimeoutError' ? 'The device did not answer in time.' : 'Could not reach this device\'s server.', 0);
   }
-  if (response.status === 401) throw new NexusHostError(hostId === 'local' ? API_KEY_ERROR : 'That server requires an API key. Enter it in Settings > Devices & mesh.', 401);
+  if (response.status === 401) throw new NexusHostError(local ? API_KEY_ERROR : 'That server requires an API key. Enter it in Settings > Devices & mesh.', 401);
   const data = await response.json().catch(() => undefined);
   if (!response.ok) {
     const code = typeof data?.code === 'string' ? data.code : '';
@@ -554,26 +559,26 @@ export async function nexusHostRequest<T>(hostId: string, path: string): Promise
   return data as T;
 }
 
-export async function selectNexusInferenceServer(nodeId: string, suppliedKey?: string): Promise<void> {
-  if (state.switchingServer) throw new Error('A server switch is already in progress.');
+export async function selectNexusLemonadeServer(nodeId: string, suppliedKey?: string): Promise<void> {
+  if (state.switchingServer) throw new Error(SWITCH_IN_PROGRESS_ERROR);
   const { default: api } = await import('../../api');
-  if (nodeId === 'local' && !home) {
-    publish({ ...state, selectedServerId: 'local' });
+  if (nodeId === NEXUS_LOCAL_HOST && !home) {
+    publish({ ...state, selectedServerId: NEXUS_LOCAL_HOST });
     return;
   }
   const server = await homeServer();
   const previous = { endpoint: api.baseUrl, key: api.apiKey, peerKey: api.peerApiKey, home };
-  if (state.switchingServer) throw new Error('A server switch is already in progress.');
+  if (state.switchingServer) throw new Error(SWITCH_IN_PROGRESS_ERROR);
   publish({ ...state, switchingServer: true });
   try {
-    if (nodeId === 'local') {
+    if (nodeId === NEXUS_LOCAL_HOST) {
       home = undefined;
       if (!await api.switchServer(server.endpoint, server.key)) throw new Error(api.lastConnectionError || 'Could not connect to this device’s server.');
     } else {
       home = server;
       const peerKey = suppliedKey ?? peerKeys.get(nodeId) ?? '';
       if (!await api.switchServer(relayEndpoint(server.endpoint, nodeId), server.key, peerKey)) {
-        throw new Error(api.lastConnectionError || 'Could not connect to the selected inference server.');
+        throw new Error(api.lastConnectionError || 'Could not connect to the selected Lemonade server.');
       }
       if (suppliedKey !== undefined) peerKeys.set(nodeId, suppliedKey);
     }
@@ -601,6 +606,7 @@ export function setNexusDeviceAccess(nodeId: string, memberNodeId: string, see: 
 // The invitation dialog shows the 8-digit code as "4709 6838"; people copy or type it with
 // the space or a dash, so the server receives the digits alone.
 export const normalizeNexusInvitation = (value: string) => value.replace(/[\s-]/g, '');
+export const formatNexusInviteCode = (code: string) => `${code.slice(0, 4)} ${code.slice(4)}`;
 export function acceptNexusInvite(code: string, request = nexusRequest): Promise<{ status?: string; group_id?: string; error?: string }> {
   return request('invites/accept', { code: normalizeNexusInvitation(code) });
 }

@@ -1,12 +1,12 @@
 import React, { useEffect, useId, useState } from 'react';
+import { friendlyErrorMessage } from '../api';
 import { NEXUS_SERVICE_PERMISSIONS } from '../features/nexus/nexus';
-import { getNexusRoutePermissions, type NexusRole, type NexusRoutePermissions as RoutePermissions } from '../features/nexus/routePermissions';
+import { NEXUS_ROLES, getNexusRoutePermissions, type NexusRole, type NexusRoutePermissions as RoutePermissions } from '../features/nexus/routePermissions';
 import { useI18n } from '../i18n';
 import { Icon } from './Icon';
 import { WorkspaceActionButton } from './WorkspacePanels';
 
 const roleLabels: Record<NexusRole, string> = { admin: 'Admin', moderator: 'Moderator', user: 'User' };
-const roleOrder: NexusRole[] = ['admin', 'moderator', 'user'];
 
 export function NexusRoutePermissions({ viewerRole }: { viewerRole: NexusRole }) {
   const { t } = useI18n();
@@ -15,7 +15,7 @@ export function NexusRoutePermissions({ viewerRole }: { viewerRole: NexusRole })
   const [listOpen, setListOpen] = useState(false);
   const [selectedRole, setRole] = useState<NexusRole>('user');
   const [selectedFamily, setFamily] = useState('inference');
-  const visibleRoles = roleOrder.slice(roleOrder.indexOf(viewerRole));
+  const visibleRoles = NEXUS_ROLES.slice(NEXUS_ROLES.indexOf(viewerRole));
   const role = visibleRoles.includes(selectedRole) ? selectedRole : viewerRole;
   const [query, setQuery] = useState('');
   const [data, setData] = useState<RoutePermissions>();
@@ -29,7 +29,7 @@ export function NexusRoutePermissions({ viewerRole }: { viewerRole: NexusRole })
     void getNexusRoutePermissions().then(value => {
       if (active) setData(value);
     }).catch(error => {
-      if (active) setError(error instanceof Error ? error.message : String(error));
+      if (active) setError(friendlyErrorMessage(error));
     });
     return () => { active = false; };
   }, [open, attempt]);

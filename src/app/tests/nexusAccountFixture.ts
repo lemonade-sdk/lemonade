@@ -14,7 +14,7 @@ export async function setupNexusAccount(page: Page, options: {
   role?: NexusRole;
 } = {}) {
   const source = options.remote || options.localNetwork ? 'http://192.168.10.20:13305' : 'http://127.0.0.1:13305';
-  const deviceName = options.remote || options.localNetwork ? 'Inference server' : 'My laptop';
+  const deviceName = options.remote || options.localNetwork ? 'Remote server' : 'My laptop';
   const accountRole = options.role || (options.readOnly ? 'user' : 'admin');
   const members = [{ ...self, device_name: deviceName, is_admin: accountRole === 'admin',
     permissions: accountRole === 'admin' ? ['read', 'admin'] : accountRole === 'moderator'
@@ -165,7 +165,7 @@ export async function setupNexusAccount(page: Page, options: {
       }
       const rows = state.members.filter(member => member.node_id !== target && member.node_id !== state.node_id).map(member => {
         const current = fixture.access[`${target}:${member.node_id}`] || { see: true, connect: true };
-        return { node_id: member.node_id, device_name: member.device_name, is_admin: member.is_admin === true, tier: 4, ...current, editable: accountRole === 'admin' && !member.is_admin };
+        return { node_id: member.node_id, device_name: member.device_name, is_admin: member.is_admin === true, ...current, editable: accountRole === 'admin' && !member.is_admin };
       });
       const device = state.members.find(member => member.node_id === target);
       return route.fulfill({ headers, json: { node_id: target, device_name: device?.device_name || '', access_known: true, can_manage: accountRole === 'admin', members: rows } });

@@ -10,8 +10,8 @@ The interface keeps the vendored client SDK, server routes, native passkey
 commands, packaging support and API client. `NexusAccount.tsx` replaces the
 standalone `NexusPanel` and `NexusShortcut` with a compact account dropdown and
 Basic/Advanced page. The old `devices-and-mesh` route resolves to `nexus`.
-The standalone header inference selector is not mounted by this account UI;
-the inference relay and its client helpers remain available.
+The standalone header server selector is not mounted by this account UI;
+the peer relay and its client helpers remain available.
 
 ## Account boundary
 
@@ -35,8 +35,9 @@ on returned permissions, not on the selected form action.
 
 `features/nexus/accountSession.ts` owns this sequence. It pins requests to the
 controller and API key chosen at the start; a connection change or unexpected
-account ID fails verification. A five-second membership refresh updates device
-presence and capabilities. Lost access clears the UI session. Disconnect locks
+account ID fails verification. The network status poll runs every five seconds
+and the account refresh every fifteen; together they update device presence
+and capabilities. Lost access clears the UI session. Disconnect locks
 the shared server's device and disconnects it from the mesh, affecting all clients
 using that server. After the server confirms the lock, the app clears its session
 and network display and stops polling and event updates. Device registration and
@@ -124,8 +125,8 @@ Basic is the default. The client stores the selected mode in
 `lemonade_nexus_view`, without changing server configuration. Both modes show
 the **Mesh network** panel (`NexusMesh.tsx`) after sign-in, modelled on the
 mobile app's mesh view: the mesh state in one line (`nexusMeshSummary`), **Chat
-runs on** with this device and every inference server the device may connect
-to (`selectNexusInferenceServer`, with an API key field for the selected
+runs on** with this device and every Lemonade server the device may connect
+to (`selectNexusLemonadeServer`, with an API key field for the selected
 server), the open **Devices** list, the **Networks** list when the identity
 joined another network, and the invite and join actions. The account menu
 shows the same device rows in an open disclosure. Advanced adds the server's
@@ -151,7 +152,8 @@ tile containing the group or device icon, name and status. Deep trees scroll
 within the tree panel without flattening indentation or widening the page.
 
 Device rows in the mesh panel and the account menu carry pills: **This
-device**, **Server** or **Client** (`is_inference`), **Member** (a device that
+device**, **Server** (a device that runs Lemonade Server, `is_inference`) or
+**Client**, **Member** (a device that
 joined this group from its own network), **Joined network** (`group_role` is
 `member`) and **Admin**, then a connection pill from `nexusDeviceConnection`:
 **P2P** for an authenticated direct mesh path, **Relay** for a path through a
