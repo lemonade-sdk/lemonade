@@ -36,8 +36,8 @@
 namespace lemon {
 namespace {
 using json = nlohmann::json;
-// Nexus routes live under /v1 only. The /api/v1 prefix of the older routes is legacy and
-// new routes do not take it, so there is no alias.
+// The /api/v1 prefix of the older routes is legacy and new routes do not take it, so
+// there is no alias.
 constexpr const char* nexus_prefix = "/v1/nexus/";
 struct NexusRoute {
     std::string method;
@@ -70,9 +70,8 @@ const std::vector<NexusRoute>& nexus_routes() {
 bool local_address(const std::string& address) {
     return address == "127.0.0.1" || address == "::1" || address == "::ffff:127.0.0.1";
 }
-// Policy: a client on the local network (RFC 1918) is a local operator for Nexus. The
-// IPv6 front reports an IPv4 client as an IPv4-mapped address, so that form is unwrapped
-// first; any other IPv6 address is not private here.
+// A client on the local network (RFC 1918) is a local operator for Nexus. The IPv6
+// front reports an IPv4 client as an IPv4-mapped address, so that form is unwrapped first.
 bool private_network_address(const std::string& address) {
     if (local_address(address)) return true;
     std::string ipv4 = address;
@@ -163,8 +162,7 @@ std::string multipart_body(const httplib::MultipartFormData& form, const std::st
 // Bridges a streamed peer reply to the client. The peer request runs on its own thread
 // so the route handler learns the peer's status before httplib commits the response:
 // a refusal before the first body byte keeps its status and JSON body, and a failure
-// after that becomes one SSE error event. One chunk is in flight at a time, so a slow
-// client slows the transfer instead of buffering it.
+// after that becomes one SSE error event.
 class RelayStream {
 public:
     ~RelayStream() { abandon(); }
@@ -496,9 +494,7 @@ void for_each_catalog_claim(const nlohmann::ordered_json& routes,
 
 nlohmann::ordered_json service_catalog(const nlohmann::ordered_json& routes, const std::string& lemond_version) {
     // The SDK refuses a catalog that lists one method and URL twice, even within a
-    // family, so every claim appears once: repeats of a prefix (several {id} routes
-    // under one collection) or of a path collapse, and an exact path that equals a
-    // prefix of the same family and method is already covered by that prefix.
+    // family, so every claim appears once.
     std::set<std::string> prefixes;  // "family METHOD prefix"
     for_each_catalog_claim(routes, [&](const std::string& family, const std::string&, const std::string& method, const CatalogClaim& claim) {
         if (!claim.exact) prefixes.insert(family + " " + method + " " + claim.url);
@@ -1036,18 +1032,16 @@ std::pair<int, std::string> relay_target(const json& members, const std::string&
 
 namespace {
 // The GUI aborts a host GET at 35 s, so a stalled health or models poll must not hold a
-// lemond worker for the client's 300 s default. A POST such as a model load answers only
-// once the work is done: a large model takes minutes to load, and the CLI waits a day
-// for a local load. The relay waits an hour, which also releases the worker of a
-// transport that died without a close.
+// lemond worker for the client's 300 s default. A large model takes minutes to load, so
+// the relay waits an hour, which also releases the worker of a transport that died
+// without a close.
 constexpr long kRelayGetTimeoutSeconds = 30;
 constexpr long kRelayPostTimeoutSeconds = 3600;
 
-// A request that found no answer repeats after these waits before the client hears
-// "cannot reach". The first request over a fresh mesh path, as right after lemond or the
-// device started, often meets a connection that is still forming. The last repeat runs
-// over a new mesh bridge: one whose connections failed this often is dead, for example
-// after its mesh path changed, and the SDK's own mesh port replaces such a bridge too.
+// The first request over a fresh mesh path, as right after lemond or the device started,
+// often meets a connection that is still forming. The last repeat runs over a new mesh
+// bridge: one whose connections failed this often is dead, for example after its mesh
+// path changed.
 constexpr std::array<int, 3> kRelayRetryDelaysMs{1000, 2000, 3000};
 
 void relay_failed(httplib::Response& res, const std::string& node_id, const std::string& method, const std::string& path,
@@ -1102,8 +1096,7 @@ void relay_http(uint16_t port, const std::string& node_id, const std::string& pa
     }
     // A request whose connection was refused, reset or closed before any answer never
     // reached the device's server, or that server closed before it read the request;
-    // a read and a POST (a model load, a chat) are both repeated then. A POST the
-    // device answered, even with an error, runs once.
+    // a read and a POST (a model load, a chat) are both repeated then.
     for (size_t attempt = 0;; ++attempt) {
         const auto url = "http://127.0.0.1:" + std::to_string(port) + path;
         RelayFailure failure;
@@ -1255,10 +1248,10 @@ struct NexusManager::Session {
     std::string node_id;
     std::string group_id;
     std::string tunnel_ip;
-    std::string domain{"lemonade-nexus.io"};  // network DNS domain
-    std::string region{"us-west"};            // SEIP region label
-    std::string host;                         // bootstrap server: configured, remembered, or discovered
-    std::string rp_id;                        // configured, else the network's own value from /api/health
+    std::string domain{"lemonade-nexus.io"};
+    std::string region{"us-west"};  // SEIP region label
+    std::string host;               // bootstrap server: configured, remembered, or discovered
+    std::string rp_id;              // configured, else the network's own value from /api/health
     std::string pubkey;
     std::string revoked_pubkey;  // the key the network revoked, until another key is in use
     std::string detail{"locked"};
@@ -1297,8 +1290,6 @@ struct NexusManager::Session {
         if (public_port < 1 || public_port > 65535) throw NexusError(400, "Invalid Nexus server port");
         // The servers' certificates name their own FQDNs, not the network apex, so
         // without a configured host the bootstrap server comes from DNS discovery.
-        // The first discovered name is remembered, so later starts need no network
-        // before the SDK's own verified directory takes over.
         if (host.empty()) host = account.value("server", std::string{});
         if (host.empty()) {
             char* out = nullptr;
@@ -1846,8 +1837,7 @@ struct NexusManager::Session {
     }
     // The SDK keeps the catalog with the mesh session, so every join registers it
     // again, before the service is exposed: without a catalog the SDK would bridge
-    // the port raw, so a missing or refused catalog refuses the join (false, with
-    // catalog_error set) and the port is never exposed.
+    // the port raw.
     bool register_catalog() {
         catalog_error.clear();
         if (!catalog.is_object()) {
@@ -1957,8 +1947,7 @@ struct NexusManager::Session {
     }
     // A fixed mesh_udp_port binds exclusively, so a router mapping or a manual port
     // forward to it stays valid; the SDK moves the dataplane when the port differs
-    // from the one in use. A failure locks the session and stays in `error` after
-    // the lock, so status names the port the user has to change.
+    // from the one in use.
     void start_mesh_transport() {
         const auto port = mesh_udp_port();
         const auto config = json{{"listen_port", port}}.dump();
@@ -1984,9 +1973,7 @@ struct NexusManager::Session {
             persist();
         }
     }
-    // SDK reports its last verified membership without network I/O, so this runs after
-    // every join and every successful poll and writes only when the epoch advanced. A
-    // membership of another chain under the pinned key means the network was founded
+    // A membership of another chain under the pinned key means the network was founded
     // again: the SDK neither follows it nor applies the floor, and status reports
     // needs_rejoin until the user forgets this network and joins it again.
     void remember_tier1_epoch() {
@@ -2048,9 +2035,6 @@ struct NexusManager::Session {
             }
         } catch (const std::exception& e) {
             note_failure(e);
-            // Drop a stale session so the next poll authenticates with the device
-            // identity through a current server. A refusal while the SDK moves the
-            // session by itself is an ordinary failure: the next poll finds it moved.
             if (nexus_access::session_dropped(mesh_status())) {
                 ln_mesh_disable(client.get());
                 ln_set_session_token(client.get(), "");
@@ -2175,10 +2159,6 @@ struct NexusManager::Session {
         }
         if (path == "/lock") { hold_locked = true; lock(); return status(); }
         if (path == "/forget") {
-            // Only for a network that was founded again: the account, its node and its
-            // epoch floor belong to the earlier chain and nothing on the servers knows
-            // them. The caller disables the session afterwards; the next Enable Mesh
-            // starts from discovery and a new invitation.
             if (!refounded) throw NexusError(409, "This network was not founded again; use Leave network or Delete account instead");
             ln_mesh_disable(client.get());
             ln_set_session_token(client.get(), "");
@@ -2191,10 +2171,8 @@ struct NexusManager::Session {
         if (path == "/link-token/cancel") return {{"cancelled", true}, {"revoked", false}};
         if (locked) throw NexusError(423, "Unlock your network first");
         if (path == "/device/check") {
-            // Advisory: tells the UI whether a device name folds to a free DNS label in
-            // the target group. The federation still refuses a collision on join or
-            // rename, so two devices checking the same name at once cannot both win.
-            // `device_name` is accepted too: it is the field the `device` route uses.
+            // Advisory: the federation still refuses a collision on join or rename, so
+            // two devices checking the same name at once cannot both win.
             const auto name = body.contains("name") ? body.value("name", std::string{}) : body.value("device_name", std::string{});
             if (name.empty() || name.size() > 128) throw NexusError(400, "Enter a device name (up to 128 characters)");
             const auto code = body.value("code", std::string{});
@@ -2409,10 +2387,8 @@ struct NexusManager::Session {
 };
 
 namespace {
-// Receives the SDK's log lines (ln_set_log_callback) on SDK threads while the SDK holds
-// locks: copy the text, hand it to the server log, return. No ln_* call, no exception
-// out. The SDK keeps its own level (info, or debug with LN_DEBUG), so debug lines arrive
-// only when that variable is set.
+// Runs on SDK threads while the SDK holds locks: copy the text, hand it to the server
+// log, return. No ln_* call, no exception out.
 void sdk_log_line(int level, const char*, const char* message, void*) noexcept {
     try {
         const std::string text = message ? message : "";
@@ -2807,8 +2783,7 @@ void NexusManager::register_routes(httplib::Server& server, NexusListener listen
         }
         // A loopback or local-network operator on the public port is told to keep using that
         // port: it is the one port an SSH tunnel, a VM or a container forwards, unlike the
-        // ephemeral listener, and the only port a local-network client reaches. The client
-        // keeps the origin it already used; the port is what it checks.
+        // ephemeral listener, and the only port a local-network client reaches.
         const bool local = listener != NexusListener::MeshIngress && private_network_address(req.remote_addr);
         const auto controller = listener == NexusListener::Public && local
             ? "http://127.0.0.1:" + std::to_string(req.local_port) : std::string();

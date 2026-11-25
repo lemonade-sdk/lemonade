@@ -59,10 +59,9 @@ bool invite_code(const std::string& code);
 bool selection_key_allowed(const std::string& target, const std::string& peer_key);
 /// The pin a load request asks for. A local operator's boolean `pinned` is returned as
 /// sent (null when absent, so the router keeps a loaded model's pin). A mesh peer
-/// (`mesh_peer`) never changes the host's pin: it gets null, `pinned` leaves `options`
-/// (where it would otherwise set a fresh load's pin) and `masked_saved_keys` (where a
-/// null would hide the host's saved value), so a loaded model keeps its state and a
-/// fresh load takes the host's saved default.
+/// never changes the host's pin: it gets null, and `pinned` leaves `options` and
+/// `masked_saved_keys`, so a loaded model keeps its state and a fresh load takes the
+/// host's saved default.
 std::optional<bool> load_pin_request(bool mesh_peer, const nlohmann::json& pinned, RecipeOptions& options,
     std::set<std::string>& masked_saved_keys);
 nlohmann::json tree_entry(const nlohmann::json& node, const std::string& self_key,
@@ -86,11 +85,10 @@ std::pair<int, std::string> assignment_error(const std::string& reason);
 uint64_t newer_tier1_epoch(const nlohmann::json& membership, uint64_t saved);
 bool session_dropped(const nlohmann::json& mesh_status);
 /// Why the mesh transport is not up after `ln_mesh_enable` or `ln_mesh_enable_config`
-/// and `ln_mesh_expose_service`, or "" when it is. `started` is whether those calls
-/// answered LN_OK; `port` is the configured `mesh_udp_port` (0 = any port) and
-/// `mesh_status` the SDK's `ln_mesh_status` report. The SDK answers LN_OK and leaves
-/// the dataplane down when a fixed port cannot be bound, so with a fixed port the
-/// `dataplane_port` in use decides, and the text names the port.
+/// and `ln_mesh_expose_service`, or "" when it is. `port` is the configured
+/// `mesh_udp_port` (0 = any port). The SDK answers LN_OK and leaves the dataplane down
+/// when a fixed port cannot be bound, so with a fixed port the `dataplane_port` in use
+/// decides, and the text names the port.
 std::string mesh_transport_failure(bool started, int port, const nlohmann::json& mesh_status);
 /// Decides the identity source from the process role, and nothing else:
 /// Windows always User (LemonadeServer.exe runs as the signed-in user); macOS Handoff as
@@ -104,9 +102,8 @@ std::string account_file_tag(const std::string& pubkey);
 /// The account that belongs to `pubkey` when another identity's account is active:
 /// `archived` (that key's account, or null) with `server`, `genesis_pubkey`,
 /// `tier1_epoch`, `device_name` and `mesh_udp_port` carried from `previous` when it has
-/// none of its own.
-/// Those are facts about the network and the machine, not about the identity; the
-/// Genesis pin in particular must not drop with a key change. `public_key` is set.
+/// none of its own: facts about the network and the machine, not about the identity.
+/// The Genesis pin in particular must not drop with a key change.
 nlohmann::json account_for_key(const nlohmann::json& previous, const nlohmann::json& archived, const std::string& pubkey);
 enum class AccountMatch { Own, Stale, Conflict };
 AccountMatch account_match(const nlohmann::json& account, const std::string& pubkey, const std::string& user_id);
@@ -211,9 +208,8 @@ private:
     ProcessRole role_;
     int ingress_port_{0};
     std::unique_ptr<Session> session_;
-    // The running session's SDK client (an ln_client_t*), so status() can report
-    // the network key check's progress while a connect waits on it: session_mutex_
-    // is held for the whole connect, and ln_tier1_progress never blocks. The
+    // The running session's SDK client (an ln_client_t*), read by status() while
+    // session_mutex_ is held for a whole connect; ln_tier1_progress never blocks. The
     // session clears it under `mutex` before it replaces or destroys the client.
     struct ClientSlot {
         std::mutex mutex;

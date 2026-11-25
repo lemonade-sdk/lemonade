@@ -282,8 +282,7 @@ public:
                 res.set_content(response.dump(), "application/json");
             } else {
                 // Declarative: a no-op when already loaded with matching options; a
-                // reload only when the options differ and the operator asked. A mesh
-                // peer never reloads a loaded model: its options are its own machine's.
+                // reload only when the options differ and the operator asked.
                 const bool already_loaded = ctx_.router->is_model_loaded(model_name);
                 ctx_.router->load_model(model_name, info, options, true,
                                         /*allow_reload_on_option_change=*/!mesh_peer,

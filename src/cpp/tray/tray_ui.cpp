@@ -628,10 +628,6 @@ void TrayUI::on_quit() {
     stop();
 }
 
-// ---------------------------------------------------------------------------
-// Nexus device key carrier
-// ---------------------------------------------------------------------------
-
 #ifdef LEMONADE_TRAY_NEXUS_CARRIER
 void TrayUI::set_nexus_key_status(const std::string& text) {
     std::lock_guard<std::mutex> lock(state_mutex_);

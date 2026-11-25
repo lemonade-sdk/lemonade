@@ -21,9 +21,8 @@ bool valid_route_family(const std::string& name);
 class RouteRegistry {
 public:
     // Calls route->spec() once and keeps the result for every request. Throws when the
-    // spec is malformed, so a bad route fails at startup. `family` is the route policy
-    // family the route belongs to (RouteSpec::family); every route needs one, because
-    // the mesh route catalog is built from the whole registry.
+    // spec is malformed, so a bad route fails at startup. Every route needs a route
+    // policy `family`, because the mesh route catalog is built from the whole registry.
     void add(std::unique_ptr<ApiRoute> route, const std::string& family);
 
     // Registers every route in add() order. httplib serves the first registered match, so
