@@ -429,6 +429,12 @@ The following options are available depending on the recipe being used:
 |--------|-------------|---------|
 | `--ctx-size SIZE` | Context size for the model | auto |
 
+#### AMD GPU LLM (`amdgpu-llm` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ctx-size SIZE` | Context size for the model | auto |
+
 #### vLLM ROCm (`vllm` recipe)
 
 | Option | Description | Default |

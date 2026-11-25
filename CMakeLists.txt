@@ -231,6 +231,7 @@ set(LEMON_BACKENDS
     "sd-cpp|sdcpp"
     "flm|fastflowlm"
     "ryzenai-llm|ryzenai"
+    "amdgpu-llm|amdgpu"
     "vllm|vllm"
     "thenoise|thenoise"
     "ds4|ds4"

@@ -1677,8 +1677,9 @@ jobs:
           fi
           timeout 60 docker system df || true
 
-  # gufo:rocm runs natively on Windows, so it is tested from the .exe install
-  # on Devlab Dispatch's ephemeral Strix Halo Windows runners.
+  # gufo:rocm and amdgpu-llm:gpu run natively on Windows, so they are tested
+  # from the .exe install on Devlab Dispatch's ephemeral Strix Halo Windows
+  # runners.
   test-exe-devlab-backends:
     name: Test .exe on Devlab Dispatch - ${{ matrix.name }}
     runs-on: [self-hosted, Windows, X64, devlab-dispatch, strix-halo]
@@ -1698,6 +1699,10 @@ jobs:
             install: "gufo:rocm"
             script: server_llm.py
             extra_args: "--wrapped-server gufo --backend rocm"
+          - name: amdgpu-llm
+            install: "amdgpu-llm:gpu"
+            script: server_llm.py
+            extra_args: "--wrapped-server amdgpu-llm --backend gpu"
     env:
       LEMONADE_CI_MODE: "True"
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}

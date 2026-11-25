@@ -10,6 +10,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | Recipe | Name | Selectable backend | Uses ctx_size | Backends |
 |--------|------|--------------------|---------------|----------|
 | `acestep` | ACE-Step | yes | no | cuda, rocm, vulkan |
+| `amdgpu-llm` | AMD GPU LLM | no | yes | gpu |
 | `ds4` | DwarfStar4 | no | yes | rocm |
 | `flm` | FastFlowLM NPU | no | yes | npu |
 | `gufo` | Gufo | no | yes | rocm |
@@ -41,6 +42,7 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `acestep` | cuda | experimental | native | linux, windows | nvidia_gpu |
 | `acestep` | vulkan | experimental | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `acestep` | rocm | experimental | native | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
+| `amdgpu-llm` | gpu | experimental | native | windows | amd_gpu (gfx1151) |
 | `ds4` | rocm | guest | container | linux | amd_gpu (gfx1151) |
 | `flm` | npu | core | native | linux, windows | amd_npu (XDNA2) |
 | `gufo` | rocm | guest | container | linux | amd_gpu (gfx1151) |

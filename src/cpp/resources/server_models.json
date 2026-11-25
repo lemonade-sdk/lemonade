@@ -385,6 +385,16 @@
         ],
         "size": 9.76
     },
+    "Qwen2.5-14B-Instruct-GPU": {
+        "checkpoint": "amd/Qwen2.5-14B-Instruct_gpuep_1.0_gpu_128",
+        "recipe": "amdgpu-llm",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "tool-calling"
+        ],
+        "size": 8.85
+    },
     "MiniCPM5-1B-GGUF": {
         "source": "modelscope",
         "checkpoint": "OpenBMB/MiniCPM5-1B-GGUF:MiniCPM5-1B-Q4_K_M.gguf",

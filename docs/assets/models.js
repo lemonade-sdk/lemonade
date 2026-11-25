@@ -5,6 +5,7 @@ const RAW_BASE = 'https://raw.githubusercontent.com/lemonade-sdk/lemonade';
 /* BEGIN GENERATED: models-js-recipes */
 const RECIPE_PRIORITY = [
   'acestep',
+  'amdgpu-llm',
   'ds4',
   'flm',
   'gufo',
@@ -33,6 +34,7 @@ const RECIPE_DISPLAY_NAMES = {
   'sd-cpp': 'stable-diffusion.cpp',
   flm: 'FastFlowLM NPU',
   'ryzenai-llm': 'Ryzen AI SW NPU',
+  'amdgpu-llm': 'AMD GPU LLM',
   vllm: 'vLLM ROCm',
   thenoise: 'thenoise',
   ds4: 'DwarfStar4',

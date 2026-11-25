@@ -8,6 +8,11 @@
           "ryzenai-server.zip": "sha256:fbafd130d05fb6b6428e927761c65085d672384dd5968d5230b8ee3df878b5f0"
         }
       },
+      "lemonade-sdk/amdgpu-server": {
+        "v0.5.3": {
+          "amdgpu-server-windows-x64.zip": "sha256:5054752796feb946c8edbbdd117ac91d509d05fabaed54bfd15f7e096e215f7d"
+        }
+      },
       "pwilkin/openmoss": {
         "v0.3.0": {
           "moss-tts-vulkan-linux-x64.tar.gz": "sha256:1288a22295451d0e5d8bd707ef79ea324e1c7b5f1cd9bfbdab2167a388fe3af7",
@@ -560,6 +565,9 @@
   },
   "ryzenai-llm": {
     "npu": "v1.9.0"
+  },
+  "amdgpu-llm": {
+    "gpu": "v0.5.3"
   },
   "flm": {
     "npu": "v1.0.13"
