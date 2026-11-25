@@ -12,12 +12,14 @@ export function findRegisteredRemoteModel(
   recipe: string,
   details?: PullVariantsResult,
 ): ModelInfo | undefined {
-  if (recipe.toLowerCase() === 'loom') {
+  const backend = recipe.toLowerCase();
+  if (backend === 'loom') {
     return models.find(model => String(model.recipe || '').toLowerCase() === 'loom'
       && String(model.checkpoint || '') === repository
       && String(model.registry_source || model.source || 'huggingface').toLowerCase() === provider);
   }
-  if (recipe.toLowerCase() !== 'llamacpp' || details?.mmproj_files?.length) return undefined;
+  if (!['llamacpp', 'strata'].includes(backend) ||
+      (backend === 'llamacpp' && details?.mmproj_files?.length)) return undefined;
   const file = details?.variants?.find(variant => variant.name === variantName)?.primary_file;
   if (!file) return undefined;
 
@@ -28,7 +30,7 @@ export function findRegisteredRemoteModel(
     const registry = String(model.registry_source || source || 'huggingface').toLowerCase();
     if (!name || name.startsWith('extra.') ||
         (source && source !== 'huggingface' && source !== 'modelscope')) return false;
-    if (registry !== provider || String(model.recipe || '').toLowerCase() !== 'llamacpp') return false;
+    if (registry !== provider || String(model.recipe || '').toLowerCase() !== backend) return false;
 
     // A matching main file alone does not establish equivalence for multimodal models.
     const extraFiles = model.checkpoints;

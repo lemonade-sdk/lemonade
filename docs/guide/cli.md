@@ -395,6 +395,15 @@ The following options are available depending on the recipe being used:
 |--------|-------------|---------|
 | `--loom-args ARGS` | Custom arguments to pass to loom-serve | `""` |
 
+#### Strata (`strata` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ctx-size SIZE` | Context size for the model | auto |
+| `--strata BACKEND` | Strata backend to use | Auto-detected |
+| `--strata-parallel SIZE` | Concurrent Strata slots (1-8); each slot allocates its own context | `1` |
+| `--strata-args ARGS` | Additional Strata engine arguments; model, context and serving mode are managed by Lemonade | `""` |
+
 #### Whisper.cpp (`whispercpp` recipe)
 
 | Option | Description | Default |
@@ -443,26 +452,6 @@ The following options are available depending on the recipe being used:
 |--------|-------------|---------|
 | `--thenoise BACKEND` | TheNoise backend to use | Auto-detected |
 | `--thenoise-device DEVICES` | GPU to use: ROCm0, CUDA1, ... or a GPU's uuid or pci_bus_id from system-info; empty selects automatically | `""` |
-
-#### DwarfStar4 (`ds4` recipe)
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--ctx-size SIZE` | Context size for the model | auto |
-| `--ds4-args ARGS` | Custom arguments to pass to ds4-server | `""` |
-
-#### ROCm FPX (`rocmfpx` recipe)
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--ctx-size SIZE` | Context size for the model | auto |
-| `--rocmfpx-args ARGS` | Custom arguments to pass to the ROCm FPX llama-server | `""` |
-
-#### Halogen (`halogen` recipe)
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--ctx-size SIZE` | Context size for the model | auto |
 
 #### Gufo (`gufo` recipe)
 

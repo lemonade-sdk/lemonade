@@ -271,7 +271,7 @@ export function useMonitorData(isActive = true): MonitorData {
       // active model. Gate the request on the active health entry rather than
       // merely on stale/all-model metadata that can briefly outlive an unload.
       const supportsSlots = Boolean(
-        activeModel && (activeModel.recipe === 'llamacpp' || activeModel.recipe === 'vllm'),
+        activeModel && (activeModel.recipe === 'llamacpp' || activeModel.recipe === 'vllm' || activeModel.recipe === 'strata'),
       );
       if (supportsSlots) {
         try {
@@ -287,8 +287,8 @@ export function useMonitorData(isActive = true): MonitorData {
       } else {
         setSlotsUnsupported(Boolean(activeModel));
         setSlotStatus(activeModel
-          ? 'Current backend does not expose llama.cpp/vLLM slot telemetry.'
-          : 'Load a llama.cpp or vLLM chat model to see slot telemetry.');
+          ? 'Current backend does not expose slot telemetry.'
+          : 'Load a llama.cpp, vLLM or Strata chat model to see slot telemetry.');
       }
       setSlots(slotData);
 

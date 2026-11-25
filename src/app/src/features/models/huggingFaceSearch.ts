@@ -90,3 +90,11 @@ export async function detectHuggingFaceBackend(
   if (!response.ok) throw new Error(`Failed to inspect Hugging Face repository (${response.status})`);
   return detectHuggingFaceBackendFromMetadata(modelId, await response.json());
 }
+
+export function isStrataGguf(file: string, models: ModelInfo[], backends: string[]): boolean {
+  const basename = file.split(/[\\/:]/).pop();
+  return /\.gguf$/i.test(file) && models.some(model => model.recipe === 'strata'
+    && String(model.checkpoint || '').split(/[\\/:]/).pop() === basename
+    && model.supported_backends?.some(backend => backends.includes(backend)));
+}
+import type { ModelInfo } from '../../api';

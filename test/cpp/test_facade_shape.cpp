@@ -303,6 +303,7 @@ int main() {
         "src/cpp/include/lemon/backends/backend_ops.h",              // ArtifactFetchService
         "src/cpp/server/backends/backend_ops.cpp",                   // ArtifactRef, artifacts
         "src/cpp/server/backends/loom/loom_server.cpp",              // the bundle's own layout
+        "src/cpp/server/backends/strata/strata_server.cpp",           // compatible-device memory pool
         "src/cpp/server/backends/whispercpp/whispercpp_server.cpp",  // the lazy side cache
         "src/cpp/server/hf_variants.cpp",                            // variant reads via source
         "src/cpp/server/model_registry.cpp",                         // RegistryId

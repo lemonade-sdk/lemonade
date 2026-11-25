@@ -653,6 +653,12 @@
   "flm": {
     "npu": "v1.0.13"
   },
+  "strata": {
+    "cuda": "v0.2.13",
+    "rocm": "v0.2.13",
+    "sycl": "v0.2.13",
+    "metal": "v0.2.13"
+  },
   "kokoro": {
     "cpu": "b21",
     "metal": "b21"

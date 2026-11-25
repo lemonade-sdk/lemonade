@@ -1,5 +1,6 @@
 const BACKEND_PRESENTATION: Record<string, { compact: string; label: string; color: string }> = {
   llamacpp: { compact: 'llama.cpp', label: 'llama.cpp', color: 'var(--backend-llamacpp)' },
+  strata: { compact: 'Strata', label: 'Strata', color: 'var(--backend-strata)' },
   vllm: { compact: 'vLLM', label: 'vLLM', color: 'var(--backend-vllm)' },
   flm: { compact: 'FLM', label: 'FastFlowLM', color: 'var(--backend-flm)' },
   'ryzenai-llm': { compact: 'RyzenAI', label: 'RyzenAI', color: 'var(--backend-ryzenai)' },
