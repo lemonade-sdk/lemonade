@@ -1495,6 +1495,19 @@ DownloadResult HttpClient::download_file(const std::string& url,
     fs::path output_path_fs = path_from_utf8(output_path);
     fs::path partial_path_fs = path_from_utf8(partial_path);
 
+    // A partial is only worth keeping when a later call may resume it; otherwise a
+    // failed or cancelled multi-GB download would stay on disk.
+    struct DiscardPartialOnExit {
+        const fs::path& path;
+        bool active;
+        ~DiscardPartialOnExit() {
+            if (active) {
+                std::error_code ec;
+                fs::remove(path, ec);
+            }
+        }
+    } discard_partial_on_exit{partial_path_fs, !options.resume_partial};
+
     // If a verified final file exists next to a stale .partial file, trust the
     // verified final file and remove the stale partial.
     if (expected_hash.present() && fs::exists(output_path_fs) && fs::exists(partial_path_fs)) {
@@ -1714,7 +1727,7 @@ DownloadResult HttpClient::download_file(const std::string& url,
     oss << "Download failed after " << (options.max_retries + 1) << " attempts.\n";
     oss << "Last error: " << final_result.error_message;
 
-    if (fs::exists(partial_path_fs)) {
+    if (options.resume_partial && fs::exists(partial_path_fs)) {
         size_t partial_size = fs::file_size(partial_path_fs);
         if (partial_size > 0) {
             oss << "\n\nPartial file preserved: " << partial_path;

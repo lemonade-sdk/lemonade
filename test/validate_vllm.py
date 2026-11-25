@@ -318,7 +318,6 @@ def test_model(base_url, model_name, backend, max_tokens=50):
         if not combined:
             return False, "Empty response (no content or reasoning_content)", {}
 
-        stats = {}
         stats_resp, stats_body = request_json(
             "GET",
             f"{base_url}/stats",
@@ -330,10 +329,13 @@ def test_model(base_url, model_name, backend, max_tokens=50):
                 f"/stats returned HTTP {stats_resp.status_code}: {stats_body}",
                 {},
             )
+        if not isinstance(stats_body, dict):
+            return False, f"/stats did not return a JSON object: {stats_body!r}", {}
         stats = stats_body
         print(f"  Stats: {json.dumps(stats)}", flush=True)
         output_tokens = stats.get("output_tokens")
-        if not isinstance(output_tokens, int) or output_tokens <= 0:
+        # bool is a subclass of int, so `true` would otherwise count as 1 token.
+        if type(output_tokens) is not int or output_tokens <= 0:
             return False, f"/stats reported no output tokens: {stats}", stats
 
         response_text = content if content else f"[reasoning] {reasoning}"

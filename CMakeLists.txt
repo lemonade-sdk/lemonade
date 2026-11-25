@@ -4070,6 +4070,13 @@ if(BUILD_TESTING AND EXISTS "${_HTTP_DOWNLOAD_RETRY_FORBIDDEN_TEST_SRC}")
     add_cpp_ci_test(HttpDownloadRetryForbiddenTest CI ON COMMAND test_http_download_retry_forbidden)
 endif()
 
+set(_HTTP_DOWNLOAD_PARTIAL_CLEANUP_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_http_download_partial_cleanup.cpp")
+if(BUILD_TESTING AND EXISTS "${_HTTP_DOWNLOAD_PARTIAL_CLEANUP_TEST_SRC}")
+    add_executable(test_http_download_partial_cleanup test/cpp/test_http_download_partial_cleanup.cpp)
+    target_link_libraries(test_http_download_partial_cleanup PRIVATE lemonade-server-core)
+    add_cpp_ci_test(HttpDownloadPartialCleanupTest CI ON COMMAND test_http_download_partial_cleanup)
+endif()
+
 set(_REQUEST_CANCELLATION_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_request_cancellation.cpp")
 if(BUILD_TESTING AND EXISTS "${_REQUEST_CANCELLATION_TEST_SRC}")
     add_executable(test_request_cancellation test/cpp/test_request_cancellation.cpp)
