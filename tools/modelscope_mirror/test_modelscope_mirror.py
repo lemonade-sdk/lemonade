@@ -110,12 +110,20 @@ class PinsTest(unittest.TestCase):
         installers.files.append(
             {"name": "lemonade.msi", "size": 1, "sha256": "", "url": "u"}
         )
-        rock = m.Item("therock", "therock/10.2.0", "src")
-        rock.files.append({"name": "t.tar.gz", "size": 1, "sha256": "", "url": "u"})
-        kept = m.checksummed_only([hashed, unhashed, installers, rock], [VERSIONS])
+        new_rock = m.Item("therock", "therock/10.2.0", "src")
+        new_rock.files.append({"name": "t.tar.gz", "size": 1, "sha256": "", "url": "u"})
+        rock = m.Item("therock", "therock/10.1.0", "src")
+        rock.files += [
+            {"name": "t.tar.gz", "size": 1, "sha256": "", "url": "u"},
+            {"name": "unhashed.tar.gz", "size": 1, "sha256": "", "url": "u"},
+        ]
+        kept = m.checksummed_only(
+            [hashed, unhashed, installers, new_rock, rock], [VERSIONS]
+        )
         self.assertEqual(
             [i.folder for i in kept], [hashed.folder, installers.folder, rock.folder]
         )
+        self.assertEqual([f["name"] for f in rock.files], ["t.tar.gz"])
 
     def test_new_container_backends_are_skipped(self):
         versions = {"aim": {"rocm": "2026.11.0@sha256:" + "0" * 64}}
@@ -146,12 +154,66 @@ class PinsTest(unittest.TestCase):
         with mock.patch.object(m, "release_item", return_value=item), mock.patch.object(
             m, "therock_item", side_effect=AssertionError("AMD contacted")
         ):
-            out = m.checksums_for(versions, False)
+            out = m.checksums_for(versions, False, True, Path("."))
         self.assertEqual(
             out["github"]["lemonade-sdk/ort-server"]["0.4.0"],
             {"a.zip": "sha256:" + "a" * 64, "late.zip": "sha256:" + "e" * 64},
         )
-        self.assertNotIn("therock", out)
+        self.assertEqual(out["therock"], VERSIONS["checksums"]["modelscope"]["therock"])
+
+    def test_new_therock_version_is_hashed_from_amd(self):
+        versions = {
+            "checksums": VERSIONS["checksums"],
+            "therock": {"version": "10.2.0"},
+        }
+        rock = m.Item("therock", "therock/10.2.0", "src")
+        rock.files += [
+            {"name": "a.tar.gz", "size": 1, "sha256": "", "url": "ua"},
+            {"name": "b.tar.gz", "size": 1, "sha256": "", "url": "ub"},
+        ]
+        with mock.patch.object(m, "therock_item", return_value=rock), mock.patch.object(
+            m, "download", side_effect=lambda url, *_: url[-1] * 64
+        ):
+            out = m.checksums_for(versions, False, True, Path("."))
+            check = m.checksums_for(versions, True, False, Path("."))
+        self.assertEqual(
+            out["therock"],
+            {
+                "10.2.0": {
+                    "a.tar.gz": "sha256:" + "a" * 64,
+                    "b.tar.gz": "sha256:" + "b" * 64,
+                }
+            },
+        )
+        self.assertEqual(
+            check["therock"],
+            {
+                "10.2.0": {
+                    "a.tar.gz": "(not hashed yet)",
+                    "b.tar.gz": "(not hashed yet)",
+                }
+            },
+        )
+        fatal = [
+            line
+            for is_fatal, line in m.describe_drift(
+                {"therock": check["therock"]},
+                {"therock": VERSIONS["checksums"]["modelscope"]["therock"]},
+            )
+            if is_fatal
+        ]
+        self.assertEqual(fatal, ["  missing  checksums.therock.10.2.0"])
+
+    def test_no_published_therock_tarballs_stops_the_write(self):
+        versions = {
+            "checksums": VERSIONS["checksums"],
+            "therock": {"version": "10.2.0"},
+        }
+        with mock.patch.object(
+            m, "therock_item", return_value=m.Item("therock", "therock/10.2.0", "src")
+        ):
+            with self.assertRaises(SystemExit):
+                m.checksums_for(versions, False, True, Path("."))
 
 
 class ManifestTest(unittest.TestCase):

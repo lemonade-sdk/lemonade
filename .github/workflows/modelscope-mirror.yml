@@ -1,13 +1,6 @@
-# Uploads the pinned backend files and Lemonade installers to the
-# lemonade-sdk/backends ModelScope dataset. A failed run opens an issue.
-#
-# When pins change on main, it also copies GitHub's published digests for the new
-# releases into checksums.modelscope and opens a PR with them, so pin bumps need
-# no manual checksum work. TheRock has no published checksums and is not listed.
-#
 # Triggered by the finished release build, not `release: published`: releases are
-# created with GITHUB_TOKEN, whose events start no workflows. Only default-branch
-# code runs; a release's pins are read as data, never checked out.
+# created with GITHUB_TOKEN, whose events start no workflows. A release's pins are
+# read as data, never checked out.
 name: Mirror backends to ModelScope
 
 on:
@@ -51,7 +44,7 @@ jobs:
   checksums:
     if: github.repository == 'lemonade-sdk/lemonade' && github.event_name != 'workflow_run'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 240
     permissions:
       contents: write
       pull-requests: write
@@ -68,7 +61,8 @@ jobs:
           BRANCH: auto/modelscope-checksums
         run: |
           set -euo pipefail
-          python tools/modelscope_mirror/modelscope_mirror.py --write-checksums
+          python tools/modelscope_mirror/modelscope_mirror.py --write-checksums \
+            --workdir "$RUNNER_TEMP/checksums"
           if git diff --quiet -- src/cpp/resources/backend_versions.json; then
             echo "checksums.modelscope already matches the pins."
             exit 0
@@ -97,7 +91,6 @@ jobs:
         (startsWith(github.event.workflow_run.head_branch, 'release-v') ||
          startsWith(github.event.workflow_run.head_branch, 'v'))))
     runs-on: ubuntu-latest
-    # Holds MODELSCOPE_API_TOKEN, limited to main.
     environment: modelscope-mirror
     timeout-minutes: 350
     strategy:
@@ -133,8 +126,7 @@ jobs:
           GROUP: ${{ matrix.group }}
         run: |
           set -euo pipefail
-          # A release is uploaded once its checksums are on main, so the mirror
-          # never offers a file the current build would refuse.
+          # Otherwise the mirror could offer a file the current build refuses.
           args=(--repo lemonade-sdk/backends --set "$MIRROR_SET" --group "$GROUP"
                 --workdir "$RUNNER_TEMP/msmirror" --checksummed-only)
           if [[ "$EVENT" == workflow_run ]]; then

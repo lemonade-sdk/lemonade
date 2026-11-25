@@ -91,8 +91,9 @@ namespace lemon::backends {
 
             std::vector<std::vector<std::string>> candidate_paths;
             if (backend_source::is_modelscope(source)) {
-                // Generated for every mirrored GitHub asset; GitHub downloads ignore it.
+                // Generated for every mirrored file; GitHub downloads ignore it.
                 candidate_paths.push_back({"checksums", "modelscope", "github", repo, version, filename});
+                candidate_paths.push_back({"checksums", "modelscope", "therock", version, filename});
             }
             candidate_paths.insert(candidate_paths.end(), {
                 {"checksums", "github", repo, version, filename},
@@ -2233,10 +2234,10 @@ namespace lemon::backends {
             http_progress_cb = utils::create_throttled_progress_callback();
         }
 
-        // AMD publishes no TheRock checksums, so a hash is optional from either source.
+        // AMD publishes no checksums; checksums.modelscope.therock was hashed when pinning.
         utils::DownloadOptions therock_download_opts;
-        therock_download_opts.expected_hash =
-            lookup_expected_asset_hash(source, "therock", arch, version, "", filename);
+        therock_download_opts.expected_hash = backend_source::require_pinned_hash(
+            source, lookup_expected_asset_hash(source, "therock", arch, version, "", filename), filename);
 
         auto download_result = utils::HttpClient::download_file(
             url,

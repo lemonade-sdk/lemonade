@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Mirror the backend files pinned in backend_versions.json to a ModelScope dataset,
-and keep checksums.modelscope (GitHub's published digests) in sync with the pins.
+and keep checksums.modelscope (GitHub's published digests, and TheRock hashes
+taken from AMD's server) in sync with the pins.
 
 Dataset layout, with GitHub's file names:
     github/<owner>/<repo>/<tag>/<file>   GitHub release files
@@ -72,8 +73,7 @@ VLLM_FAMILIES = ["gfx110X", "gfx120X", "gfx1150", "gfx1151"]
 THEROCK_DATACENTER = {"gfx908", "gfx90a", "gfx94X-dcgpu", "gfx950-dcgpu"}
 THEROCK_OS = ["windows", "linux"]
 
-# recipe -> {variant or "*": (repo, group)}, copied from each backend's
-# get_install_params(). An unknown recipe stops the script so this gets updated.
+# recipe -> {variant or "*": (repo, group)}, copied from each backend's get_install_params().
 SOURCES: dict[str, dict[str, tuple[str, str]]] = {
     "llamacpp": {
         "cpu": ("ggml-org/llama.cpp", "llamacpp-upstream"),
@@ -94,7 +94,6 @@ SOURCES: dict[str, dict[str, tuple[str, str]]] = {
     "moonshine": {"*": ("lemonade-sdk/moonshine-server-rocm", "small")},
     "onnxruntime": {"*": ("lemonade-sdk/ort-server", "small")},
     "loom": {"*": ("ROCm/hrx-system", "small")},
-    # Only with --include-pwilkin.
     "thinksound": {"*": ("pwilkin/thinksound.cpp", "pwilkin")},
     "acestep": {"*": ("pwilkin/acestep.cpp", "pwilkin")},
     "trellis": {"*": ("pwilkin/trellis.cpp", "pwilkin")},
@@ -109,7 +108,6 @@ NOT_BACKENDS = {
 }
 
 SETS = {
-    # Three small backends, about 0.5 GB.
     "trial": {
         "recipes": {"flm", "onnxruntime", "kokoro"},
         "therock": False,
@@ -378,15 +376,24 @@ def build_plan(
 
 
 def checksummed_only(items: list[Item], all_versions: list[dict]) -> list[Item]:
-    """Drop GitHub releases that no versions file has checksums for yet.
-
-    lemond refuses those releases from ModelScope until their checksums merge, so
-    uploading them first only opens a window where the mirror has a file the
-    build will not install. Lemonade's own installers and TheRock are kept.
-    """
+    """Drop releases and TheRock tarballs with no checksums yet; lemond would refuse them."""
     kept = []
     for item in items:
-        if item.folder.startswith("github/") and not item.folder.startswith(
+        if item.folder.startswith("therock/"):
+            hashed = [
+                f
+                for f in item.files
+                if pinned_sha256(all_versions, item.folder, f["name"])
+            ]
+            if len(hashed) < len(item.files):
+                log(
+                    f"  waiting for checksums before mirroring: {item.folder} "
+                    f"({len(item.files) - len(hashed)} tarballs)"
+                )
+            if not hashed:
+                continue
+            item.files = hashed
+        elif item.folder.startswith("github/") and not item.folder.startswith(
             f"github/{LEMONADE_REPO}/"
         ):
             if not any(
@@ -462,12 +469,14 @@ def download(url: str, dest: Path, expect_sha: str, expect_size: int | None) -> 
     return sha
 
 
-def checksums_for(versions: dict, refresh_github: bool) -> dict:
-    """checksums.modelscope for the GitHub releases versions pins.
+def checksums_for(
+    versions: dict, refresh_github: bool, hash_therock: bool, workdir: Path
+) -> dict:
+    """checksums.modelscope for what versions pins.
 
-    Copied from GitHub's published digests. Pinned hashes win unless
-    refresh_github, so a replaced upstream file shows as drift. TheRock is not
-    listed: AMD publishes no checksums.
+    Pinned hashes win over GitHub's unless refresh_github, so a replaced upstream
+    file shows as drift. AMD publishes no TheRock checksums, so a new TheRock
+    version is hashed from AMD's server (only with hash_therock).
     """
     old = generated_checksums(versions)
     github: dict[str, dict[str, dict[str, str]]] = {}
@@ -485,6 +494,26 @@ def checksums_for(versions: dict, refresh_github: bool) -> dict:
     if "comment" in old:
         result["comment"] = old["comment"]
     result["github"] = github
+
+    ver = versions["therock"]["version"]
+    old_therock = old.get("therock", {}).get(ver, {})
+    if old_therock:
+        result["therock"] = {ver: dict(old_therock)}
+        return result
+
+    item = therock_item(versions)
+    if hash_therock and not item.files:
+        sys.exit(f"AMD lists no client TheRock tarballs for {ver}; nothing to hash.")
+    therock: dict[str, str] = {}
+    for f in item.files:
+        if not hash_therock:
+            therock[f["name"]] = "(not hashed yet)"
+            continue
+        log(f"  hashing {f['name']} ({human(f['size'])}) from AMD")
+        local = workdir / f["name"]
+        therock[f["name"]] = "sha256:" + download(f["url"], local, "", f["size"])
+        local.unlink(missing_ok=True)
+    result["therock"] = {ver: therock}
     return result
 
 
@@ -510,9 +539,9 @@ def describe_drift(
     return lines
 
 
-def update_checksums(path: Path, check: bool, refresh: bool) -> int:
+def update_checksums(path: Path, check: bool, refresh: bool, workdir: Path) -> int:
     versions = json.loads(path.read_text(encoding="utf-8"))
-    want = checksums_for(versions, refresh or check)
+    want = checksums_for(versions, refresh or check, not check, workdir)
     have = generated_checksums(versions)
     drift = describe_drift(
         {k: v for k, v in want.items() if k != "comment"},
@@ -713,7 +742,7 @@ def main() -> int:
                 "--write-checksums and --check-checksums take one --versions-file."
             )
         path = Path(args.versions_file[0] if args.versions_file else VERSIONS_PATH)
-        return update_checksums(path, args.check_checksums, args.refresh)
+        return update_checksums(path, args.check_checksums, args.refresh, workdir)
 
     all_versions = [load_versions(p, None) for p in args.versions_file]
     all_versions += [load_versions(None, r) for r in args.lemonade_ref]
