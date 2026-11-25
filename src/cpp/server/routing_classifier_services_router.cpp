@@ -30,7 +30,7 @@ CostServices make_cached_cost_services(
     std::function<std::optional<CostInfo>(const std::string& candidate)> resolve) {
     // Shared by every routed request: make_router_cost_services() runs per request.
     // The bound holds even if a registry ever outgrows it.
-    constexpr std::size_t kMaxCachedCosts = 1024;
+    static constexpr std::size_t kMaxCachedCosts = 1024;
     static std::mutex cache_mu;
     static std::map<std::string, CostInfo> cache;
     static std::uint64_t cache_generation = 0;
