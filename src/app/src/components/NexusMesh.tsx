@@ -4,8 +4,8 @@ import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useI18n } from '../i18n';
 import { useNexusAccount, type NexusDevice as AccountDevice } from '../features/nexus/NexusAccountContext';
 import {
-  NEXUS_CONNECTION_LABELS, NEXUS_MAPPING_PROTOCOL_LABELS, dismissNexusNotice, nexusDeviceConnection, nexusDeviceTags, nexusInferenceServers, nexusMeshPortUrl, nexusMeshSummary,
-  nexusRequest, nexusServerUnavailable, refreshNexus, relayEndpoint, selectNexusInferenceServer, setNexusMeshUdpPort, useNexusNetwork,
+  NEXUS_CONNECTION_LABELS, NEXUS_MAPPING_PROTOCOL_LABELS, dismissNexusNotice, nexusDeviceConnection, nexusDeviceTags, nexusLemonadeServers, nexusMeshPortUrl, nexusMeshSummary,
+  nexusRequest, nexusServerUnavailable, refreshNexus, relayEndpoint, selectNexusLemonadeServer, setNexusMeshUdpPort, useNexusNetwork,
   type NexusConnection, type NexusDevice, type NexusMeshState, type NexusStatus,
 } from '../features/nexus/nexus';
 import { WorkspaceActionButton } from './WorkspacePanels';
@@ -41,7 +41,7 @@ export function NexusDeviceRows({ status, devices, chat }: { status: NexusStatus
   if (!devices.length) return <p className="nexus-mesh__empty">{t('No devices listed yet.')}</p>;
   const isLocal = (device: NexusDevice) => Boolean(status && device.node_id === status.node_id);
   const ordered = [...devices].sort((a, b) => Number(isLocal(b)) - Number(isLocal(a)));
-  const servers = new Set(nexusInferenceServers(status).map(device => device.node_id));
+  const servers = new Set(nexusLemonadeServers(status).map(device => device.node_id));
   return <ul className="nexus-devices nexus-mesh-list">
     {ordered.map(device => {
       const local = isLocal(device);
@@ -202,7 +202,7 @@ export function NexusMeshPanel() {
     if (busy) return;
     setBusy(true); setError('');
     try {
-      await selectNexusInferenceServer(target, peerKey);
+      await selectNexusLemonadeServer(target, peerKey);
       if (peerKey !== undefined) setKey('');
     } catch (error) { setError(error instanceof Error ? error.message : String(error)); }
     finally { setBusy(false); }
@@ -247,7 +247,7 @@ export function NexusMeshPanel() {
         <p className="nexus-mesh__label">{t('Devices')}</p>
         <NexusDeviceRows status={status} devices={status.members} chat={{ selected, disabled: busy, onChoose: target => void choose(target), onInfo: setInfo }} />
         {info && <ServerInfoDialog status={status} nodeId={info} onClose={() => setInfo(undefined)} />}
-        {!nexusInferenceServers(status).length && <p className="nexus-mesh__empty">{t('No other Lemonade servers in this mesh yet.')}</p>}
+        {!nexusLemonadeServers(status).length && <p className="nexus-mesh__empty">{t('No other Lemonade servers in this mesh yet.')}</p>}
         {selected !== 'local' && <form className="nexus-mesh__key" onSubmit={event => { event.preventDefault(); void choose(selected, key); }}>
           <label className="sr-only" htmlFor={`${id}-key`}>{t('API key (only if that computer sets one)')}</label>
           <input id={`${id}-key`} className="input" type="password" autoComplete="off" placeholder={t('API key (only if that computer sets one)')}

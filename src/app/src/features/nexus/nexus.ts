@@ -10,7 +10,6 @@ export interface NexusDevice {
   is_admin?: boolean;
   is_owner?: boolean;
   is_inference?: boolean;
-  tier?: 3 | 4;
   access_known?: boolean;
   can_remove: boolean;
   is_online?: boolean;
@@ -33,7 +32,6 @@ export interface NexusAccessEntry {
   node_id: string;
   device_name: string;
   is_admin: boolean;
-  tier: 3 | 4;
   see: boolean;
   connect: boolean;
   editable: boolean;
@@ -72,9 +70,6 @@ export const NEXUS_SERVICE_PERMISSIONS: { name: string; label: string }[] = [
 ];
 export function hasNexusPermission(permissions: string[] | undefined, name: string): boolean {
   return Boolean(permissions?.includes(name) || permissions?.includes('admin'));
-}
-export function nexusTierLabel(device: NexusDevice): string {
-  return device.is_inference ? 'Tier 3 · Inference server' : 'Tier 4 · Client';
 }
 export interface NexusMeshPortUrl { device_name: string; node_id: string; self: boolean; url: string }
 export interface NexusMeshPort {
@@ -144,7 +139,7 @@ export function nexusDeviceTags(status: NexusStatus | null | undefined, device: 
     ...(device.is_admin ? ['Admin'] : []),
   ];
 }
-export function nexusInferenceServers(status: NexusStatus | null | undefined): NexusDevice[] {
+export function nexusLemonadeServers(status: NexusStatus | null | undefined): NexusDevice[] {
   if (!status?.mesh_up || status.locked) return [];
   const seen = new Set<string>();
   return status.members.filter(device => device.node_id !== status.node_id && device.is_inference && device.can_connect !== false && seen.size < seen.add(device.node_id).size);
@@ -159,7 +154,7 @@ export function nexusMeshSummary(status: NexusStatus | null | undefined, error?:
   if (status.locked) return { state: 'locked', label: 'Locked' };
   if (status.mesh_up) {
     if (error) return { state: 'offline', label: 'Offline' };
-    const servers = nexusInferenceServers(status);
+    const servers = nexusLemonadeServers(status);
     const online = servers.filter(device => { const connection = nexusDeviceConnection(status, device); return connection === 'p2p' || connection === 'relay'; }).length;
     if (online === 1) return { state: 'connected', label: '1 server online' };
     if (online) return { state: 'connected', label: '{count} servers online', count: online };
@@ -231,9 +226,6 @@ let knownController: Controller | undefined;
 const API_KEY_ERROR = 'The server requires a valid API key. Check it in Settings > Server, then try again.';
 let home: { endpoint: string; key: string } | undefined;
 export const relayEndpoint = (endpoint: string, nodeId: string) => `${endpoint}/v1/nexus/peers/${encodeURIComponent(nodeId)}`;
-export function isNexusInferencePeer(device: NexusDevice, selfId?: string): boolean {
-  return device.node_id !== selfId && Boolean(device.is_inference) && device.is_online === true;
-}
 let lastMemberIds: Set<string> | undefined;
 const publish = (next: NetworkState) => { state = next; listeners.forEach(listener => listener()); };
 
@@ -528,7 +520,7 @@ export function nexusHostErrorRetryable(error: unknown): boolean {
   if (error instanceof NexusHostError) return error.status === 0 || error.status === 502 || error.status === 503 || error.status === 504;
   return false;
 }
-const PEER_PERMISSION_ERROR = 'That device does not allow this device to use its models. Ask the network administrator for inference access.';
+const PEER_PERMISSION_ERROR = 'That Lemonade server does not allow this device to use its models. Ask the network administrator for access.';
 export async function nexusHostRequest<T>(hostId: string, path: string): Promise<T> {
   const server = await homeServer();
   const peerKey = hostId === 'local' ? '' : peerKeys.get(hostId) ?? '';
@@ -554,7 +546,7 @@ export async function nexusHostRequest<T>(hostId: string, path: string): Promise
   return data as T;
 }
 
-export async function selectNexusInferenceServer(nodeId: string, suppliedKey?: string): Promise<void> {
+export async function selectNexusLemonadeServer(nodeId: string, suppliedKey?: string): Promise<void> {
   if (state.switchingServer) throw new Error('A server switch is already in progress.');
   const { default: api } = await import('../../api');
   if (nodeId === 'local' && !home) {
@@ -573,7 +565,7 @@ export async function selectNexusInferenceServer(nodeId: string, suppliedKey?: s
       home = server;
       const peerKey = suppliedKey ?? peerKeys.get(nodeId) ?? '';
       if (!await api.switchServer(relayEndpoint(server.endpoint, nodeId), server.key, peerKey)) {
-        throw new Error(api.lastConnectionError || 'Could not connect to the selected inference server.');
+        throw new Error(api.lastConnectionError || 'Could not connect to the selected Lemonade server.');
       }
       if (suppliedKey !== undefined) peerKeys.set(nodeId, suppliedKey);
     }

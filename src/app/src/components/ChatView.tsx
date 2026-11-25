@@ -75,7 +75,7 @@ import type { DownloadListItem } from '../features/downloadManager/downloadStore
 import { findModelInfoByName, getAudioTranscriptionComponent, getPrimaryChatComponent, getVisionChatComponent, isCollectionModel, virtualLoadedCollection } from '../features/collections/collectionModels';
 import { LEMONADE_MCP_SERVER_ID, LEMONADE_MCP_TOOL_COUNT, MAX_MCP_SERVER_SELECTION, type McpServerToolOption } from '../tools/mcpMetadata';
 import { isRouterModelInfo, preflightRouter, routerPreflightError } from '../features/router/routerRuntime';
-import { NEXUS_CONNECTION_LABELS, nexusHostErrorRetryable, nexusHostRequest, nexusInferenceServers, nexusServerUnavailable, selectNexusInferenceServer, useNexusNetwork } from '../features/nexus/nexus';
+import { NEXUS_CONNECTION_LABELS, nexusHostErrorRetryable, nexusHostRequest, nexusLemonadeServers, nexusServerUnavailable, selectNexusLemonadeServer, useNexusNetwork } from '../features/nexus/nexus';
 import { TTS_SETTINGS_EVENT, loadTtsPlaybackSettings, ttsVoiceFromRecipeOptions } from '../features/audio/ttsSettings';
 import { selectDictationModel, updateDraftWithDictation } from '../features/audio/dictationModels';
 import {
@@ -1030,7 +1030,7 @@ const ChatView: React.FC<ChatViewProps> = ({
   const [modelPickerUnloading, setModelPickerUnloading] = useState<string | null>(null);
   const nexusNetwork = useNexusNetwork(false);
   const chatHostId = nexusNetwork.selectedServerId || 'local';
-  const chatHosts = useMemo(() => nexusInferenceServers(nexusNetwork.status), [nexusNetwork.status]);
+  const chatHosts = useMemo(() => nexusLemonadeServers(nexusNetwork.status), [nexusNetwork.status]);
   const unavailableHosts = useMemo(() => new Map(chatHosts.flatMap(device => {
     const reason = nexusServerUnavailable(nexusNetwork.status, device);
     return reason ? [[device.node_id, reason] as const] : [];
@@ -3775,7 +3775,7 @@ ${index}`;
     setModelPickerError(null);
     setModelPickerSwitching(hostId);
     try {
-      await selectNexusInferenceServer(hostId);
+      await selectNexusLemonadeServer(hostId);
       await Promise.resolve(onRefresh());
     } catch (err) {
       setModelPickerError(friendlyErrorMessage(err));
@@ -3790,7 +3790,7 @@ ${index}`;
     if (selected || previousHostId === hostId) return;
     setModelPickerSwitching(previousHostId);
     try {
-      await selectNexusInferenceServer(previousHostId);
+      await selectNexusLemonadeServer(previousHostId);
       await Promise.resolve(onRefresh());
     } catch (err) {
       // A failed switch back replaces the load error: it is the problem the user has now.

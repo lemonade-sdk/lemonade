@@ -1,7 +1,7 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNexusAccount } from '../features/nexus/NexusAccountContext';
-import { isLoopbackUrl, selectNexusInferenceServer, useNexusNetwork } from '../features/nexus/nexus';
+import { isLoopbackUrl, selectNexusLemonadeServer, useNexusNetwork } from '../features/nexus/nexus';
 import { useI18n } from '../i18n';
 import { Icon } from './Icon';
 import { WorkspaceActionButton } from './WorkspacePanels';
@@ -157,7 +157,7 @@ function MyDevices() {
   const choose = async (target: string) => {
     if (disabled || target === selected) return;
     setBusy(true); setError('');
-    try { await selectNexusInferenceServer(target); }
+    try { await selectNexusLemonadeServer(target); }
     catch (error) { setError(error instanceof Error ? error.message : String(error)); }
     finally { setBusy(false); }
   };

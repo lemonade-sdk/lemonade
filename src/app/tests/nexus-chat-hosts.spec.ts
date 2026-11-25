@@ -32,7 +32,7 @@ test('a host whose first answer is missing is read again instead of showing an e
 
 test('a host that refuses this device names the permission and offers no retry loop', async ({ page }) => {
   const { fixture, host } = await openPickerWithMeshHost(page, fixture => { fixture.peerRefused = true; });
-  await expect(host.getByText('That device does not allow this device to use its models', { exact: false })).toBeVisible();
+  await expect(host.getByText('That Lemonade server does not allow this device to use its models', { exact: false })).toBeVisible();
   const refusals = fixture.calls.filter(call => call.path.includes('/nexus/peers/gpu/')).length;
   await page.waitForTimeout(2000);
   expect(fixture.calls.filter(call => call.path.includes('/nexus/peers/gpu/')).length).toBe(refusals);

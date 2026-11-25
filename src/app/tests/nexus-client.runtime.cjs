@@ -133,7 +133,7 @@ global.fetch = async (url, init = {}) => {
   api.baseUrl = local;
   api.setSessionApiKey('test-local-key');
 
-  await nexus.selectNexusInferenceServer('gpu', 'test-peer-key');
+  await nexus.selectNexusLemonadeServer('gpu', 'test-peer-key');
   assert.equal(api.baseUrl, `${local}/v1/nexus/peers/gpu`);
   const relay = calls.filter(call => call.url.includes('/peers/gpu/'));
   assert.ok(relay.length >= 2);
@@ -146,11 +146,11 @@ global.fetch = async (url, init = {}) => {
   assert.equal(calls.at(-1).headers.get('X-Lemonade-Peer-Authorization'), null);
 
   failedPeer = 'offline';
-  await assert.rejects(nexus.selectNexusInferenceServer('offline', 'test-failed-key'));
+  await assert.rejects(nexus.selectNexusLemonadeServer('offline', 'test-failed-key'));
   assert.equal(api.baseUrl, `${local}/v1/nexus/peers/gpu`, 'failed switches restore the working peer');
   assert.equal(api.peerApiKey, 'test-peer-key');
   assert.equal(api.status, 'connected');
-  await nexus.selectNexusInferenceServer('local');
+  await nexus.selectNexusLemonadeServer('local');
   assert.equal(api.baseUrl, local);
   assert.equal(api.peerApiKey, '');
   assert.equal(calls.at(-1).headers.get('X-Lemonade-Peer-Authorization'), null);
@@ -219,10 +219,10 @@ global.fetch = async (url, init = {}) => {
   assert.equal(nexus.nexusDeviceConnection({ ...up, locked: true, mesh_up: false }, device({ is_online: true })), undefined, 'a locked mesh reports no paths');
   assert.deepEqual(nexus.nexusDeviceTags(up, device({ node_id: 'self', is_inference: true, is_admin: true })), ['This device', 'Server', 'Admin']);
   assert.deepEqual(nexus.nexusDeviceTags(up, device({ is_inference: false, member: true, group_role: 'member' })), ['Client', 'Member', 'Joined network']);
-  assert.deepEqual(nexus.nexusDeviceTags(up, device({})), [], 'a device without a tier reports no tier pill');
+  assert.deepEqual(nexus.nexusDeviceTags(up, device({})), [], 'a device without a server flag reports neither pill');
   const servers = [device({ node_id: 'gpu', is_inference: true, can_connect: true, is_online: true, connection_type: 'p2p' }), device({ node_id: 'cpu', is_inference: true, can_connect: true, is_online: true }),
     device({ node_id: 'denied', is_inference: true, can_connect: false, is_online: true }), device({ node_id: 'phone', is_inference: false, is_online: true }), device({ node_id: 'self', is_inference: true })];
-  assert.deepEqual(nexus.nexusInferenceServers({ ...up, members: servers }).map(d => d.node_id), ['gpu', 'cpu'], 'chat runs only on inference servers this device may connect to');
+  assert.deepEqual(nexus.nexusLemonadeServers({ ...up, members: servers }).map(d => d.node_id), ['gpu', 'cpu'], 'chat runs only on Lemonade servers this device may connect to');
   assert.equal(nexus.nexusServerUnavailable({ ...up, members: servers }, servers[0]), undefined, 'a server with a path can serve chat');
   assert.equal(nexus.nexusServerUnavailable({ ...up, members: servers }, servers[1]), 'connecting', 'an online server without a path yet cannot');
   assert.equal(nexus.nexusServerUnavailable(up, device({ is_online: false, connection_type: 'p2p' })), 'offline');

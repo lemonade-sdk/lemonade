@@ -180,7 +180,7 @@ export function NexusHierarchy({ status, advanced, service = nexusTreeService }:
           <nav className="nexus-tree-breadcrumbs" aria-label={t('Group path')}>{treeBreadcrumbs(selected, entries).map((entry, index) => <React.Fragment key={entry.id}>
             {index > 0 && <Icon name="chevron-right" size={12} />}<button type="button" onClick={() => select(entry)} aria-current={entry.id === selected.id ? 'location' : undefined}>{name(entry)}</button>
           </React.Fragment>)}</nav>
-          <div className="nexus-tree-detail__heading"><span className="nexus-tree-detail__icon"><Icon name={selected.kind === 'group' ? 'layers' : 'monitor'} size={23} /></span><div><h4>{name(selected)}</h4><p>{selected.kind === 'group' ? t('Group') : selected.is_inference ? t('Inference server') : t('Device node')}</p></div></div>
+          <div className="nexus-tree-detail__heading"><span className="nexus-tree-detail__icon"><Icon name={selected.kind === 'group' ? 'layers' : 'monitor'} size={23} /></span><div><h4>{name(selected)}</h4><p>{selected.kind === 'group' ? t('Group') : selected.is_inference ? t('Lemonade server') : t('Device node')}</p></div></div>
           {selected.kind === 'group' ? <>
             {loading.has(selected.id) && <p role="status">{t('Loading group…')}</p>}
             {errors[selected.id] && <div role="alert"><p className="nexus-error">{errors[selected.id]}</p><WorkspaceActionButton size="small" onClick={() => void load(selected.id)}>{t('Retry')}</WorkspaceActionButton></div>}
