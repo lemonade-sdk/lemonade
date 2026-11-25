@@ -13,27 +13,103 @@ This script:
 2. Installs the requested vLLM backend via `POST /api/v1/install`
 3. For each hot model, loads it with the requested backend, sends a
    `chat/completions` request, queries `/api/v1/stats`, and unloads it
-4. Outputs a JSON results file for CI consumption
+4. Checks lemond's captured logs for proof that vLLM ran on the GPU
+5. Outputs a JSON results file for CI consumption
 """
 
 import argparse
 import glob
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
 
 import requests
 
+from utils.gpu_offload import GPU_LOG_FILENAMES, read_new_log_text
 from utils.server_base import _auth_headers, unload_all_models, wait_for_server
 from utils.test_models import PORT, TIMEOUT_DEFAULT
 
 TIMEOUT_HEALTH = 60
 TIMEOUT_INFERENCE = 1800  # 30 minutes; first run downloads + compiles Triton kernels
+# Longest gap between install events: listing and extracting the ~25 GB bundle
+# sends nothing for several minutes.
+TIMEOUT_INSTALL_IDLE = 900
 CHAT_PROMPT = [
     {"role": "user", "content": "What is 2+2? Reply in one sentence."},
 ]
+
+ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+ENGINE_RE = re.compile(
+    r"Initializing a V1 LLM engine \(v([^)\s]+)\) with config: .*?\bdevice_config=cuda\b"
+)
+# vLLM logs at INFO level, without a device name, so these together are the proof:
+# a CUDA/HIP engine, the ROCm platform choosing attention, and memory on the GPU.
+GPU_EVIDENCE = {
+    "ROCm engine": ENGINE_RE,
+    "ROCm attention backend": re.compile(
+        r"\brocm\.py:\d+\]\s.*?(?:out of potential backends|\(selected via --attention-backend\))"
+    ),
+    "weights on GPU": re.compile(r"\bModel loading took ([\d.]+) GiB memory"),
+    "KV cache on GPU": re.compile(r"\bGPU(?: \+ host)? KV cache size: ([\d,]+) tokens"),
+}
+CPU_RE = re.compile(r"\bdevice_config=cpu\b|\bCPU(?: \+ host)? KV cache size:")
+GPU_FAILURE_HINTS = [
+    re.compile(r"Failed to infer device type"),
+    re.compile(r"Failed to import from (?:amdsmi|vllm\._C|vllm\._rocm_C)"),
+    re.compile(r"AMDSMI_STATUS_\w+"),
+    re.compile(r"needs the system C toolchain"),
+]
+
+
+def gpu_evidence(log_text, expected_version=None):
+    """Return (status, details) for one model's slice of lemond's log."""
+    text = ANSI_RE.sub("", log_text)
+    missing = []
+    evidence = {}
+    for name, pattern in GPU_EVIDENCE.items():
+        match = pattern.search(text)
+        if not match:
+            missing.append(name)
+            continue
+        if match.groups():
+            evidence[name] = match.group(1)
+
+    weights = evidence.get("weights on GPU")
+    if weights is not None and float(weights) <= 0:
+        missing.append("weights on GPU (0 GiB)")
+    kv_tokens = evidence.get("KV cache on GPU")
+    if kv_tokens is not None and int(kv_tokens.replace(",", "")) <= 0:
+        missing.append("KV cache on GPU (0 tokens)")
+
+    engine_version = evidence.get("ROCm engine")
+    if (
+        expected_version
+        and engine_version
+        and not expected_version.startswith(engine_version)
+    ):
+        missing.append(
+            f"pinned vLLM {expected_version} (engine reported {engine_version})"
+        )
+
+    details = {"evidence": evidence}
+    if CPU_RE.search(text):
+        missing.append("not on the CPU platform")
+    if missing:
+        details["missing"] = missing
+        details["hints"] = [
+            m.group(0) for p in GPU_FAILURE_HINTS for m in [p.search(text)] if m
+        ]
+    return ("FAIL" if missing else "PASS"), details
+
+
+def expected_vllm_version(pin):
+    """'vllm-portable-rocm-device-all-0.32.1.dev0_gabc.d20261124.rocm103-py314-x64'
+    -> '0.32.1.dev0+gabc.d20261124.rocm103' (the URL form uses '_' for '+')."""
+    match = re.fullmatch(r"vllm-portable-rocm-[a-z-]+?-(\d[^-]*)-py\d+-x64", pin or "")
+    return match.group(1).replace("_", "+", 1) if match else None
 
 
 def collect_server_logs(output_dir):
@@ -114,24 +190,56 @@ def get_hot_vllm_models(base_url):
 
 
 def install_backend(base_url, backend):
-    """Install or update the requested vLLM backend through the API."""
+    """Install or update the requested vLLM backend through the streaming API.
+
+    The bundle is ~10 GB, so a fixed timeout on a blocking /install would fail on a
+    slow link; the timeout here applies between progress events instead.
+    """
     print(f"Installing vllm backend via /install: {backend}", flush=True)
-    response, body = request_json(
-        "POST",
+    with requests.post(
         f"{base_url}/install",
-        timeout=TIMEOUT_INFERENCE,
-        json={"recipe": "vllm", "backend": backend, "stream": False},
-    )
-    if response.status_code != 200:
-        raise RuntimeError(
-            f"Backend install failed: HTTP {response.status_code} - {body}"
-        )
-    # If the action URL came back instead of success, the kernel/driver preflight failed.
-    if body.get("action", "").endswith(".html"):
-        raise RuntimeError(
-            f"Backend install blocked by preflight: {body.get('action')}"
-        )
-    print(f"Install response: {body}", flush=True)
+        json={"recipe": "vllm", "backend": backend, "stream": True},
+        headers=_auth_headers(),
+        stream=True,
+        timeout=(30, TIMEOUT_INSTALL_IDLE),
+    ) as response:
+        if response.status_code != 200:
+            raise RuntimeError(
+                f"Backend install failed: HTTP {response.status_code} - {response.text[:1000]}"
+            )
+        # Preflight answers (setup guide, unsupported) arrive as plain JSON.
+        if "text/event-stream" not in response.headers.get("Content-Type", ""):
+            body = response.json()
+            if body.get("action", "").endswith(".html"):
+                raise RuntimeError(
+                    f"Backend install blocked by preflight: {body.get('action')}"
+                )
+            print(f"Install response: {body}", flush=True)
+            return
+
+        event = ""
+        last_decile = -1
+        for raw_line in response.iter_lines(decode_unicode=True):
+            line = (raw_line or "").strip()
+            if line.startswith("event:"):
+                event = line[len("event:") :].strip()
+                continue
+            if not line.startswith("data:"):
+                continue
+            data = line[len("data:") :].strip()
+            if event == "error":
+                raise RuntimeError(f"Backend install failed: {data[:1000]}")
+            if event == "complete":
+                print(f"Install complete: {data[:300]}", flush=True)
+                return
+            try:
+                percent = int(json.loads(data).get("percent", 0))
+            except (ValueError, TypeError, AttributeError):
+                continue
+            if percent // 10 > last_decile:
+                last_decile = percent // 10
+                print(f"  install progress: {percent}%", flush=True)
+    raise RuntimeError("Backend install stream ended without a 'complete' event")
 
 
 def unload_model(base_url, model_name=None):
@@ -219,6 +327,9 @@ def test_model(base_url, model_name, backend, max_tokens=50):
         if stats_resp.status_code == 200:
             stats = stats_body
             print(f"  Stats: {json.dumps(stats)}", flush=True)
+            output_tokens = stats.get("output_tokens")
+            if not isinstance(output_tokens, int) or output_tokens <= 0:
+                return False, f"/stats reported no output tokens: {stats}", stats
         else:
             print(
                 f"  Warning: stats returned HTTP {stats_resp.status_code}: {stats_body}",
@@ -274,7 +385,39 @@ def main():
         action="store_true",
         help="Lite mode: only test the smallest hot model",
     )
+    parser.add_argument(
+        "--expected-pin",
+        default=None,
+        help="vllm.rocm pin from backend_versions.json; the engine must report its version",
+    )
     args = parser.parse_args()
+
+    expected_version = expected_vllm_version(args.expected_pin)
+    if args.expected_pin and not expected_version:
+        print(
+            f"ERROR: cannot read a vLLM version from pin '{args.expected_pin}'",
+            file=sys.stderr,
+            flush=True,
+        )
+        sys.exit(1)
+    gpu_log_paths = (
+        [os.path.join(args.logs_dir, name) for name in GPU_LOG_FILENAMES]
+        if args.logs_dir
+        else []
+    )
+    if not any(os.path.isfile(path) for path in gpu_log_paths):
+        print(
+            "ERROR: GPU use cannot be verified without lemond's logs.\n"
+            "Start lemond in debug mode (set env LEMONADE_CI_MODE=1, or log_level=debug) "
+            "with its stdout/stderr saved into a directory, e.g.:\n"
+            f"  lemond <cache_dir> --port {args.port} "
+            "1><dir>/lemond.stdout.log 2><dir>/lemond.stderr.log\n"
+            "Then re-run this script with: --logs-dir <dir>",
+            file=sys.stderr,
+            flush=True,
+        )
+        sys.exit(1)
+    log_offsets = {path: 0 for path in gpu_log_paths}
 
     base_url = f"http://localhost:{args.port}/api/v1"
     output_path = args.output or f"vllm_validation_{args.backend}.json"
@@ -317,9 +460,18 @@ def main():
             success, response_text, stats = test_model(
                 base_url, model_name, args.backend
             )
+            # test_model unloads before returning, so this model's vLLM lines are flushed.
+            log_chunk = ""
+            for path in gpu_log_paths:
+                chunk, log_offsets[path] = read_new_log_text(path, log_offsets[path])
+                log_chunk += chunk
+            gpu_status, gpu_details = gpu_evidence(log_chunk, expected_version)
             result = {
                 "model": model_name,
+                "backend": args.backend,
                 "pass": success,
+                "gpu": gpu_status,
+                "gpu_evidence": gpu_details,
                 "response": response_text,
                 "input_tokens": stats.get("input_tokens", "N/A"),
                 "output_tokens": stats.get("output_tokens", "N/A"),
@@ -328,7 +480,20 @@ def main():
             }
             results.append(result)
             status = "PASS" if success else "FAIL"
-            print(f"  Result: {status}", flush=True)
+            print(f"  Inference: {status}  GPU: {gpu_status}", flush=True)
+            print(f"  GPU evidence: {json.dumps(gpu_details)}", flush=True)
+            if gpu_status == "FAIL":
+                print(
+                    f"  [WARN] {model_name} on {args.backend}: vLLM did not log GPU "
+                    f"placement (missing: {', '.join(gpu_details['missing'])})"
+                    + (
+                        f"; hints: {', '.join(gpu_details['hints'])}"
+                        if gpu_details["hints"]
+                        else ""
+                    ),
+                    file=sys.stderr,
+                    flush=True,
+                )
             if not success:
                 all_passed = False
                 print(f"  Error: {response_text}", flush=True)
@@ -349,7 +514,7 @@ def main():
     print(f"Results: {passed}/{len(results)} models passed", flush=True)
     for result in results:
         status = "PASS" if result["pass"] else "FAIL"
-        print(f"  [{status}] {result['model']}", flush=True)
+        print(f"  [{status}] {result['model']} (GPU: {result['gpu']})", flush=True)
     print(f"{'=' * 60}", flush=True)
 
     if not all_passed:

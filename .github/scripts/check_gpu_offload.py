@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """Fail if any validation record reports a GPU-offload FAIL.
 
-The sd-cpp and llama.cpp validators write per-backend JSON summaries whose records
+The sd-cpp, llama.cpp and vLLM validators write per-backend JSON summaries whose records
 carry a ``gpu`` field of ``PASS`` / ``FAIL`` / ``N/A``.
 This gate reads those summaries and exits non-zero when any record is ``FAIL``,
 or when the summaries carry no ``PASS`` at all: a gate that confirms nothing must
 not report success.
 
-It feeds ``validation-gate`` (which blocks merge) but is intentionally NOT a
-dependency of ``create-pr``, so the weekly auto-bump PR still opens with the
-failing rows visible for a reviewer to judge.
+It feeds ``validation-gate`` (which blocks merge). When it fails, the weekly
+llama.cpp and sd-cpp auto-bump PRs still open with the failing rows visible for
+a reviewer to judge; the vLLM one is not opened.
 """
 
 from __future__ import annotations

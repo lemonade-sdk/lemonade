@@ -1,12 +1,12 @@
 #include <algorithm>
 #include <iostream>
-#include <regex>
 #include <stdexcept>
 #include <string>
 
 #include <nlohmann/json.hpp>
 
 #include "lemon/backends/vllm/vllm_arg_resolver.h"
+#include "lemon/backends/vllm/vllm_server.h"
 #include "lemon/system_info.h"
 
 using lemon::SystemInfo;
@@ -30,12 +30,10 @@ void expect(bool condition, const std::string& label) {
 }  // namespace
 
 int main() {
-    // gfx942 is not in the installable matrix until its asset ships, though everything
-    // below it is wired and tested.
-    expect(!SystemInfo::backend_supports_arch("vllm", "rocm", "gfx942"),
-           "vllm:rocm gfx942 is NOT advertised installable yet (asset pending; infra staged)");
-    expect(!SystemInfo::backend_supports_arch("vllm", "rocm", "gfx950"),
-           "vllm:rocm gfx950 is NOT advertised installable yet (asset pending; infra staged)");
+    expect(SystemInfo::backend_supports_arch("vllm", "rocm", "gfx942"),
+           "vllm:rocm supports gfx942 (MI300X) from the device-all bundle");
+    expect(SystemInfo::backend_supports_arch("vllm", "rocm", "gfx950"),
+           "vllm:rocm supports gfx950 (MI350) from the device-all bundle");
 
     expect(SystemInfo::backend_supports_arch("vllm", "rocm", "gfx1100"),
            "vllm:rocm still supports gfx1100 via gfx110X wildcard");
@@ -59,17 +57,6 @@ int main() {
            "rocm_asset_family passes gfx942 through unchanged (release tag arch)");
     expect(SystemInfo::rocm_asset_family("gfx1100") == "gfx110X",
            "rocm_asset_family collapses gfx1100 to gfx110X");
-
-    // Per-arch version override: gfx942 (CDNA-dcgpu) pins a distinct vLLM/ROCm
-    // release line from the RDNA default, since no single tag carries both.
-    expect(SystemInfo::vllm_rocm_version_override("gfx942") == "vllm0.19.1-rocm7.13.0",
-           "vllm gfx942 overrides to its own dcgpu release line");
-    expect(SystemInfo::vllm_rocm_version_override("gfx950") == "vllm0.19.1-rocm7.13.0",
-           "vllm gfx950 (CDNA4) rides the same CDNA release line as gfx942");
-    expect(SystemInfo::vllm_rocm_version_override("gfx110X").empty(),
-           "vllm RDNA families use the default pin (no override)");
-    expect(SystemInfo::vllm_rocm_version_override("gfx1151").empty(),
-           "vllm gfx1151 uses the default pin (no override)");
 
     // The discrete-HBM vs conservative-default wiring that VLLMServer::load() applies.
     auto apu = device_class_launch_policy("gfx1151", false);
@@ -152,35 +139,6 @@ int main() {
         expect(threw, "a non-object speculative_config is rejected with a clear error");
     }
 
-    // Release tags: a bare base gains the -{arch} suffix, a matching pin is used verbatim,
-    // and a cross-arch pin is rejected rather than installed against the wrong line.
-    {
-        auto release_tag = [](const std::string& v, const std::string& arch) -> std::string {
-            static const std::regex re("-(gfx[0-9a-fA-FxX]+)$");
-            std::smatch match;
-            if (std::regex_search(v, match, re)) {
-                if (match[1].str() != arch) {
-                    throw std::runtime_error("vLLM ROCm pin '" + v + "' targets " +
-                                             match[1].str() + " but this host is " + arch);
-                }
-                return v;
-            }
-            return v + "-" + arch;
-        };
-        expect(release_tag("vllm0.19.1-rocm7.13.0", "gfx942") == "vllm0.19.1-rocm7.13.0-gfx942",
-               "a bare base version gets the -gfx942 target suffix");
-        expect(release_tag("vllm0.19.1-rocm7.13.0-gfx942", "gfx942") == "vllm0.19.1-rocm7.13.0-gfx942",
-               "a full -gfx942 pin matching the host is used verbatim (no ...-gfx942-gfx942 double suffix)");
-        bool cross_arch_rejected = false;
-        try {
-            release_tag("vllm0.20.1-rocm7.12.0-gfx110X", "gfx942");
-        } catch (const std::runtime_error&) {
-            cross_arch_rejected = true;
-        }
-        expect(cross_arch_rejected,
-               "a cross-arch pin (gfx110X on a gfx942 host) is REJECTED, not installed against the wrong arch");
-    }
-
     // The device list is iGPU-first, so a hybrid host (gfx1151 APU + gfx942 dGPU) must
     // still resolve gfx942.
     {
@@ -207,22 +165,24 @@ int main() {
                "an unavailable discrete GPU falls back to the available iGPU");
     }
 
-    // Status must resolve the SAME per-arch override install writes, or gfx942 reads
-    // update_required forever (the RDNA pin cannot prefix-match the dcgpu base).
-    {
-        std::string family = SystemInfo::rocm_asset_family("gfx942");
-        std::string override_base = SystemInfo::vllm_rocm_version_override(family);
-        std::string installed = override_base + "-" + family;  // what get_install_params writes
-        auto prefix_match = [](const std::string& inst, const std::string& exp) {
-            return inst == exp || (exp.size() < inst.size() &&
-                                   inst.compare(0, exp.size() + 1, exp + "-") == 0);
-        };
-        expect(!override_base.empty(), "gfx942 pins a per-arch expected override line for status");
-        expect(prefix_match(installed, override_base),
-               "gfx942 install tag matches its per-arch expected version (fix: status resolves the override)");
-        expect(!prefix_match(installed, "vllm0.20.1-rocm7.12.0"),
-               "gfx942 install tag does NOT match the default RDNA base (why per-arch status resolution is required)");
+#ifdef __linux__
+    // One device-all bundle serves every GPU, so the URL does not depend on the
+    // detected arch and the version recorded is the pin itself.
+    for (const char* arch : {"gfx1151", "gfx942"}) {
+        SystemInfo::set_rocm_arch_override(arch);
+        const auto params = lemon::backends::VLLMServer::get_install_params(
+            "rocm", "vllm-portable-rocm-device-all-0.1.0-py314-x64");
+        SystemInfo::set_rocm_arch_override("");
+        expect(params.repo.empty() && params.version_override.empty(),
+               std::string(arch) + ": vllm:rocm is not a GitHub release and keeps the pin as its version");
+        expect(params.filename == "vllm-portable-rocm-device-all-0.1.0-py314-x64.tar.gz",
+               std::string(arch) + ": vllm:rocm downloads the pinned bundle file");
+        expect(params.url ==
+                   "https://rocm.frameworks-nightlies.amd.com/whl-multi-arch-staging/vllm/tarball/"
+                   "vllm-portable-rocm-device-all-0.1.0-py314-x64.tar.gz",
+               std::string(arch) + ": vllm:rocm downloads from AMD's tarball index");
     }
+#endif
 
     if (failures != 0) {
         std::cout << failures << " assertion(s) failed" << std::endl;

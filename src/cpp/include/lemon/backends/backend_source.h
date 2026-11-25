@@ -1,7 +1,8 @@
 #pragma once
 
 // Backend downloads come from GitHub, or from the lemonade-sdk/backends ModelScope
-// dataset, which keeps GitHub's file names.
+// dataset, which keeps GitHub's file names. A backend published outside GitHub
+// (InstallParams::url) is always fetched from its own URL.
 
 #include <stdexcept>
 #include <string>
@@ -62,6 +63,25 @@ inline std::string require_pinned_hash(const std::string& source, std::string ex
             "or a Lemonade release whose pins include it.");
     }
     return expected_hash;
+}
+
+// A direct-URL artifact is never mirrored, so the pinned hash is its only check.
+inline std::string require_url_hash(std::string expected_hash, const std::string& url) {
+    if (expected_hash.empty()) {
+        throw std::runtime_error("No SHA-256 for " + url +
+                                 " is pinned in backend_versions.json, so it will not be installed.");
+    }
+    return expected_hash;
+}
+
+// "https://host/path" -> "https://host/"; "" when `url` has no scheme.
+inline std::string url_origin(const std::string& url) {
+    const auto scheme_end = url.find("://");
+    if (scheme_end == std::string::npos) {
+        return "";
+    }
+    const auto host_end = url.find('/', scheme_end + 3);
+    return (host_end == std::string::npos ? url : url.substr(0, host_end)) + "/";
 }
 
 inline std::string modelscope_base(const std::string& endpoint) {

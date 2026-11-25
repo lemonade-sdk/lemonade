@@ -98,7 +98,7 @@ jobs:
       max-parallel: 4
       matrix:
         group: [small, npu, whispercpp, llamacpp-upstream, llamacpp-nightly,
-                vllm, sdcpp, llamacpp-lemonade, thenoise, therock]
+                sdcpp, llamacpp-lemonade, thenoise, therock]
     steps:
       - uses: actions/checkout@v5
         with:

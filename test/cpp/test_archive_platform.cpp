@@ -6,6 +6,7 @@
 
 using lemon::utils::resolve_tarball_strip_components;
 using lemon::utils::tarball_listing_timeout_seconds;
+using lemon::utils::tarball_timeout_seconds;
 
 namespace {
 
@@ -24,6 +25,16 @@ int main() {
     check(
         "tarball listing allows large archives to finish",
         tarball_listing_timeout_seconds == 300);
+    check(
+        "small and unknown-size archives keep the 300 s tar limit",
+        tarball_timeout_seconds(0) == 300 &&
+            tarball_timeout_seconds(1024ull * 1024 * 1024) == 300);
+    check(
+        "a 10.3 GB archive gets about 33 minutes per tar pass",
+        tarball_timeout_seconds(10329082333ull) == 1970);
+    check(
+        "the tar limit is capped at one day",
+        tarball_timeout_seconds(UINTMAX_MAX) == 24 * 3600);
 
     check(
         "wrapped archive strips one directory",

@@ -10,7 +10,7 @@ Dataset layout, with GitHub's file names:
 
 Examples:
     python modelscope_mirror.py --set trial --dry-run
-    python modelscope_mirror.py --set core --group vllm
+    python modelscope_mirror.py --set core --group sdcpp
     python modelscope_mirror.py --set core --lemonade-ref main --lemonade-ref release:latest --verify
     python modelscope_mirror.py --write-checksums
     python modelscope_mirror.py --check-checksums
@@ -68,8 +68,6 @@ VERSIONS_PATH = "src/cpp/resources/backend_versions.json"
 THEROCK_URL = "https://stable.repo.amd.com/rocm/core/tarball/"
 USER_AGENT = "lemonade-modelscope-mirror"
 
-# Client GPUs only; datacenter targets are not mirrored.
-VLLM_FAMILIES = ["gfx110X", "gfx120X", "gfx1150", "gfx1151"]
 THEROCK_DATACENTER = {"gfx908", "gfx90a", "gfx94X-dcgpu", "gfx950-dcgpu"}
 THEROCK_OS = ["windows", "linux"]
 
@@ -89,7 +87,6 @@ SOURCES: dict[str, dict[str, tuple[str, str]]] = {
     "ryzenai-llm": {"*": ("lemonade-sdk/ryzenai-server", "npu")},
     "flm": {"*": ("ROCm/FastFlowLM", "npu")},
     "kokoro": {"*": ("lemonade-sdk/Kokoros", "small")},
-    "vllm": {"rocm": ("lemonade-sdk/vllm-rocm", "vllm")},
     "thenoise": {"*": ("lemonade-sdk/thenoise", "thenoise")},
     "moonshine": {"*": ("lemonade-sdk/moonshine-server-rocm", "small")},
     "onnxruntime": {"*": ("lemonade-sdk/ort-server", "small")},
@@ -106,6 +103,9 @@ NOT_BACKENDS = {
     "rocm_asset_families",
     "clear_bin_if_lemonade_below",
 }
+# Published outside GitHub; Lemonade downloads them from the publisher for every
+# backend_source (InstallParams::url), so the mirror has nothing to copy.
+NOT_MIRRORED = {"vllm"}
 
 SETS = {
     "trial": {
@@ -243,6 +243,7 @@ def pinned_releases(
     for recipe, variants in versions.items():
         if (
             recipe in NOT_BACKENDS
+            or recipe in NOT_MIRRORED
             or not isinstance(variants, dict)
             or is_container_recipe(variants)
         ):
@@ -257,7 +258,7 @@ def pinned_releases(
             continue
         for variant, tag in variants.items():
             if variant == "comment" or not isinstance(tag, str):
-                continue  # comments and vllm.rocm_arch_overrides (datacenter)
+                continue  # comments and nested settings
             if "@sha256:" in tag:
                 continue  # container image pin inside a native recipe
             src = SOURCES[recipe].get(variant) or SOURCES[recipe].get("*")
@@ -269,11 +270,7 @@ def pinned_releases(
             repo, group = src
             if group == "pwilkin" and not include_pwilkin:
                 continue
-            if recipe == "vllm":
-                for fam in VLLM_FAMILIES:
-                    pins[(repo, f"{tag}-{fam}")] = group
-            else:
-                pins[(repo, tag)] = group
+            pins[(repo, tag)] = group
     return pins
 
 
@@ -661,7 +658,7 @@ def main() -> int:
     ap.add_argument("--set", choices=sorted(SETS), default="trial")
     ap.add_argument(
         "--group",
-        help="only this group, for example vllm or therock (used by the workflow matrix)",
+        help="only this group, for example sdcpp or therock (used by the workflow matrix)",
     )
     ap.add_argument(
         "--include-pwilkin",

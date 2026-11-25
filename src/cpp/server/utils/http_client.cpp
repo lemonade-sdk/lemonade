@@ -1683,7 +1683,8 @@ DownloadResult HttpClient::download_file(const std::string& url,
         // 408 Request Timeout and 429 Too Many Requests are transient and still retried.
         bool is_permanent_4xx = (final_result.http_code >= 400 && final_result.http_code < 500
                                  && final_result.http_code != 408
-                                 && final_result.http_code != 429);
+                                 && final_result.http_code != 429
+                                 && !(options.retry_forbidden && final_result.http_code == 403));
         if (is_permanent_4xx) {
             LOG(ERROR, "HttpClient") << "[Download] " << final_result.error_message << std::endl;
             if (fs::exists(partial_path_fs)) {
