@@ -1163,6 +1163,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const [modelScopeLoading, setModelScopeLoading] = useState(false);
   const [modelScopeError, setModelScopeError] = useState<string | null>(null);
   const [selectedRemoteModel, setSelectedRemoteModel] = useState<HFModelResult | null>(null);
+  const selectedRemoteModelRef = useRef(selectedRemoteModel);
+  selectedRemoteModelRef.current = selectedRemoteModel;
   const [selectedRemoteProvider, setSelectedRemoteProvider] = useState<ModelRegistryProvider>('huggingface');
   const [pullingRemote, setPullingRemote] = useState<Record<string, { percent: number; modelName: string; checkpoint: string }>>({});
   const pullRemoteAbortRef = useRef<Record<string, AbortController>>({});
@@ -1958,6 +1960,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     // Models already known to lemond are downloaded by their server-owned ID.
     const registeredModel = findRegisteredRemoteModel(allModels, provider, modelId, variantName, recipe, vdata);
     if (registeredModel) {
+      setSelectedRemoteModel(null);
+      setSelectedDetailModelId(modelName(registeredModel));
       await handlePull(registeredModel);
       return;
     }
@@ -1980,11 +1984,18 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
           },
         }));
       },
-      onComplete: (data) => {
+      onComplete: async (data) => {
         downloadStore.wake(targetModelName, 'model');
         delete pullRemoteAbortRef.current[key];
         setPullingRemote(p => { const next = { ...p }; delete next[key]; return next; });
-        refresh();
+        await refresh();
+        if (selectedRemoteModelRef.current?.id === modelId) {
+          const targetKey = customModelNameKey(targetModelName);
+          const fresh = await api.models(true).catch(() => null);
+          const pulled = fresh?.data.find(m => customModelNameKey(modelName(m)) === targetKey);
+          setSelectedRemoteModel(null);
+          setSelectedDetailModelId(pulled ? modelName(pulled) : targetModelName);
+        }
       },
       onError: (err) => {
         downloadStore.wake(targetModelName, 'model');
@@ -2608,7 +2619,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       const disp = String(m.display_name || '').toLowerCase();
       const recipe = String((m as any).recipe || '').toLowerCase();
       const labels = (m.labels || []).join(' ').toLowerCase();
-      return `${mName} ${disp} ${recipe} ${labels}`.includes(q);
+      return `${mName} ${disp} ${recipe} ${labels} ${modelCheckpoint(m).toLowerCase()}`.includes(q);
     });
   }, [allModels, searchQuery]);
   const selectedDetailModel = selectedDetailModelId

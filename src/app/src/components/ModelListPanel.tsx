@@ -36,6 +36,11 @@ export function listModelName(m: ModelInfo): string {
   return String((m as any).model_name ?? m.name ?? m.id ?? '').trim();
 }
 
+/** Imported models are renamed on pull, so search also needs the repository they came from. */
+function listModelCheckpoint(m: ModelInfo): string {
+  return String((m as any).checkpoint || (m as any).checkpoints?.main || '').trim();
+}
+
 function listModelDisplayName(m: ModelInfo): string {
   return String(m.display_name || listModelName(m));
 }
@@ -521,7 +526,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
 
       // Filter by search
       if (q) {
-        const haystack = `${mName} ${m.display_name || ''} ${(m as any).recipe || ''} ${(m.labels || []).join(' ')}`.toLowerCase();
+        const haystack = `${mName} ${m.display_name || ''} ${(m as any).recipe || ''} ${(m.labels || []).join(' ')} ${listModelCheckpoint(m)}`.toLowerCase();
         if (!haystack.includes(q)) continue;
       }
 

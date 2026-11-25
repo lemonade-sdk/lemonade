@@ -297,8 +297,8 @@ void ModelIngest::download_from_registry(const ModelInfo& info,
         const FetchableRepository& repository = *repositories.at(ref.repo_id);
         const RepoListing& listing = listings.at(ref.repo_id);
         Placement where;
-        where.cache_dir =
-            path_to_utf8(cache_root / repository.cache_dir_name(ref.repo_id));
+        where.cache_dir = path_to_utf8(
+            artifacts().repo_cache_dir(info, ref.repo_id, repository.cache_dir_name(ref.repo_id)));
         where.revision =
             listing.revision.id.empty() ? listing.download_revision : listing.revision.id;
         const DownloadPlan part =
@@ -333,7 +333,30 @@ void ModelIngest::download_from_registry(const ModelInfo& info,
     for (const auto& repo_id : repo_ids) {
         FetchableRepository& repository = *repositories.at(repo_id);
         const RepoListing& listing = listings.at(repo_id);
-        fs::path repo_cache = cache_root / repository.cache_dir_name(repo_id);
+        const std::string dir_name = repository.cache_dir_name(repo_id);
+        fs::path repo_cache = artifacts().repo_cache_dir(info, repo_id, dir_name);
+        if (repo_cache != cache_root / dir_name) {
+            // Falling back to the managed cache would silently move the model off
+            // the disk its owner chose for it, so an unwritable copy fails instead.
+            const auto refuse = [&](const std::string& reason) {
+                throw std::runtime_error(
+                    "Cannot update '" + info.model_name + "' in place: its files are in " +
+                    path_to_utf8(repo_cache) + " (extra_models_dir), which the Lemonade "
+                    "server cannot write to (" + reason + "). Grant the server write "
+                    "access to that directory, or delete the model there and pull it again "
+                    "to download it into the models directory.");
+            };
+            try {
+                ensure_create_directories(repo_cache);
+            } catch (const std::exception& e) {
+                refuse(e.what());
+            }
+            if (const std::error_code ec = utils::probe_directory_writable(repo_cache)) {
+                refuse(ec.message());
+            }
+            LOG(INFO, "ModelManager") << "Updating " << repo_id << " in place in extra_models_dir: "
+                                      << path_to_utf8(repo_cache) << std::endl;
+        }
         ensure_create_directories(repo_cache);
         const std::string previous_ref = artifacts().active_snapshot_ref(repo_cache);
         const std::string snapshot_id =
@@ -396,10 +419,19 @@ void ModelIngest::download_from_registry(const ModelInfo& info,
                 }
             }
 
-            const auto current_metadata = registry_files::fetch_file_metadata_for_ref(
-                repo_id, current_ref, comparison_files, headers, nullptr);
-            const auto previous_metadata = registry_files::fetch_file_metadata_for_ref(
-                repo_id, previous_ref, comparison_files, headers, nullptr);
+            std::map<std::string, registry_files::HfFileMetadata> current_metadata;
+            std::map<std::string, registry_files::HfFileMetadata> previous_metadata;
+            try {
+                current_metadata = registry_files::fetch_file_metadata_for_ref(
+                    repo_id, current_ref, comparison_files, headers, nullptr);
+                previous_metadata = registry_files::fetch_file_metadata_for_ref(
+                    repo_id, previous_ref, comparison_files, headers, nullptr);
+            } catch (const std::exception& e) {
+                LOG(DEBUG, "ModelManager")
+                    << "Could not compare " << repo_id << " at " << previous_ref
+                    << " with " << current_ref << ", re-downloading: " << e.what() << std::endl;
+                continue;
+            }
             const fs::path previous_snapshot =
                 repo_cache_paths.at(repo_id) / "snapshots" / previous_ref;
             if (registry_files::can_reuse_previous_hf_snapshot(
@@ -480,6 +512,41 @@ void ModelIngest::download_from_registry(const ModelInfo& info,
             active_snapshot_id,
             snapshot_id,
         }, checkpoint_type);
+    }
+
+    std::vector<fs::path> replaced;
+    for (const auto& [repo_id, snapshot_id] : repo_snapshot_ids) {
+        const std::string& previous_ref = repo_previous_refs.at(repo_id);
+        if (repos_reusing_previous_snapshot.count(repo_id) || previous_ref.empty() ||
+            previous_ref == snapshot_id) {
+            continue;
+        }
+        const fs::path previous_snapshot = repo_cache_paths.at(repo_id) / "snapshots" / previous_ref;
+        for (const auto& planned : selected) {
+            if (planned.repo_id == repo_id) {
+                replaced.push_back(previous_snapshot / path_from_utf8(planned.file.name));
+            }
+        }
+    }
+    for (const auto& [type, path] : info.resolved_paths) {
+        (void)type;
+        if (!path.empty()) replaced.push_back(path_from_utf8(path));
+    }
+    if (!replaced.empty()) {
+        const auto published = deps_.store->read();
+        KnownModels known = published->models;
+        if (published->reasons) {
+            known.insert(published->reasons->hidden.begin(), published->reasons->hidden.end());
+        }
+        const SupersededReport removed = artifacts().remove_superseded_files(replaced, known);
+        if (removed.removed > 0 || removed.failed > 0) {
+            LOG(INFO, "ModelManager")
+                << "Removed " << removed.removed << " file(s) ("
+                << (removed.bytes / (1024 * 1024)) << " MB) of the previous version of "
+                << info.model_name << "; kept " << removed.kept_in_use
+                << " still used by other models; " << removed.failed << " could not be removed"
+                << std::endl;
+        }
     }
 
     if (progress_callback) {

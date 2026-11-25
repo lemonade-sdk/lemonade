@@ -669,6 +669,11 @@ json SDServer::image_generations(const json& request) {
 }
 
 json SDServer::video_generations(const json& request, std::atomic<bool>* cancel) {
+    if (request.contains("output_format") && request["output_format"] == "mp4") {
+        return ErrorResponse::from_exception(
+            InvalidRequestException("stable-diffusion.cpp video supports output_format webm, webp or avi"));
+    }
+
     // /sdcpp/v1/vid_gen is sd-cpp's NATIVE route and takes a real JSON body --
     // unlike /v1/images/generations, which is OpenAI-shaped and reads its
     // parameters from a <sd_cpp_extra_args> blob smuggled inside the prompt.

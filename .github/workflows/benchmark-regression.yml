@@ -44,6 +44,20 @@ env:
   DEFAULT_MODEL_FILTER: ""
 
 jobs:
+  dispatch-to-nightly:
+    name: Dispatch to bench-nightly
+    if: github.event_name == 'schedule' || github.event_name == 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - run: |
+          gh workflow run benchmark-regression.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref "${{ vars.BENCH_NIGHTLY_BRANCH || 'bench-nightly' }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   # =========================================================================
   # Setup — build the fork matrix dynamically from src/cpp/resources/benchmark_forks.json.
   # Single source of truth: adding a fork (llamacpp fork, vllm fork, ...) to
@@ -52,6 +66,7 @@ jobs:
   # =========================================================================
   setup:
     name: Build fork matrix
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:

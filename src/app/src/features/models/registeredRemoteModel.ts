@@ -1,6 +1,9 @@
 import type { ModelInfo, ModelRegistryProvider, PullVariantsResult } from '../../api';
 
-/** Reuse lemond's existing model ID when its recorded GGUF exactly matches the selected file. */
+/**
+ * Reuse lemond's existing model ID when its recorded GGUF exactly matches the selected file,
+ * or, for a Loom bundle, when it records the same bundle repository.
+ */
 export function findRegisteredRemoteModel(
   models: readonly ModelInfo[],
   provider: ModelRegistryProvider,
@@ -9,6 +12,11 @@ export function findRegisteredRemoteModel(
   recipe: string,
   details?: PullVariantsResult,
 ): ModelInfo | undefined {
+  if (recipe.toLowerCase() === 'loom') {
+    return models.find(model => String(model.recipe || '').toLowerCase() === 'loom'
+      && String(model.checkpoint || '') === repository
+      && String(model.registry_source || model.source || 'huggingface').toLowerCase() === provider);
+  }
   if (recipe.toLowerCase() !== 'llamacpp' || details?.mmproj_files?.length) return undefined;
   const file = details?.variants?.find(variant => variant.name === variantName)?.primary_file;
   if (!file) return undefined;

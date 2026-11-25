@@ -120,6 +120,15 @@ static void test_the_declared_machine_decides() {
                                   on_test_machine(without_backend))
               .visible.empty());
 
+    // Cleanup after an update must still know a hidden model's files.
+    ModelInfo hidden_model = model("llamacpp", 0.01);
+    hidden_model.checkpoints["main"] = "org/repo:hidden.gguf";
+    const auto hidden = models::filter_for_host(
+        std::map<std::string, ModelInfo>{{"Hidden", hidden_model}}, on_test_machine(without_backend));
+    check("a hidden model keeps its checkpoints beside the reason it is hidden",
+          hidden.reasons->hidden.count("Hidden") == 1 &&
+              hidden.reasons->hidden.at("Hidden").checkpoint("main") == "org/repo:hidden.gguf");
+
     // A recipe this host probably cannot run, listed because the declared machine can.
     check("a recipe this machine may not run shows when the declared one does",
           models::filter_for_host(std::map<std::string, ModelInfo>{{"NPU", model("ryzenai-llm", 0.01)}},

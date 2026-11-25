@@ -36,12 +36,15 @@ struct FilterResult {
     std::vector<RejectedModel> rejected;
     // Recipes whose every model was rejected by memory fit.
     std::vector<std::string> empty_recipes;
+    std::map<std::string, ModelInfo> hidden;
 };
 
 // The reasons from a FilterResult, without a second copy of the model map.
 struct FilterReasons {
     std::vector<RejectedModel> rejected;
     std::vector<std::string> empty_recipes;
+    // What the rejected models are: hidden here, they still have bytes on disk.
+    std::map<std::string, ModelInfo> hidden;
 };
 
 // One hardware-filter pass, ready for whoever ran it to keep: the visible set,

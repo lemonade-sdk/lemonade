@@ -184,6 +184,10 @@ bool bundle_complete(const std::string& checkpoint) {
     return !bundle_dir(checkpoint).empty();
 }
 
+json read_info_file(const fs::path& dir) {
+    return fs::exists(dir / loom::kInfoFile) ? read_json_file(dir / loom::kInfoFile) : json();
+}
+
 // The download re-hashes a file it finds in place, but takes one the listing
 // gives no hash for as complete whatever its size.
 void drop_if_resized(const fs::path& path, std::uint64_t size) {
@@ -422,12 +426,31 @@ void LoomServer::load(const std::string& model_name, const ModelInfo& model_info
     backend_manager_->install_backend(loom::descriptor.recipe, kBackend);
 
     const std::string checkpoint = model_info.checkpoint();
-    if (!bundle_complete(checkpoint)) {
+    const auto fetch = [&] {
         const models::ArtifactRef ref =
             bundle_ref(checkpoint, model_manager_->download_source_for(model_info));
         BundleFetcher(model_manager_->resolver().repository_for(ref, {}), nullptr, {}, target).run();
+    };
+    if (!bundle_complete(checkpoint)) fetch();
+    fs::path dir = bundle_dir(checkpoint);
+    // A bundle downloaded before its card recorded a Quick start for this GPU:
+    // fetch the card's current revision once; quick_start() below refuses it if
+    // that still records none, or if the fetch fails (offline).
+    if (!dir.empty()) {
+        const json cached = read_info_file(dir);
+        if (loom::bundle_supports_target(cached, target) &&
+            !loom::records_quick_start(cached, target)) {
+            LOG(INFO, "Loom") << checkpoint << " records no Quick start for " << target
+                              << "; fetching its current card" << std::endl;
+            try {
+                fetch();
+                dir = bundle_dir(checkpoint);
+            } catch (const std::exception& error) {
+                LOG(WARNING, "Loom") << "Cannot refresh " << checkpoint << ": " << error.what()
+                                     << std::endl;
+            }
+        }
     }
-    const fs::path dir = bundle_dir(checkpoint);
     if (dir.empty()) throw std::runtime_error("The Loom bundle for " + model_name + " is incomplete");
     const json card = read_json_file(dir / loom::kCardFile);
     const loom::BundlePlan plan = loom::plan_bundle(card, read_json_file(dir / loom::kLockFile));
@@ -438,22 +461,21 @@ void LoomServer::load(const std::string& model_name, const ModelInfo& model_info
     }
     served_model_id_ = plan.model_id;
 
-    const json info = fs::exists(dir / loom::kInfoFile) ? read_json_file(dir / loom::kInfoFile) : json();
+    const json info = read_info_file(dir);
     if (!loom::bundle_supports_target(info, target)) {
         throw std::runtime_error(model_name + " is not supported on this GPU (" + target + ")");
     }
 
     constexpr bool kPreload = true;
     const std::string loom_args = options.get_option("loom_args").get<std::string>();
-    const std::vector<std::string> serve_args =
-        loom::serve_args(target, info, loom::parameter_bytes(plan), kPreload, loom_args);
+    const loom::QuickStart quick_start = loom::quick_start(info, target);
+    const std::vector<std::string> serve_args = loom::serve_args(quick_start, kPreload, loom_args);
 
     port_ = choose_port();
     ServerCommand command;
     command.program = BackendUtils::get_backend_binary_path(*loom::spec(), kBackend);
-    command.args = loom::build_server_argv(utils::path_to_utf8(dir), port_,
-                                           loom::target_preset(card, plan.preset, target),
-                                           serve_args, loom_args);
+    command.args = loom::build_server_argv(utils::path_to_utf8(dir), port_, quick_start.preset,
+                                           serve_args, loom_args, quick_start.device_query);
     command.port = port_;
     command.ready_endpoint = "/readyz";
 
@@ -585,7 +607,8 @@ public:
             std::error_code ec;
             if (dir.empty() || !fs::is_regular_file(dir / kCardFile, ec)) return;
             const json card = read_json_file(dir / kCardFile);
-            const PresetLimits limits = preset_limits(card, detect_supported_gpu());
+            const QuickStart start = quick_start(read_json_file(dir / kInfoFile), detect_supported_gpu());
+            const PresetLimits limits = preset_limits(card, start.preset);
             if (limits.context_capacity > 0) {
                 info.max_context_window = limits.context_capacity;
             }
