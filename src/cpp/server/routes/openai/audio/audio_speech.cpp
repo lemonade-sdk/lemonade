@@ -24,7 +24,8 @@ const RouteArg kSpeed{"speed", ArgIn::JsonBody, {{"type", "number"}}, false, Sup
 const RouteArg kVoice{"voice", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Partial,
                       "For `kokoro-v1`, a voice name: OpenAI's voices (`alloy`, `ash`, ...) or Kokoro's own "
                       "(`af_sky`, `am_echo`, ...), defaulting to `shimmer`. For OpenMOSS models, a free-text "
-                      "voice or style instruction, e.g. `a calm, deep male narrator voice`.", {}, true};
+                      "voice or style instruction, e.g. `a calm, deep male narrator voice`. An empty "
+                      "`voice` is the same as leaving it out.", {}, true};
 const RouteArg kReferenceWavB64{"reference_wav_b64", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
                                 "Lemonade extension (OpenMOSS voice cloning): base64-encoded WAV sample of the "
                                 "voice to clone."};
@@ -130,6 +131,11 @@ protected:
         // The backend must encode what the Content-Type promises, including a default
         // format the client never sent.
         request_json[kResponseFormat.name] = format.format;
+
+        // The Ollama CLI sends an empty voice when none is chosen, which Kokoros rejects.
+        if (request_json.contains(kVoice.name) && request_json[kVoice.name] == "") {
+            request_json.erase(kVoice.name);
+        }
 
         LOG(INFO, "Server") << "POST /api/v1/audio/speech" << std::endl;
 

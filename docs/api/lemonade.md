@@ -1025,10 +1025,10 @@ Requires `LEMONADE_API_KEY` when it is set.
 | `400` |  | `checkpoint` is missing or empty |
 | `400` |  | `checkpoint` is a URL whose registry disagrees with `source` |
 | `400` |  | `checkpoint` does not contain `/` |
-| `400` |  | `source` names an unsupported registry, or the Hugging Face GGUF repository is one llama.cpp cannot run |
+| `400` |  | `source` names an unsupported registry, the repository has no GGUF, ONNX RyzenAI or collection files, its collection manifest is invalid or too large, or the Hugging Face GGUF repository is one llama.cpp cannot run |
 | `400` | `lemond_offline` | `offline` is set to `true` |
 | `404` |  | The registry has no such checkpoint |
-| `500` |  | Another failure occurs, for example a repository with no GGUF, ONNX RyzenAI or collection files, or a network error |
+| `500` |  | Another failure occurs, for example a network error |
 <!-- END GENERATED: lemonade.pull_variants -->
 
 <!-- BEGIN GENERATED: lemonade.delete -->
@@ -2170,6 +2170,7 @@ The same backend can carry different labels on different operating systems. Each
     - `display_name` - The recipe's name for people, such as `Llama.cpp GPU`.
     - `web_display_name` - The recipe's name on the Lemonade website.
     - `modality` - The kind of model the recipe mainly serves, such as `Text generation`.
+    - `supported_modes` - Deployment modes the recipe serves (such as `chat` or `image`), distinct from model capability labels like `edit` and `upscaling`.
     - `selectable_backend` - Whether a `<recipe>_backend` option chooses the recipe's backend.
     - `uses_ctx_size` - Whether the recipe accepts the shared `ctx_size` option.
     - `slot_policy` - How the recipe's models count against loaded-model limits: `standard`, `exclusive_npu` (loading one evicts every NPU model), `coexist_by_type` (one per model type), `exclusive_host` (shares the machine with no other local model) or `unmetered` (never counted or evicted).

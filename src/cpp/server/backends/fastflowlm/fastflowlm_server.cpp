@@ -282,7 +282,13 @@ json FastFlowLMServer::embeddings(const json& request) {
             UnsupportedOperationException("Embeddings", "FLM " + model_type_to_string(model_type_) + " model")
         );
     }
-    return forward_request("/v1/embeddings", request);
+    // FLM validates the requested model tag (and older versions reject any name
+    // other than the loaded one), so forward the flm checkpoint (e.g.
+    // "embed-gemma:300m") rather than lemonade's model id ("...-FLM"), exactly
+    // like chat_completions/completions above. Fixes #3889.
+    json modified_request = request;
+    modified_request["model"] = checkpoint_;
+    return forward_request("/v1/embeddings", modified_request);
 }
 
 json FastFlowLMServer::audio_transcriptions(const json& request) {
