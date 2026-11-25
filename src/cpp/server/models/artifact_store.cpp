@@ -94,6 +94,9 @@ void cleanup_empty_parents(const fs::path& path, const fs::path& stop_dir) {
     }
 }
 
+bool remove_blob_if_unreferenced(const fs::path& blob_path, const fs::path& repo_dir,
+                                 const fs::path& ignored);
+
 // A snapshot entry that is a symlink into blobs/ shares that blob with every other
 // entry pointing at it, so the blob may only go when nothing references it.
 void cleanup_orphaned_blob(const fs::path& file_path, const fs::path& repo_dir) {
@@ -106,29 +109,50 @@ void cleanup_orphaned_blob(const fs::path& file_path, const fs::path& repo_dir) 
     if (ec) return;
     fs::path blob_path = fs::canonical(file_path.parent_path() / link_target, ec);
     if (ec || !fs::exists(blob_path)) return;
+    remove_blob_if_unreferenced(blob_path, repo_dir, file_path);
+}
+
+// `ignored` is an entry about to go, so it does not count as a reference. True
+// when the blob was removed.
+bool remove_blob_if_unreferenced(const fs::path& blob_path, const fs::path& repo_dir,
+                                 const fs::path& ignored) {
+    std::error_code ec;
+    // A snapshot entry may link anywhere, and blobs/ may itself be a link to a
+    // directory other repositories share; only a blob this repository stores is its
+    // to reclaim, since the reference scan below sees no link from outside it.
+    const fs::path repo_root = fs::canonical(repo_dir, ec);
+    if (ec) return false;
+    const fs::path blobs_root = fs::weakly_canonical(repo_dir / "blobs", ec);
+    if (ec || !path_inside_lexically(blobs_root, repo_root) ||
+        !path_inside_lexically(blob_path, blobs_root)) {
+        return false;
+    }
 
     fs::path snapshots_dir = repo_dir / "snapshots";
-    if (!fs::exists(snapshots_dir)) return;
+    if (!fs::exists(snapshots_dir)) return false;
 
     for (auto& entry : fs::recursive_directory_iterator(snapshots_dir, ec)) {
         if (ec) break;
-        if (entry.path() == file_path) continue;
+        if (entry.path() == ignored) continue;
         if (!fs::is_symlink(entry.path(), ec) || ec) continue;
 
         fs::path other_target = fs::read_symlink(entry.path(), ec);
         if (ec) continue;
         if (fs::canonical(entry.path().parent_path() / other_target, ec) == blob_path) {
-            return;  // Another entry still points here.
+            return false;  // Another entry still points here.
         }
     }
 
     LOG(INFO, kLog) << "Removing orphaned blob: " << utils::path_to_utf8(blob_path) << std::endl;
+    ec.clear();
     fs::remove(blob_path, ec);
+    const bool removed = !ec;
 
     fs::path blobs_dir = blob_path.parent_path();
     if (fs::exists(blobs_dir) && fs::is_empty(blobs_dir, ec) && !ec) {
         fs::remove(blobs_dir, ec);
     }
+    return removed;
 }
 
 void cleanup_orphaned_blobs_under(const fs::path& path, const fs::path& repo_dir) {
@@ -1044,6 +1068,194 @@ void ModelArtifactStore::remove_unused_snapshot(const fs::path& repo_cache_dir,
     models::remove_unused_snapshot(repo_cache_dir, snapshot_dir, active_ref);
 }
 
+// A shard is unusable without its siblings, so a family is kept or removed whole.
+static std::vector<fs::path> with_shard_family(const fs::path& file) {
+    std::vector<fs::path> family{file};
+    std::string base;
+    int total = 0;
+    if (!is_gguf_shard_filename(file.filename().string(), &base, &total)) return family;
+    std::error_code ec;
+    for (const auto& entry : fs::directory_iterator(file.parent_path(), safe_dir_options, ec)) {
+        if (ec) break;
+        const fs::path sibling = entry.path().lexically_normal();
+        if (sibling != file && same_shard_family(sibling.filename().string(), base, total)) {
+            family.push_back(sibling);
+        }
+    }
+    return family;
+}
+
+SupersededReport ModelArtifactStore::remove_superseded_files(
+    const std::vector<fs::path>& replaced, const KnownModels& all_models) const {
+    SupersededReport report;
+
+    std::vector<fs::path> roots{utils::path_from_utf8(root())};
+    if (hooks_.extra_models_dir != nullptr) {
+        const std::string extra = hooks_.extra_models_dir();
+        if (!extra.empty()) roots.push_back(utils::path_from_utf8(extra));
+    }
+
+    // <root>/<repo>/snapshots/<id>/...: the repository directory, or empty when the
+    // file lies anywhere else.
+    const auto repo_dir_of = [&roots](const fs::path& file) -> fs::path {
+        for (fs::path dir = file.parent_path(); dir.has_relative_path(); dir = dir.parent_path()) {
+            if (dir.parent_path().filename() != "snapshots") continue;
+            const fs::path repo = dir.parent_path().parent_path();
+            std::error_code ec;
+            for (const auto& root : roots) {
+                if (fs::equivalent(repo.parent_path(), root, ec)) return repo;
+            }
+            return {};
+        }
+        return {};
+    };
+
+    struct Candidate {
+        fs::path file;
+        fs::path repo_dir;
+    };
+    std::vector<Candidate> candidates;
+    std::set<fs::path> seen;
+    std::set<std::string> repo_dir_names;
+    for (const auto& path : replaced) {
+        if (path.empty() || !safe_exists(path)) continue;
+        const fs::path normal = path.lexically_normal();
+        std::vector<fs::path> files;
+        if (safe_is_directory(normal)) {
+            // A directory checkpoint: what the new version dropped or renamed is only
+            // found by walking the old directory.
+            std::error_code ec;
+            for (auto it = fs::recursive_directory_iterator(normal, safe_dir_options, ec);
+                 !ec && it != fs::recursive_directory_iterator(); it.increment(ec)) {
+                std::error_code type_ec;
+                if (it->is_symlink(type_ec) || it->is_regular_file(type_ec)) {
+                    files.push_back(it->path().lexically_normal());
+                }
+            }
+        } else {
+            files = with_shard_family(normal);
+        }
+        for (const auto& file : files) {
+            const fs::path repo_dir = repo_dir_of(file);
+            if (repo_dir.empty() || safe_is_directory(file) || !seen.insert(file).second) continue;
+            // The active snapshot is the version in use: a model's companion files
+            // there (config, tokenizer) are claimed by no checkpoint path, so only
+            // a superseded snapshot may be cleaned. No refs/main, no proof either way.
+            const std::string active = active_snapshot_ref(repo_dir);
+            const fs::path relative = file.lexically_relative(repo_dir / "snapshots");
+            if (active.empty() || relative.empty() ||
+                *relative.begin() == utils::path_from_utf8(active)) {
+                continue;
+            }
+            candidates.push_back({file, repo_dir});
+            repo_dir_names.insert(repo_dir.filename().string());
+        }
+    }
+    if (candidates.empty()) return report;
+
+    const auto location_of = [](const fs::path& path) {
+        std::error_code ec;
+        const fs::path parent = fs::weakly_canonical(path.parent_path(), ec);
+        return ec ? path.lexically_normal() : (parent / path.filename()).lexically_normal();
+    };
+
+    std::set<fs::path> in_use_hops;
+    const auto record_hops = [&](fs::path path) {
+        for (int hop = 0; hop < 40; ++hop) {
+            const fs::path here = location_of(path);
+            in_use_hops.insert(here);
+            std::error_code ec;
+            if (!fs::is_symlink(here, ec) || ec) return;
+            const fs::path target = fs::read_symlink(here, ec);
+            if (ec) return;
+            path = target.is_absolute() ? target : here.parent_path() / target;
+        }
+    };
+
+    // Where every model finds its bytes now. A model sharing one of these
+    // repositories is resolved again, since refs/main has just moved under it.
+    std::set<fs::path> in_use_files;
+    std::vector<fs::path> in_use_dirs;
+    for (const auto& [name, model] : all_models) {
+        (void)name;
+        ModelInfo current = model;
+        bool shares_repo = false;
+        for (const auto& [type, checkpoint] : current.checkpoints) {
+            (void)type;
+            const std::string repo = repo_id_from_checkpoint(checkpoint);
+            if (!repo.empty() &&
+                repo_dir_names.count(backends::hf_cache::repo_id_to_cache_dir_name(
+                    repo, registry_source_of(current)))) {
+                shares_repo = true;
+                break;
+            }
+        }
+        // A model the hardware filter hides was never resolved; it still has bytes.
+        if ((shares_repo && current.source.empty()) || current.resolved_paths.empty()) {
+            resolve_all(current);
+        }
+        for (const auto& [type, resolved] : current.resolved_paths) {
+            (void)type;
+            if (resolved.empty()) continue;
+            const fs::path path = utils::path_from_utf8(resolved).lexically_normal();
+            if (safe_is_directory(path)) {
+                in_use_dirs.push_back(path);
+                std::error_code ec;
+                const fs::path real = fs::weakly_canonical(path, ec);
+                if (!ec) in_use_dirs.push_back(real);
+                continue;
+            }
+            for (const auto& file : with_shard_family(path)) {
+                in_use_files.insert(file);
+                record_hops(file);
+            }
+        }
+    }
+
+    for (const auto& candidate : candidates) {
+        const fs::path location = location_of(candidate.file);
+        const bool in_use =
+            in_use_files.count(candidate.file) != 0 || in_use_hops.count(location) != 0 ||
+            std::any_of(in_use_dirs.begin(), in_use_dirs.end(), [&](const fs::path& dir) {
+                return path_inside_lexically(candidate.file, dir) ||
+                       path_inside_lexically(location, dir);
+            });
+        if (in_use) {
+            ++report.kept_in_use;
+            continue;
+        }
+
+        std::error_code ec;
+        fs::path blob;
+        if (fs::is_symlink(candidate.file, ec)) {
+            blob = fs::canonical(candidate.file, ec);
+            if (ec) blob.clear();
+        }
+        // A link frees nothing itself; its bytes count only if its blob goes too.
+        const std::uintmax_t size = fs::file_size(candidate.file, ec);
+        std::uint64_t bytes = ec ? 0 : static_cast<std::uint64_t>(size);
+
+        ec.clear();
+        fs::remove(candidate.file, ec);
+        if (ec) {
+            ++report.failed;
+            LOG(WARNING, kLog) << "Could not remove the previous version's "
+                               << utils::path_to_utf8(candidate.file) << " (" << ec.message()
+                               << "); it stays until the model is updated or deleted again"
+                               << std::endl;
+            continue;
+        }
+        if (!blob.empty() && (in_use_hops.count(location_of(blob)) != 0 ||
+                              !remove_blob_if_unreferenced(blob, candidate.repo_dir, {}))) {
+            bytes = 0;
+        }
+        cleanup_empty_parents(candidate.file, candidate.repo_dir / "snapshots");
+        ++report.removed;
+        report.bytes += bytes;
+    }
+    return report;
+}
+
 std::string ModelArtifactStore::processed_snapshot_id(const fs::path& repo_cache_dir,
                                                       const ModelInfo& info) const {
     return models::processed_snapshot_id(repo_cache_dir, info);
@@ -1164,6 +1376,32 @@ bool ModelArtifactStore::adopt_extra_cache(ModelInfo& info,
     if (!all_complete) return false;
     info.resolved_paths = std::move(candidate.resolved_paths);
     return true;
+}
+
+fs::path ModelArtifactStore::repo_cache_dir(const ModelInfo& info, const std::string& repo_id,
+                                            const std::string& cache_dir_name) const {
+    const fs::path managed = utils::path_from_utf8(root()) / cache_dir_name;
+    const std::string extra_dir =
+        hooks_.extra_models_dir != nullptr ? hooks_.extra_models_dir() : std::string();
+    if (extra_dir.empty() || !info.source.empty() || repo_id.empty()) return managed;
+
+    // Compared against the repository directory, not the extra root: the root may
+    // contain the managed cache, and a managed copy must not read as adopted.
+    const fs::path extra_root = utils::path_from_utf8(extra_dir);
+    const fs::path extra_repo = extra_root / cache_dir_name;
+    const std::string main_repo = repo_id_from_checkpoint(info.checkpoint("main"));
+    const fs::path extra_main_repo = main_repo.empty() ? fs::path() :
+        extra_root / backends::hf_cache::repo_id_to_cache_dir_name(main_repo, registry_source_of(info));
+    for (const auto& [type, checkpoint] : info.checkpoints) {
+        if (repo_id_from_checkpoint(checkpoint) != repo_id) continue;
+        const fs::path resolved = utils::path_from_utf8(info.resolved_path(type));
+        if (resolved.empty()) continue;
+        if (path_inside(resolved, extra_repo) ||
+            (type != "main" && !extra_main_repo.empty() && path_inside(resolved, extra_main_repo))) {
+            return extra_repo;
+        }
+    }
+    return managed;
 }
 
 backends::DownloadPolicy ModelArtifactStore::download_policy(const ModelInfo& info) const {
