@@ -9,6 +9,7 @@ using json = nlohmann::json;
 using ordered_json = nlohmann::ordered_json;
 
 const RouteError kJobNotFound{404, "", "`id` names no job, a deleted one, or one that is not paused or interrupted"};
+const RouteError kShuttingDown{503, "", "The server is shutting down"};
 
 class JobsResumeRoute : public ApiRoute {
 public:
@@ -40,13 +41,18 @@ public:
         example.setup = {{"lemonade.jobs_create", ""}, {"lemonade.jobs_interrupt", ""}};
         example.args = {{"id", "$lemonade.jobs_create/id"}};
         s.examples = {example};
-        s.errors = {kJobNotFound};
+        s.errors = {kJobNotFound, kShuttingDown};
         return s;
     }
 
     void handle(RouteRequest& req, httplib::Response& res) override {
-        if (!ctx_.job_manager->resume(req.value(job_routes::kId, std::string()))) {
-            write_plain_error(res, kJobNotFound, "job not found or not resumable");
+        try {
+            if (!ctx_.job_manager->resume(req.value(job_routes::kId, std::string()))) {
+                write_plain_error(res, kJobNotFound, "job not found or not resumable");
+                return;
+            }
+        } catch (const lemon::jobs::JobError& e) {
+            write_plain_error(res, kShuttingDown, e.what());
             return;
         }
         res.set_content(R"({"status":"resuming"})", "application/json");

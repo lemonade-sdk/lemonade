@@ -26,6 +26,8 @@ namespace jobs {
 namespace {
 
 constexpr size_t kMaxJobs = 50;
+// Keeps an interrupted job's record apart from one a client interrupted.
+constexpr const char* kStoppedError = "server stopped while the job was active";
 
 std::string iso_now() {
     const auto now = std::chrono::system_clock::now();
@@ -91,9 +93,16 @@ JobManager::JobManager(std::string cache_dir, std::string config_dir, OpRegistry
 }
 
 JobManager::~JobManager() {
+    shutdown();
+}
+
+void JobManager::shutdown() {
+    std::lock_guard<std::mutex> shutdown_lock(shutdown_mutex_);
     {
         std::lock_guard<std::mutex> lock(mutex_);
         stop_ = true;
+        // Jobs still queued stay queued on disk, and the next start recovers them.
+        queue_.clear();
         for (auto& kv : controls_) {
             kv.second->interrupt_requested.store(true);
             kv.second->cancel.store(true);
@@ -128,6 +137,7 @@ void JobManager::load_from_disk() {
             }
             if (job.status == JobStatus::Running || job.status == JobStatus::Queued) {
                 job.status = JobStatus::Interrupted;
+                job.stopped_at = iso_now();
                 job.error = "server restarted while the job was active";
                 if (StepRecord* s = find_step(job, job.cursor))
                     if (s->status == StepStatus::Running) s->status = StepStatus::Pending;
@@ -207,6 +217,8 @@ std::string JobManager::create(const std::string& name, std::vector<StepRecord> 
     if (!err.empty()) throw JobError(400, err);
 
     std::lock_guard<std::mutex> lock(mutex_);
+    // The worker is gone or going, so a job created now would only run after a restart.
+    if (stop_) throw JobError(503, "the server is shutting down");
 
     size_t live = 0;
     bool evictable = false;
@@ -296,6 +308,7 @@ bool JobManager::pause(const std::string& id) {
     if (it->second.status == JobStatus::Queued) {
         queue_.erase(std::remove(queue_.begin(), queue_.end(), id), queue_.end());
         it->second.status = JobStatus::Paused;
+        it->second.stopped_at = iso_now();
         persist_locked();
         LOG(INFO, "Jobs") << "paused queued job " << id << std::endl;
         return true;
@@ -314,6 +327,7 @@ bool JobManager::interrupt(const std::string& id) {
     if (it->second.status == JobStatus::Queued) {
         queue_.erase(std::remove(queue_.begin(), queue_.end(), id), queue_.end());
         it->second.status = JobStatus::Interrupted;
+        it->second.stopped_at = iso_now();
         persist_locked();
         LOG(INFO, "Jobs") << "interrupted queued job " << id << std::endl;
         return true;
@@ -328,6 +342,8 @@ bool JobManager::interrupt(const std::string& id) {
 
 bool JobManager::resume(const std::string& id) {
     std::lock_guard<std::mutex> lock(mutex_);
+    // Resuming would clear the flags shutdown() set and hand the worker more to run.
+    if (stop_) throw JobError(503, "the server is shutting down");
     auto it = jobs_.find(id);
     if (it == jobs_.end() || it->second.deleted) return false;
     if (it->second.status != JobStatus::Paused && it->second.status != JobStatus::Interrupted)
@@ -338,6 +354,7 @@ bool JobManager::resume(const std::string& id) {
     ctrl->cancel.store(false);
     it->second.status = JobStatus::Queued;
     it->second.error.clear();
+    it->second.stopped_at.clear();
     enqueue_locked(id);
     persist_locked();
     cv_.notify_all();
@@ -482,6 +499,8 @@ void JobManager::worker_main() {
             auto it = jobs_.find(id);
             if (it != jobs_.end()) {
                 it->second.status = JobStatus::Interrupted;
+                it->second.stopped_at = iso_now();
+                if (stop_) it->second.error = kStoppedError;
                 persist_locked();
             }
             LOG(INFO, "Jobs") << "job " << id
@@ -539,6 +558,8 @@ void JobManager::execute(const std::string& id, const std::shared_ptr<Control>& 
             if (ctrl->interrupt_requested.load()) {
                 if (StepRecord* s = find_step(job, job.cursor)) s->status = StepStatus::Pending;
                 job.status = JobStatus::Interrupted;
+                job.stopped_at = iso_now();
+                if (stop_) job.error = kStoppedError;
                 persist_locked();
                 LOG(INFO, "Jobs") << "job " << id << " interrupted at step '" << job.cursor << "'"
                                   << std::endl;
@@ -546,6 +567,7 @@ void JobManager::execute(const std::string& id, const std::shared_ptr<Control>& 
             }
             if (ctrl->pause_requested.load()) {
                 job.status = JobStatus::Paused;
+                job.stopped_at = iso_now();
                 persist_locked();
                 LOG(INFO, "Jobs") << "job " << id << " paused before step '" << job.cursor << "'"
                                   << std::endl;
@@ -619,6 +641,7 @@ void JobManager::execute(const std::string& id, const std::shared_ptr<Control>& 
             extracts = s->extract;
             op = s->op;
             context_snapshot = job.context;
+            context_snapshot[kJobIdContextKey] = id;
             ctrl->cancel.store(false);
             persist_locked();
             LOG(DEBUG, "Jobs") << "job " << id << " running step '" << s->id << "' (op " << s->op
@@ -681,6 +704,8 @@ void JobManager::execute(const std::string& id, const std::shared_ptr<Control>& 
                 s->status = StepStatus::Pending;
                 s->error.clear();
                 job.status = JobStatus::Interrupted;
+                job.stopped_at = iso_now();
+                if (stop_) job.error = kStoppedError;
                 persist_locked();
                 LOG(INFO, "Jobs") << "job " << id << " interrupted during step '" << step_id << "'"
                                   << std::endl;

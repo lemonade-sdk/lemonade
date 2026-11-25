@@ -126,12 +126,14 @@ public:
 
     // Simple GET request. timeout_seconds=0 (default) uses default_timeout_seconds_.
     // max_body_bytes > 0 aborts and throws once the response grows past it.
+    // follow_redirects=false pins the request to its original host.
     static HttpResponse get(const std::string& url,
                            const std::map<std::string, std::string>& headers = {},
                            long timeout_seconds = 0,
                            HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly,
                            size_t max_body_bytes = 0,
-                           const RequestCancelToken& cancel = {});
+                           const RequestCancelToken& cancel = {},
+                           bool follow_redirects = true);
 
     // Simple POST request. Redirects are never followed.
     // timeout_seconds=0 uses default_timeout_seconds_, as in get(); pass
@@ -197,11 +199,13 @@ public:
                                         HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly,
                                         const CancelToken& cancel = CancelToken());
 
-    // Check if URL is reachable. Redirects are never followed.
+    // Check if URL is reachable. Redirects are never followed; with accept_redirect,
+    // a 3xx answer also counts as reachable.
     static bool is_reachable(
         const std::string& url,
         int timeout_seconds = 5,
-        HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly);
+        HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly,
+        bool accept_redirect = false);
 
 private:
     static std::atomic<long> default_timeout_seconds_;

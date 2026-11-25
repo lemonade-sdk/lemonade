@@ -1519,6 +1519,19 @@
         ],
         "size": 23.8
     },
+    "Inkling-2-Mini-GGUF": {
+        "checkpoint": "unsloth/Inkling-2-Mini-GGUF:Inkling-2-Mini-UD-Q4_K_XL.gguf",
+        "mmproj": "mmproj-F16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "vision",
+            "tool-calling",
+            "reasoning"
+        ],
+        "size": 18.3
+    },
     "Qwen3.6-27B-GGUF": {
         "checkpoint": "unsloth/Qwen3.6-27B-GGUF:Qwen3.6-27B-UD-Q4_K_XL.gguf",
         "mmproj": "mmproj-F16.gguf",
@@ -2098,6 +2111,172 @@
             "soft_pixel_cap": 2097152
         }
     },
+    "Wan2.1-T2V-1.3B": {
+        "checkpoints": {
+            "main": "Comfy-Org/Wan_2.1_ComfyUI_repackaged:split_files/diffusion_models/wan2.1_t2v_1.3B_fp16.safetensors",
+            "t5xxl": "city96/umt5-xxl-encoder-gguf:umt5-xxl-encoder-Q8_0.gguf",
+            "vae": "Comfy-Org/Wan_2.1_ComfyUI_repackaged:split_files/vae/wan_2.1_vae.safetensors"
+        },
+        "recipe": "sd-cpp",
+        "suggested": true,
+        "labels": [
+            "video"
+        ],
+        "size": 8.8,
+        "recipe_options": {
+            "steps": 20,
+            "cfg_scale": 6.0,
+            "width": 832,
+            "height": 480,
+            "sampling_method": "euler",
+            "flow_shift": 3.0,
+            "video_frames": 33,
+            "fps": 16
+        }
+    },
+    "Wan2.2-TI2V-5B-TheNoise": {
+        "checkpoints": {
+            "main": "Comfy-Org/Wan-2.2:split_files/diffusion_models/wan2.2_ti2v_5B_fp16.safetensors",
+            "text_encoder": "Comfy-Org/Wan-2.2:split_files/text_encoders/umt5_xxl_fp16.safetensors",
+            "vae": "Comfy-Org/Wan-2.2:split_files/vae/wan2.2_vae.safetensors"
+        },
+        "recipe": "thenoise",
+        "suggested": true,
+        "labels": [
+            "video"
+        ],
+        "size": 23.0,
+        "recipe_options": {
+            "steps": 12,
+            "cfg_scale": 5.0,
+            "width": 1280,
+            "height": 704,
+            "sampler": "unipc",
+            "flow_shift": 5.0,
+            "video_frames": 33,
+            "fps": 24
+        }
+    },
+    "Wan2.2-T2V-A14B-TheNoise": {
+        "checkpoints": {
+            "main": "Comfy-Org/Wan-2.2:split_files/diffusion_models/wan2.2_t2v_high_noise_14B_fp16.safetensors",
+            "dit_low": "Comfy-Org/Wan-2.2:split_files/diffusion_models/wan2.2_t2v_low_noise_14B_fp16.safetensors",
+            "text_encoder": "Comfy-Org/Wan-2.2:split_files/text_encoders/umt5_xxl_fp16.safetensors",
+            "vae": "Comfy-Org/Wan-2.2:split_files/vae/wan_2.1_vae.safetensors"
+        },
+        "recipe": "thenoise",
+        "suggested": true,
+        "labels": [
+            "video"
+        ],
+        "size": 68.0,
+        "recipe_options": {
+            "steps": 40,
+            "cfg_scale": 4.0,
+            "width": 832,
+            "height": 480,
+            "sampler": "euler",
+            "flow_shift": 12.0,
+            "video_frames": 33,
+            "fps": 16
+        }
+    },
+    "Wan2.2-TI2V-5B-Turbo-INT8-TheNoise": {
+        "checkpoints": {
+            "main": "thenoise-ai/diffusion-models:fastwan2.2_ti2v-5b_int8_convrot.safetensors",
+            "text_encoder": "thenoise-ai/diffusion-models:umt5_xxl_int8_convrot.safetensors",
+            "vae": "Comfy-Org/Wan-2.2:split_files/vae/wan2.2_vae.safetensors"
+        },
+        "recipe": "thenoise",
+        "suggested": true,
+        "labels": [
+            "video"
+        ],
+        "recipe_options": {
+            "steps": 4,
+            "cfg_scale": 1.0,
+            "width": 1280,
+            "height": 704,
+            "sampler": "unipc",
+            "flow_shift": 5.0,
+            "video_frames": 33,
+            "fps": 24
+        }
+    },
+    "Wan2.2-T2V-A14B-Turbo-INT8-TheNoise": {
+        "checkpoints": {
+            "main": "thenoise-ai/diffusion-models:wan2.2_t2v_high_noise_14B_4step_int8_convrot.safetensors",
+            "dit_low": "thenoise-ai/diffusion-models:wan2.2_t2v_low_noise_14B_4step_int8_convrot.safetensors",
+            "text_encoder": "thenoise-ai/diffusion-models:umt5_xxl_int8_convrot.safetensors",
+            "vae": "Comfy-Org/Wan-2.2:split_files/vae/wan_2.1_vae.safetensors"
+        },
+        "recipe": "thenoise",
+        "suggested": true,
+        "labels": [
+            "video"
+        ],
+        "recipe_options": {
+            "steps": 4,
+            "cfg_scale": 1.0,
+            "width": 832,
+            "height": 480,
+            "sampler": "euler",
+            "flow_shift": 5.0,
+            "video_frames": 33,
+            "fps": 16
+        }
+    },
+    "LTX-2.3-22B-Distilled-INT8-TheNoise": {
+        "checkpoints": {
+            "main": "milo01/ComfyUI-Native-INT8_ConvRot:checkpoints/ltx-2.3-22b-distilled-1.1-int8-ConvRot.safetensors",
+            "text_encoder": "Stick9190/gemma-3-12b-it-int8-convrot:gemma_3_12B_it_int8_convrot.safetensors",
+            "vae": "Kijai/LTX2.3_comfy:vae/LTX23_video_vae_bf16.safetensors",
+            "audio_vae": "Kijai/LTX2.3_comfy:vae/LTX23_audio_vae_bf16.safetensors",
+            "spatial_upscaler": "Lightricks/LTX-2.3:ltx-2.3-spatial-upscaler-x2-1.1.safetensors",
+            "text_projection": "Kijai/LTX2.3_comfy:text_encoders/ltx-2.3_text_projection_bf16.safetensors"
+        },
+        "recipe": "thenoise",
+        "suggested": true,
+        "labels": [
+            "video"
+        ],
+        "size": 42.7,
+        "recipe_options": {
+            "steps": 8,
+            "cfg_scale": 1.0,
+            "width": 768,
+            "height": 512,
+            "sampler": "euler",
+            "flow_shift": 1.0,
+            "video_frames": 33,
+            "fps": 24
+        }
+    },
+    "LTX-2.5-22B-Distilled-INT8-TheNoise": {
+        "checkpoints": {
+            "main": "comfyicu/LTX-2.5:diffusion_models/ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors",
+            "text_encoder": "comfyicu/LTX-2.5:text_encoders/gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors",
+            "vae": "comfyicu/LTX-2.5:vae/ltx-2.5-video-vae-conv-bf16.safetensors",
+            "audio_vae": "comfyicu/LTX-2.5:vae/ltx-2.5-audio-vae-bf16.safetensors",
+            "spatial_upscaler": "comfyicu/LTX-2.5:latent_upscale_models/ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors"
+        },
+        "recipe": "thenoise",
+        "suggested": true,
+        "labels": [
+            "video"
+        ],
+        "size": 39.7,
+        "recipe_options": {
+            "steps": 8,
+            "cfg_scale": 1.0,
+            "width": 768,
+            "height": 512,
+            "sampler": "euler",
+            "flow_shift": 1.0,
+            "video_frames": 33,
+            "fps": 24
+        }
+    },
     "LMX-Omni-52B-Halo": {
         "checkpoint": "lemonade-sdk/LMX-Omni-52B-Halo",
         "recipe": "collection.omni",
@@ -2383,7 +2562,8 @@
         "recipe": "thenoise",
         "suggested": true,
         "labels": [
-            "image"
+            "image",
+            "edit"
         ],
         "size": 35,
         "recipe_options": {
@@ -2402,7 +2582,8 @@
         },
         "labels": [
             "custom",
-            "image"
+            "image",
+            "edit"
         ],
         "recipe": "thenoise",
         "suggested": true,
@@ -2424,7 +2605,8 @@
         },
         "labels": [
             "custom",
-            "image"
+            "image",
+            "edit"
         ],
         "recipe": "thenoise",
         "suggested": true,
@@ -2981,6 +3163,606 @@
             "tool-calling"
         ],
         "size": 92.7
+    },
+    "Flint-Loom": {
+        "checkpoint": "loom-fun/ggml-org-Flint-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "tool-calling",
+            "reasoning",
+            "dflash"
+        ],
+        "size": 23.6
+    },
+    "gemma-3-1b-it-Loom": {
+        "checkpoint": "loom-fun/ggml-org-gemma-3-1b-it-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat"
+        ],
+        "size": 0.8
+    },
+    "gemma-4-12B-it-Loom": {
+        "checkpoint": "loom-fun/unsloth-gemma-4-12B-it-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "tool-calling",
+            "reasoning",
+            "dflash"
+        ],
+        "size": 7.6
+    },
+    "gemma-4-26B-A4B-it-Loom": {
+        "checkpoint": "loom-fun/lmstudio-community-gemma-4-26B-A4B-it-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "tool-calling",
+            "reasoning",
+            "dflash"
+        ],
+        "size": 17.1
+    },
+    "gemma-4-31B-it-Loom": {
+        "checkpoint": "loom-fun/unsloth-gemma-4-31B-it-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "tool-calling",
+            "reasoning",
+            "dflash"
+        ],
+        "size": 19.3
+    },
+    "gemma-4-E2B-it-Loom": {
+        "checkpoint": "loom-fun/unsloth-gemma-4-E2B-it-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "vision",
+            "tool-calling",
+            "reasoning"
+        ],
+        "size": 4.2
+    },
+    "gemma-4-E4B-it-Loom": {
+        "checkpoint": "loom-fun/unsloth-gemma-4-E4B-it-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "vision",
+            "tool-calling",
+            "reasoning"
+        ],
+        "size": 6.1
+    },
+    "gpt-oss-20b-Loom": {
+        "checkpoint": "loom-fun/unsloth-gpt-oss-20b-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "tool-calling",
+            "reasoning"
+        ],
+        "size": 11.6
+    },
+    "HyperCLOVAX-SEED-Text-Instruct-1.5B-Loom": {
+        "checkpoint": "loom-fun/rippertnt-HyperCLOVAX-SEED-Text-Instruct-1.5B-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat"
+        ],
+        "size": 1.1
+    },
+    "Inkling-2-Mini-Loom": {
+        "checkpoint": "loom-fun/unsloth-Inkling-2-Mini-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "tool-calling",
+            "reasoning"
+        ],
+        "size": 18.1
+    },
+    "Laguna-XS-2.1-Loom": {
+        "checkpoint": "loom-fun/ggml-org-Laguna-XS-2.1-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "tool-calling",
+            "reasoning",
+            "dflash"
+        ],
+        "size": 20.1
+    },
+    "LFM2.5-24B-A2B-Loom": {
+        "checkpoint": "loom-fun/ggml-org-LFM2.5-24B-A2B-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "tool-calling",
+            "reasoning"
+        ],
+        "size": 14.5
+    },
+    "LFM3-1.7B-Loom": {
+        "checkpoint": "loom-fun/bartowski-LFM3-1.7B-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "tool-calling",
+            "reasoning"
+        ],
+        "size": 1.1
+    },
+    "LFM3-Omni-2B-Loom": {
+        "checkpoint": "loom-fun/ggml-org-LFM3-Omni-2B-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "tool-calling",
+            "reasoning"
+        ],
+        "size": 1.1
+    },
+    "Llama-3.2-3B-Instruct-Loom": {
+        "checkpoint": "loom-fun/unsloth-Llama-3.2-3B-Instruct-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "tool-calling"
+        ],
+        "size": 2.0
+    },
+    "Mellum2.1-12B-A2.5B-Thinking-Loom": {
+        "checkpoint": "loom-fun/bartowski-Mellum2.1-12B-A2.5B-Thinking-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "tool-calling",
+            "reasoning"
+        ],
+        "size": 8.8
+    },
+    "MiniCPM-V-4.7-35B-A3B-Loom": {
+        "checkpoint": "loom-fun/bartowski-MiniCPM-V-4.7-35B-A3B-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "tool-calling",
+            "reasoning"
+        ],
+        "size": 22.3
+    },
+    "Muse-Glimmer-30B-Loom": {
+        "checkpoint": "loom-fun/ggml-org-Muse-Glimmer-30B-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "vision",
+            "tool-calling",
+            "reasoning",
+            "dflash"
+        ],
+        "size": 24.8
+    },
+    "Nanbeige4.3-33B-Loom": {
+        "checkpoint": "loom-fun/bartowski-Nanbeige4.3-33B-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "tool-calling",
+            "reasoning"
+        ],
+        "size": 20.8
+    },
+    "NVIDIA-Nemotron-3.5-Bolt-E4B-4GB-Loom": {
+        "checkpoint": "loom-fun/nvidia-NVIDIA-Nemotron-3.5-Bolt-E4B-4GB-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "vision",
+            "tool-calling",
+            "reasoning",
+            "dflash"
+        ],
+        "size": 7.9
+    },
+    "Ornith-1.0-35B-Loom": {
+        "checkpoint": "loom-fun/lmstudio-community-Ornith-1.0-35B-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "vision",
+            "tool-calling",
+            "reasoning"
+        ],
+        "size": 22.1
+    },
+    "Ornith-1.0-9B-Loom": {
+        "checkpoint": "loom-fun/unsloth-Ornith-1.0-9B-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "vision",
+            "tool-calling",
+            "reasoning"
+        ],
+        "size": 6.6
+    },
+    "Ornith-1.5-122B-Loom": {
+        "checkpoint": "loom-fun/bartowski-Ornith-1.5-122B-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "vision",
+            "tool-calling",
+            "reasoning",
+            "dflash"
+        ],
+        "size": 80.4
+    },
+    "Ornith-1.5-35B-A3B-Loom": {
+        "checkpoint": "loom-fun/bartowski-Ornith-1.5-35B-A3B-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "vision",
+            "tool-calling",
+            "reasoning",
+            "dflash"
+        ],
+        "size": 23.2
+    },
+    "Ornith-1.5-9B-Loom": {
+        "checkpoint": "loom-fun/bartowski-Ornith-1.5-9B-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "vision",
+            "tool-calling",
+            "reasoning",
+            "dflash"
+        ],
+        "size": 7.6
+    },
+    "Qwen2.5-0.5B-Instruct-Loom": {
+        "checkpoint": "loom-fun/bartowski-Qwen2.5-0.5B-Instruct-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "tool-calling"
+        ],
+        "size": 0.4
+    },
+    "Qwen2.5-1.5B-Instruct-Loom": {
+        "checkpoint": "loom-fun/bartowski-Qwen2.5-1.5B-Instruct-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "tool-calling"
+        ],
+        "size": 1.0
+    },
+    "Qwen2.5-32B-Instruct-Loom": {
+        "checkpoint": "loom-fun/bartowski-Qwen2.5-32B-Instruct-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "tool-calling"
+        ],
+        "size": 19.9
+    },
+    "Qwen2.5-7B-Instruct-Loom": {
+        "checkpoint": "loom-fun/bartowski-Qwen2.5-7B-Instruct-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "tool-calling"
+        ],
+        "size": 4.7
+    },
+    "Qwen2.5-VL-7B-Instruct-Loom": {
+        "checkpoint": "loom-fun/ggml-org-Qwen2.5-VL-7B-Instruct-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "vision"
+        ],
+        "size": 6.0
+    },
+    "Qwen3-0.6B-Loom": {
+        "checkpoint": "loom-fun/unsloth-Qwen3-0.6B-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "tool-calling",
+            "reasoning"
+        ],
+        "size": 0.4
+    },
+    "Qwen3-1.7B-Loom": {
+        "checkpoint": "loom-fun/ggml-org-Qwen3-1.7B-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "tool-calling",
+            "reasoning"
+        ],
+        "size": 1.3
+    },
+    "Qwen3-14B-Loom": {
+        "checkpoint": "loom-fun/ggml-org-Qwen3-14B-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "tool-calling",
+            "reasoning"
+        ],
+        "size": 9.0
+    },
+    "Qwen3-30B-A3B-Instruct-2507-Loom": {
+        "checkpoint": "loom-fun/unsloth-Qwen3-30B-A3B-Instruct-2507-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "tool-calling"
+        ],
+        "size": 18.6
+    },
+    "Qwen3-4B-Instruct-2507-Loom": {
+        "checkpoint": "loom-fun/unsloth-Qwen3-4B-Instruct-2507-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "tool-calling"
+        ],
+        "size": 2.5
+    },
+    "Qwen3-4B-Loom": {
+        "checkpoint": "loom-fun/ggml-org-Qwen3-4B-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "tool-calling",
+            "reasoning",
+            "dflash"
+        ],
+        "size": 3.1
+    },
+    "Qwen3-8B-Loom": {
+        "checkpoint": "loom-fun/unsloth-Qwen3-8B-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "tool-calling",
+            "reasoning",
+            "dflash"
+        ],
+        "size": 6.2
+    },
+    "Qwen3-Coder-30B-A3B-Instruct-Loom": {
+        "checkpoint": "loom-fun/ggml-org-Qwen3-Coder-30B-A3B-Instruct-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "tool-calling",
+            "coding",
+            "dflash"
+        ],
+        "size": 18.3
+    },
+    "Qwen3-VL-4B-Instruct-Loom": {
+        "checkpoint": "loom-fun/unsloth-Qwen3-VL-4B-Instruct-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "vision",
+            "tool-calling"
+        ],
+        "size": 3.3
+    },
+    "Qwen3-VL-8B-Instruct-Loom": {
+        "checkpoint": "loom-fun/unsloth-Qwen3-VL-8B-Instruct-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "vision",
+            "tool-calling"
+        ],
+        "size": 6.2
+    },
+    "Qwen3.5-0.8B-Loom": {
+        "checkpoint": "loom-fun/unsloth-Qwen3.5-0.8B-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "vision",
+            "tool-calling",
+            "reasoning"
+        ],
+        "size": 0.7
+    },
+    "Qwen3.5-2B-Loom": {
+        "checkpoint": "loom-fun/unsloth-Qwen3.5-2B-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "vision",
+            "tool-calling",
+            "reasoning"
+        ],
+        "size": 2.0
+    },
+    "Qwen3.5-35B-A3B-Loom": {
+        "checkpoint": "loom-fun/unsloth-Qwen3.5-35B-A3B-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "vision",
+            "tool-calling",
+            "reasoning",
+            "dflash"
+        ],
+        "size": 23.2
+    },
+    "Qwen3.5-4B-Loom": {
+        "checkpoint": "loom-fun/unsloth-Qwen3.5-4B-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "vision",
+            "tool-calling",
+            "reasoning",
+            "dflash"
+        ],
+        "size": 4.1
+    },
+    "Qwen3.5-9B-Loom": {
+        "checkpoint": "loom-fun/unsloth-Qwen3.5-9B-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "vision",
+            "tool-calling",
+            "reasoning",
+            "dflash"
+        ],
+        "size": 8.0
+    },
+    "Qwen3.6-27B-Loom": {
+        "checkpoint": "loom-fun/ggml-org-Qwen3.6-27B-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "vision",
+            "tool-calling",
+            "reasoning",
+            "dflash"
+        ],
+        "size": 21.1
+    },
+    "Qwen3.6-35B-A3B-Loom": {
+        "checkpoint": "loom-fun/ggml-org-Qwen3.6-35B-A3B-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "vision",
+            "tool-calling",
+            "reasoning",
+            "dflash"
+        ],
+        "size": 21.9
+    },
+    "Qwen3.8-27B-Loom": {
+        "checkpoint": "loom-fun/bartowski-Qwen3.8-27B-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "vision",
+            "tool-calling",
+            "reasoning",
+            "mtp"
+        ],
+        "size": 18.4
+    },
+    "Qwen3.8-Flash-Next-Loom": {
+        "checkpoint": "loom-fun/unsloth-Qwen3.8-Flash-Next-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "vision",
+            "tool-calling",
+            "reasoning",
+            "mtp"
+        ],
+        "size": 116.4
+    },
+    "Sage-A1.5-Loom": {
+        "checkpoint": "loom-fun/InternScience-Sage-A1.5-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "vision",
+            "tool-calling",
+            "reasoning",
+            "mtp"
+        ],
+        "size": 22.6
+    },
+    "Spark-X2.5-4B-Loom": {
+        "checkpoint": "loom-fun/XHToken-Spark-X2.5-4B-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "tool-calling",
+            "reasoning"
+        ],
+        "size": 2.6
+    },
+    "Spark-X2.6-4B-Loom": {
+        "checkpoint": "loom-fun/bartowski-Spark-X2.6-4B-loom",
+        "recipe": "loom",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "tool-calling",
+            "reasoning"
+        ],
+        "size": 2.6
     },
     "AMD-OLMo-1B-SFT-DPO-Medusa-NPU": {
         "checkpoint": "amd/AMD-OLMo-1B-SFT-DPO_rai_1.9.0_m_1.0.1_npu",

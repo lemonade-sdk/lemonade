@@ -137,9 +137,9 @@ UpdateScanResult run_update_scan(const UpdateScanDeps& deps,
                 }
             }
 
-            const fs::path cache_path =
-                utils::path_from_utf8(deps.artifacts->root()) /
-                registry_repo_cache_dir_name(main_repo_id, parse_remote_registry_source(source));
+            const fs::path cache_path = deps.artifacts->repo_cache_dir(
+                info, main_repo_id,
+                registry_repo_cache_dir_name(main_repo_id, parse_remote_registry_source(source)));
             processed_snapshots[name] = deps.artifacts->processed_snapshot_id(cache_path, info);
         }
     }
@@ -192,9 +192,8 @@ UpdateScanResult run_update_scan(const UpdateScanDeps& deps,
             }
 
             const bool artifact_aware = source == models::huggingface_descriptor().id;
-            const fs::path cache_path =
-                utils::path_from_utf8(deps.artifacts->root()) /
-                registry_repo_cache_dir_name(entry.repo_id, parse_remote_registry_source(entry.registry_source));
+            const std::string repo_dir_name =
+                registry_repo_cache_dir_name(entry.repo_id, source);
             const auto headers =
                 artifact_aware ? repository->auth_headers()
                                : std::map<std::string, std::string>{};
@@ -217,6 +216,8 @@ UpdateScanResult run_update_scan(const UpdateScanDeps& deps,
                 const ModelInfo& info = candidate_models.at(model_name);
                 const bool is_main_repo =
                     entry.repo_id == repo_id_from_checkpoint(info.checkpoint("main"));
+                const fs::path cache_path =
+                    deps.artifacts->repo_cache_dir(info, entry.repo_id, repo_dir_name);
 
                 // Fast path: pull already processed this exact remote state.
                 if (is_main_repo) {

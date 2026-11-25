@@ -93,7 +93,7 @@ jobs:
 
       - name: Catch missing build-deps
         run: |
-          apt-get update && apt-get build-dep . -y
+          bash .github/scripts/retry.sh bash -c 'apt-get update && apt-get build-dep . -y'
 
       - name: Build binary package
         id: build_binary
@@ -144,7 +144,9 @@ jobs:
     strategy:
       matrix: ${{ fromJSON(needs.prepare-matrix.outputs.package_matrix) }}
     # A hang should fail this job well before the merge queue's check timeout.
-    timeout-minutes: 30
+    # Normal runs take under 17 minutes; the rest leaves room for one apt step
+    # to use its whole retry window (.github/scripts/retry.sh).
+    timeout-minutes: 45
     container:
       image: ubuntu:${{ matrix.release }}
     env:
@@ -168,10 +170,6 @@ jobs:
           done
           $success
 
-      - name: Add PPA for build dependencies
-        if: matrix.ppa != ''
-        run: add-apt-repository -y ${{ matrix.ppa }}
-
       - name: Checkout code
         uses: actions/checkout@v5
         with:
@@ -181,6 +179,12 @@ jobs:
 
       - name: Configure git safe directory
         run: git config --global --add safe.directory $(pwd)
+
+      # add-apt-repository queries the Launchpad API, which can hang or
+      # return 5xx, so each attempt is time-limited and retried.
+      - name: Add PPA for build dependencies
+        if: matrix.ppa != ''
+        run: bash .github/scripts/retry.sh timeout 300 add-apt-repository -y ${{ matrix.ppa }}
 
       - name: Install build dependencies
         run: |
@@ -280,9 +284,8 @@ jobs:
         shell: bash
         run: |
           set -e
-          add-apt-repository -y ppa:lemonade-team/stable
-          apt-get update
-          apt-get install -y lemonade-server
+          bash .github/scripts/retry.sh timeout 300 add-apt-repository -y ppa:lemonade-team/stable
+          bash .github/scripts/retry.sh bash -c 'apt-get update && apt-get install -y lemonade-server'
           echo "Installed stable version: $(dpkg-query -W -f='${Version}' lemonade-server)"
 
       - name: Start stable lemond

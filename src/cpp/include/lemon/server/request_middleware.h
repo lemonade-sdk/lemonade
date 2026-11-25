@@ -19,6 +19,8 @@ public:
 
     void install(httplib::Server& server);
 
+    bool is_admin_request(const httplib::Request& req) const;
+
     bool api_key_set() const { return !api_key_.empty(); }
     bool admin_api_key_set() const { return !admin_api_key_.empty(); }
 

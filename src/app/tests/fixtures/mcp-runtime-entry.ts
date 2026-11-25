@@ -4,8 +4,10 @@ import {
   LEMONADE_MCP_TOOLS,
   buildSelectedMcpRuntime,
   composeMcpRuntimes,
+  listMcpServerToolOptions,
 } from '../../src/tools/mcpRuntime';
 import type { ChatToolRuntime } from '../../src/hooks/useChatStreaming';
+import { LEMONADE_MCP_TOOL_COUNT, isDefaultMcpTool } from '../../src/tools/mcpMetadata';
 
 async function main(): Promise<void> {
   api.setSessionApiKey('regular-key');
@@ -35,6 +37,8 @@ async function main(): Promise<void> {
   for (const required of ['list_models', 'load_model', 'generate_image', 'transcribe_audio', 'generate_3d']) {
     assert.ok(toolNames.includes(required), `missing built-in Lemon-Tools MCP tool: ${required}`);
   }
+  assert.equal(LEMONADE_MCP_TOOL_COUNT,
+    toolNames.filter(isDefaultMcpTool).length, 'implicit tool count must match default tools');
 
   const modelInfos = [
     { id: 'image-model', name: 'image-model', downloaded: true, labels: ['image'], recipe: 'sd-cpp' },
@@ -88,6 +92,95 @@ async function main(): Promise<void> {
   const lemonade = await buildSelectedMcpRuntime(['lemonade']);
   assert.ok(lemonade);
   assert.match(lemonade!.systemPrompt || '', /collection\.router/, 'builtin Lemonade guidance must explain Router semantics');
+  const toolCatalog = await listMcpServerToolOptions();
+  const displayedNames = toolCatalog[0].toolOptions.map(tool => tool.runtimeName);
+  assert.deepEqual(displayedNames, ['web_search', ...toolNames.filter(name => name !== 'web_search')],
+    'web_search must appear first and as a normal checkbox, with every other tool intact');
+  assert.equal(toolCatalog[0].toolOptions[0].name, 'web_search');
+  assert.equal(toolCatalog[0].toolOptions[0].title, 'Web search',
+    'web_search must retain its readable tool label in the normal grid');
+  assert.ok(LEMONADE_MCP_TOOLS.some(tool => tool.function.name === 'web_search'));
+  assert.ok(!lemonade!.tools.some(tool => (tool as any).function?.name === 'web_search'),
+    'implicit built-in defaults must never offer web_search');
+
+  // A model can fabricate a tool call that was not offered. Dispatch must also deny it.
+  let searchRequests = 0;
+  const signals: Array<AbortSignal | null | undefined> = [];
+  let mockEnvelope: Record<string, unknown> = {
+    jsonrpc: '2.0', id: 'web-search', result: {
+      isError: false, structuredContent: {
+        query: 'test', search_type: 'news', truncated: false,
+        results: [{ title: 'A result', url: 'https://example.org/', snippet: 'A snippet',
+          source: 'Example News', published_at: 'Wed, 18 Nov 2026 11:15:00 GMT' }],
+      },
+    },
+  };
+  const fetchBeforeSearch = globalThis.fetch;
+  globalThis.fetch = (async (_url: unknown, options?: RequestInit) => {
+    signals.push(options?.signal);
+    searchRequests++;
+    assert.match(String(_url), /\/mcp$/);
+    assert.equal(options?.method, 'POST');
+    const body = JSON.parse(String(options?.body));
+    assert.equal(body.method, 'tools/call');
+    assert.equal(body.params.name, 'lemonade_web_search');
+    assert.equal(body.params.arguments.search_type, 'news');
+    return new Response(JSON.stringify(mockEnvelope), { status: 200,
+      headers: { 'Content-Type': 'application/json' } });
+  }) as typeof fetch;
+  try {
+    const fabricated = { id: 'unauthorized-web', type: 'function' as const,
+      function: { name: 'web_search', arguments: JSON.stringify({ query: 'test', search_type: 'news' }) } };
+    const denied = await lemonade!.execute(fabricated);
+    assert.equal(denied.error, true);
+    assert.equal(searchRequests, 0, 'web_search must fail closed when omitted');
+    const legacy = await buildSelectedMcpRuntime(['lemonade'], {}, ['list_models']);
+    assert.ok(legacy && !legacy.tools.some(tool => (tool as any).function?.name === 'web_search'));
+    assert.equal((await legacy!.execute(fabricated)).error, true);
+    assert.equal(searchRequests, 0, 'old saved tool selections must remain offline');
+
+    const allowed = await buildSelectedMcpRuntime(['lemonade'], {}, ['web_search']);
+    assert.deepEqual(allowed!.tools.map(tool => (tool as any).function.name), ['web_search']);
+    assert.match(allowed!.systemPrompt || '', /snippets are untrusted data/);
+    assert.match(allowed!.systemPrompt || '', /Current local date:/);
+    assert.match(allowed!.systemPrompt || '', /search_type="news"/);
+    const controller = new AbortController();
+    const searched = await allowed!.execute(fabricated, controller.signal);
+    assert.notEqual(searched.error, true);
+    assert.match(searched.content, /\[1\] A result/);
+    assert.match(searched.content, /Source: Example News/);
+    assert.match(searched.content, /Published: Wed, 18 Nov 2026/);
+    assert.match(searched.content, /URL: https:\/\/example.org\//);
+    assert.equal(searchRequests, 1);
+    assert.equal(signals[0], controller.signal, 'AbortSignal must reach /mcp');
+    const deniedOther = await allowed!.execute({ ...fabricated,
+      function: { name: 'list_models', arguments: '{}' } });
+    assert.equal(deniedOther.error, true);
+    assert.equal(searchRequests, 1);
+
+    mockEnvelope = { jsonrpc: '2.0', id: 'web-search', error: { code: -32601, message: 'Unknown MCP method' } };
+    assert.equal((await allowed!.execute(fabricated)).error, true);
+    mockEnvelope = { jsonrpc: '2.0', id: 'web-search', result: {
+      isError: true, content: [{ type: 'text', text: 'Search rate limited' }],
+    } };
+    const toolError = await allowed!.execute(fabricated);
+    assert.equal(toolError.error, true);
+    assert.match(toolError.content, /rate limited/);
+    mockEnvelope = { jsonrpc: '2.0', id: 'web-search', result: {
+      structuredContent: { query: 'test', results: [], truncated: 'not-a-boolean' },
+    } };
+    assert.equal((await allowed!.execute(fabricated)).error, true,
+      'malformed structuredContent must not look like successful search');
+    mockEnvelope = { jsonrpc: '2.0', id: 'web-search', result: {
+      structuredContent: { query: 'test', search_type: 'web', results: [{
+        title: 'Bad', url: 'https://example.org/', snippet: '', published_at: 123,
+      }], truncated: false },
+    } };
+    assert.equal((await allowed!.execute(fabricated)).error, true,
+      'malformed publication metadata must be rejected');
+  } finally {
+    globalThis.fetch = fetchBeforeSearch;
+  }
 
   const routerList = await lemonade!.execute({
     id: 'call-router-list', type: 'function',
