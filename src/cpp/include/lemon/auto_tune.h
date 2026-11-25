@@ -97,6 +97,7 @@ static double get_used_memory_gb(DeviceType device_type) {
 inline double get_available_memory_gb(DeviceType device_type,
                                       GpuMemoryVendor gpu_vendor = GpuMemoryVendor::Any,
                                       const std::string& gpu_device = "",
+                                      const std::string& gpu_backend = "",
                                       bool* unified_gpu_out = nullptr,
                                       bool* memory_known_out = nullptr,
                                       double* physical_free_gb_out = nullptr,
@@ -141,7 +142,8 @@ inline double get_available_memory_gb(DeviceType device_type,
                 physical_total_gb = metrics ? metrics->get_memory_total_gb() : 0.0;
             }
             std::optional<double> available_gpu_gb;
-            if (pool.unified && pool.vendor == GpuMemoryVendor::Amd) {
+            if (pool.unified && pool.vendor == GpuMemoryVendor::Amd &&
+                gpu_memory_spans_amd_heaps(gpu_backend, gpu_device)) {
                 const auto split = auto_context_available_split_gpu_gib(
                     pool.dedicated_gb, pool.dedicated_used_gb,
                     pool.total_gb - pool.dedicated_gb, pool.shared_used_gb,
@@ -550,7 +552,7 @@ inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
     sized_info.device = auto_context_device(model_info, recipe, backend, device);
     double available_gb = get_available_memory_gb(
         sized_info.device, gpu_memory_vendor_for_target(backend, device), device,
-        &ctx_unified_gpu, &memory_known, &physical_free_gb, &carveout_free_gb);
+        backend, &ctx_unified_gpu, &memory_known, &physical_free_gb, &carveout_free_gb);
     // Host-resident weights cannot use the carve-out, so charge them to RAM.
     if (!auto_context_llamacpp_full_offload(recipe, llama_args_str,
                                             model_info.gguf.block_count)) {

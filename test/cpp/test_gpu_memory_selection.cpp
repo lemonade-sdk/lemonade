@@ -223,5 +223,23 @@ int main() {
         GpuMemoryVendor::Any, unavailable, amd, nvidia, unavailable);
     check(automatic.total_gb == 4.0, "ambiguous target preserves fallback order");
 
+    check(gpu_memory_spans_amd_heaps("vulkan", "") &&
+          gpu_memory_spans_amd_heaps("Vulkan", "Vulkan0") &&
+          gpu_memory_spans_amd_heaps("nathanw", ""),
+          "Vulkan builds use both AMD iGPU heaps");
+    check(!gpu_memory_spans_amd_heaps("rocm", "") &&
+          !gpu_memory_spans_amd_heaps("rocm-stable", "ROCm0") &&
+          !gpu_memory_spans_amd_heaps("halobox", "") &&
+          !gpu_memory_spans_amd_heaps("hrx", ""),
+          "ROCm and HRX runtimes do not combine the AMD iGPU heaps");
+    check(gpu_memory_spans_amd_heaps("system", "Vulkan0") &&
+          !gpu_memory_spans_amd_heaps("system", "ROCm0") &&
+          !gpu_memory_spans_amd_heaps("system", ""),
+          "system llama-server combines the heaps only for a named Vulkan device");
+    check(!gpu_memory_spans_amd_heaps("", "") &&
+          !gpu_memory_spans_amd_heaps("cuda", "CUDA0") &&
+          !gpu_memory_spans_amd_heaps("metal", ""),
+          "unknown and non-AMD targets do not combine the heaps");
+
     return failures == 0 ? 0 : 1;
 }

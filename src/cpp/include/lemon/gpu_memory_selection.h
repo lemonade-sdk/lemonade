@@ -88,6 +88,14 @@ inline GpuMemoryVendor gpu_memory_vendor_for_target(const std::string& backend,
     return GpuMemoryVendor::Any;
 }
 
+inline bool gpu_memory_spans_amd_heaps(const std::string& backend,
+                                       const std::string& device) {
+    const std::string lower_backend = gpu_memory_ascii_lower(backend);
+    if (lower_backend == "vulkan" || lower_backend == "nathanw") return true;
+    return lower_backend == "system" &&
+        gpu_memory_ascii_lower(device).rfind("vulkan", 0) == 0;
+}
+
 inline GpuMemoryPool select_gpu_memory_pool(GpuMemoryVendor vendor,
                                              const GPUInfo& amd_igpu,
                                              const std::vector<GPUInfo>& amd_dgpus,
