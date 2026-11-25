@@ -94,7 +94,7 @@ void cleanup_empty_parents(const fs::path& path, const fs::path& stop_dir) {
     }
 }
 
-void remove_blob_if_unreferenced(const fs::path& blob_path, const fs::path& repo_dir,
+bool remove_blob_if_unreferenced(const fs::path& blob_path, const fs::path& repo_dir,
                                  const fs::path& ignored);
 
 // A snapshot entry that is a symlink into blobs/ shares that blob with every other
@@ -112,12 +112,18 @@ void cleanup_orphaned_blob(const fs::path& file_path, const fs::path& repo_dir) 
     remove_blob_if_unreferenced(blob_path, repo_dir, file_path);
 }
 
-// `ignored` is an entry about to go, so it does not count as a reference.
-void remove_blob_if_unreferenced(const fs::path& blob_path, const fs::path& repo_dir,
+// `ignored` is an entry about to go, so it does not count as a reference. True
+// when the blob was removed.
+bool remove_blob_if_unreferenced(const fs::path& blob_path, const fs::path& repo_dir,
                                  const fs::path& ignored) {
     std::error_code ec;
+    // A snapshot entry may link anywhere; only a blob the repository stores is its
+    // to reclaim, and the reference scan below sees no link from outside it.
+    const fs::path blobs_root = fs::weakly_canonical(repo_dir / "blobs", ec);
+    if (ec || !path_inside_lexically(blob_path, blobs_root)) return false;
+
     fs::path snapshots_dir = repo_dir / "snapshots";
-    if (!fs::exists(snapshots_dir)) return;
+    if (!fs::exists(snapshots_dir)) return false;
 
     for (auto& entry : fs::recursive_directory_iterator(snapshots_dir, ec)) {
         if (ec) break;
@@ -127,17 +133,20 @@ void remove_blob_if_unreferenced(const fs::path& blob_path, const fs::path& repo
         fs::path other_target = fs::read_symlink(entry.path(), ec);
         if (ec) continue;
         if (fs::canonical(entry.path().parent_path() / other_target, ec) == blob_path) {
-            return;  // Another entry still points here.
+            return false;  // Another entry still points here.
         }
     }
 
     LOG(INFO, kLog) << "Removing orphaned blob: " << utils::path_to_utf8(blob_path) << std::endl;
+    ec.clear();
     fs::remove(blob_path, ec);
+    const bool removed = !ec;
 
     fs::path blobs_dir = blob_path.parent_path();
     if (fs::exists(blobs_dir) && fs::is_empty(blobs_dir, ec) && !ec) {
         fs::remove(blobs_dir, ec);
     }
+    return removed;
 }
 
 void cleanup_orphaned_blobs_under(const fs::path& path, const fs::path& repo_dir) {
@@ -1216,8 +1225,9 @@ SupersededReport ModelArtifactStore::remove_superseded_files(
             blob = fs::canonical(candidate.file, ec);
             if (ec) blob.clear();
         }
+        // A link frees nothing itself; its bytes count only if its blob goes too.
         const std::uintmax_t size = fs::file_size(candidate.file, ec);
-        const std::uint64_t bytes = ec ? 0 : static_cast<std::uint64_t>(size);
+        std::uint64_t bytes = ec ? 0 : static_cast<std::uint64_t>(size);
 
         ec.clear();
         fs::remove(candidate.file, ec);
@@ -1229,8 +1239,9 @@ SupersededReport ModelArtifactStore::remove_superseded_files(
                                << std::endl;
             continue;
         }
-        if (!blob.empty() && in_use_hops.count(location_of(blob)) == 0) {
-            remove_blob_if_unreferenced(blob, candidate.repo_dir, {});
+        if (!blob.empty() && (in_use_hops.count(location_of(blob)) != 0 ||
+                              !remove_blob_if_unreferenced(blob, candidate.repo_dir, {}))) {
+            bytes = 0;
         }
         cleanup_empty_parents(candidate.file, candidate.repo_dir / "snapshots");
         ++report.removed;

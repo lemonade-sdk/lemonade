@@ -793,6 +793,24 @@ void test_a_hidden_model_keeps_its_file_through_an_update() {
           "while the replaced file beside it goes");
 }
 
+void test_a_link_out_of_the_repository_loses_only_the_entry() {
+    CleanupFixture fx = make_cleanup_fixture("cleanup_outside_link");
+    const fs::path shared = fx.root / "shared" / "weights-v1.onnx";
+    write_file(shared, "someone else's weights");
+    const fs::path old_entry = fx.repo / "snapshots" / "snap-1" / "weights" / "weights-old.onnx";
+    if (!link(shared, old_entry)) return;
+    const fs::path new_dir = fx.repo / "snapshots" / "snap-2" / "weights";
+    write_file(new_dir / "weights-new.onnx", "new");
+
+    const auto report = fx.store->remove_superseded_files(
+        {old_entry.parent_path()}, {{"Model", reading(new_dir)}});
+    check(!fs::exists(fx.repo / "snapshots" / "snap-1"),
+          "the superseded entry linking out of the repository is removed");
+    check(read_file(shared) == "someone else's weights",
+          "the file it pointed at, outside the repository's blobs, is left alone");
+    check(report.bytes == 0, "and nothing is counted as freed for it");
+}
+
 void test_the_active_snapshot_is_never_cleaned() {
     CleanupFixture fx = make_cleanup_fixture("cleanup_active");
     const fs::path active = fx.repo / "snapshots" / "snap-2";
@@ -902,6 +920,7 @@ int main() {
         {"hidden-model", test_a_hidden_model_keeps_its_file_through_an_update},
         {"cleanup-unresolved-local", test_an_unresolved_local_model_is_protected},
         {"cleanup-active", test_the_active_snapshot_is_never_cleaned},
+        {"cleanup-outside-link", test_a_link_out_of_the_repository_loses_only_the_entry},
         {"cleanup-alias", test_a_file_reached_through_a_local_link_is_kept},
         {"cleanup-alias-chain", test_a_link_chain_through_a_snapshot_keeps_entry_and_blob},
         {"cleanup-shared-blob", test_snapshot_links_to_one_blob_stay_separately_removable},
