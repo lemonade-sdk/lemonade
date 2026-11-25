@@ -2987,12 +2987,14 @@ static bool query_dxgi_amd_memory(const std::string& name,
     ComPtr<IDXGIFactory1> factory;
     if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&factory)))) return false;
 
+    const amd_metrics_detail::D3dkmtLibrary d3dkmt;
     std::vector<DXGI_ADAPTER_DESC1> amd_adapters;
     ComPtr<IDXGIAdapter1> adapter;
     for (UINT i = 0; factory->EnumAdapters1(i, &adapter) != DXGI_ERROR_NOT_FOUND; ++i) {
         DXGI_ADAPTER_DESC1 desc{};
         if (SUCCEEDED(adapter->GetDesc1(&desc)) && desc.VendorId == 0x1002 &&
-            (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) == 0) {
+            (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) == 0 &&
+            d3dkmt.runs_gpu_work(desc.AdapterLuid)) {
             amd_adapters.push_back(desc);
         }
     }
