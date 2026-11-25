@@ -15,17 +15,17 @@ interface isolates SDK OpenSSL from Lemonade's HTTP implementation.
 ## GUI3
 
 Open **Settings → Devices & mesh**, or **Nexus** in the header. The panel shows
-your network, device name, mesh address, members, online state, tier and
-latency where available. Each group member is one device. Create or join a
+your network, device name, mesh address, members, online state and latency
+where available. Each group member is one device. Create or join a
 group, invite devices, remove devices, and lock or disable network access.
 
-### Tiers and roles
+### Lemonade servers, clients and roles
 
-`lemond` joins as a Tier 3 inference node. It calls `ln_set_inference_node`
-before `ln_join_network`. Other client devices join as Tier 4 clients. The
-federation records the tier when it creates the device's endpoint node, so a
-device that joined before this change keeps its recorded tier. The panel reads
-the tier from each device node's `is_inference` field.
+Every device that runs `lemond` is a Lemonade server; a device without it,
+such as a phone, is a client. `lemond` calls `ln_set_inference_node` before
+`ln_join_network`, and the federation records the answer as `is_inference` on
+the device's endpoint node when it creates the node. The panel reads that
+field to tell a Lemonade server from a client.
 
 An admin holds `admin` on the group node. The group creator is always an admin;
 the federation restores that grant on the creator's next join. Admins see an
@@ -41,20 +41,20 @@ ADMIN badge and a **Manage access** action on each device:
   needs Connect, `connect_shared` or `admin` on that device: the federation
   lists only those devices as the member's mesh peers, and the federation server
   forwards mesh packets only between such pairs. A device the member cannot
-  reach is reported offline, and the inference relay refuses it.
+  reach is reported offline, and the peer relay refuses it.
 
 The federation returns a node's full assignment list only to a caller with
 `edit_node` on that node. Members without it see only their own entry, and an
 admin without `edit_node` on a device sees a notice instead of that device's
 access list. Removing a device requires `delete_node` on the device node.
 
-Inference server selection is not exposed in the UI yet. `lemond` provides the
-[inference relay](#inference-relay), and `selectNexusInferenceServer(nodeId, key?)`
+**Chat runs on** picks the Lemonade server that serves the chat. `lemond`
+provides the [peer relay](#peer-relay), and `selectNexusLemonadeServer(nodeId, key?)`
 in `src/app/src/features/nexus/nexus.ts` implements the client side: `'local'`
 restores the Local Server connection and drops the peer key; another node ID
 connects through `<server>/v1/nexus/peers/{node_id}` with that peer's key.
-`isNexusInferencePeer` selects the online Tier 3 devices to offer. The client
-holds peer keys in memory and sends them in the relay header only with requests
+`nexusLemonadeServers` lists the Lemonade servers this device may connect to.
+The client holds peer keys in memory and sends them in the relay header only with requests
 to that relay URL, and `lemond` forwards them to that peer alone. Any change to
 the connection settings drops the peer key. Relay URLs are not saved as
 connection settings.
@@ -359,7 +359,7 @@ request (`nexus_access::request_peer()`; every mesh request is logged at INFO wi
 the headers on the public and management listeners before any route or
 session-header setting can read them.
 
-### Inference relay
+### Peer relay
 
 `lemond` relays any request under
 `/v1/nexus/peers/{node_id}/<path>` to
@@ -395,13 +395,14 @@ device's server…" meanwhile; a host the mesh reports without a path shows
   rather than this server's identity.
 - The mesh ingress listener refuses the relay, so a peer cannot relay through
   this device.
-- The target must be another group member that is a Tier 3 inference node
-  that this device may connect to, online and with a mesh address. Otherwise
-  the relay returns 400 (this device), 404 (not in the group) or 409 (not an
-  inference node, no Connect access, or offline). The Connect check uses the
+- The target must be another group member that is a Lemonade server
+  (`is_inference`), one that this device may connect to, online and with a
+  mesh address. Otherwise the relay returns 400 (this device), 404 (not in the
+  group) or 409 (not a Lemonade server, no Connect access, or offline). The Connect check uses the
   SDK's network list; when that list could not be fetched, the online state
   alone decides.
-- A relayed `GET` waits 30 s for the peer and a `POST` 300 s. An unreachable
+- A relayed `GET` waits 30 s for the peer and a `POST` 3600 s; a streamed
+  `POST` may stay silent for 300 s between chunks. An unreachable
   peer returns 502 with the transport failure in `detail`, and `lemond` logs
   one warning with the node ID, method and path.
 
@@ -508,7 +509,7 @@ Routes live under `/v1/nexus/` only. The `/api/v1` prefix of the older
 | POST | `memberships/{id}/leave` | Leave a group entered through an invite |
 | POST | `tree/{id}/move` | Move device or group `{id}` under `{parent_id}` |
 | POST | `account/delete` | Delete this account permanently with `{account_id, member_id, device_node_id, confirm: "delete"}`; local controller only |
-| GET | `devices` | Group devices with tier, admin flag and permissions |
+| GET | `devices` | Group devices with `is_inference`, admin flag and permissions |
 | GET | `members` | Devices plus `can_manage` (this device is an admin) |
 | GET | `route-permissions` | Read-only Admin, Moderator and User presets with allowed mesh methods, path templates and aliases, plus `catalog_version` and `route_policy`. Derived from the registered routes; excludes `/internal/*` and local-only Nexus operations. Local controller or authenticated mesh Admin only; group and handler checks still apply. |
 | GET | `account` | Verified current account ID, membership identity, device ID, role and devices; local controller only |
@@ -520,7 +521,7 @@ Routes live under `/v1/nexus/` only. The `/api/v1` prefix of the older
 | GET, POST | `devices/{node_id}/access` | Device access list; POST `{"member_node_id", "see", "connect"}` |
 | POST | `devices/{node_id}/remove` | Removal; needs `delete_node` on the device |
 | POST | `egress` | Loopback endpoint for a selected group member |
-| any | `peers/{node_id}/<path>` | Relay to a mesh inference device (see [Inference relay](#inference-relay)) |
+| any | `peers/{node_id}/<path>` | Relay to another Lemonade server (see [Peer relay](#peer-relay)) |
 | GET, POST | `selection` | Selection port target (see [Selection port](#selection-port)) |
 | GET | `events` | SSE mesh/membership/lock events; `after` cursor, `once=1` snapshot |
 
