@@ -8197,6 +8197,18 @@ class EndpointTests(ServerTestBase):
         "/api/v1/datasets/lemonade-sdk/backends/repo?Revision=master&FilePath="
     )
 
+    def _skip_if_unhashed(self, response):
+        # A pin bump can reach the mirror before its checksums merge; lemond
+        # rightly refuses the file until then.
+        if (
+            response.status_code != 200
+            and "so it will not be installed from the ModelScope mirror"
+            in response.text
+        ):
+            self.skipTest(
+                "this build has no ModelScope checksum for the pinned backend yet"
+            )
+
     def _dry_run(self, recipe, backend, source):
         response = requests.post(
             f"{self.base_url}/install/dry-run",
@@ -8275,6 +8287,7 @@ class EndpointTests(ServerTestBase):
                 },
                 timeout=TIMEOUT_MODEL_OPERATION,
             )
+            self._skip_if_unhashed(response)
             # Unpinned or mismatched files are refused, so success proves the hash.
             self.assertEqual(response.status_code, 200, response.text)
             self.assertEqual(response.json()["status"], "success")
@@ -8314,15 +8327,17 @@ class EndpointTests(ServerTestBase):
 
         load = requests.post(
             f"{self.base_url}/load",
-            json={"model_name": ENDPOINT_TEST_MODEL, "backend_source": "modelscope"},
+            json={
+                "model_name": ENDPOINT_TEST_MODEL,
+                "llamacpp_backend": backend,
+                "backend_source": "modelscope",
+            },
             timeout=TIMEOUT_MODEL_OPERATION,
         )
+        self._skip_if_unhashed(load)
         self.assertEqual(load.status_code, 200, load.text)
 
-        from openai import OpenAI
-
-        client = OpenAI(base_url=f"http://localhost:{PORT}/api/v1", api_key="x")
-        response = client.chat.completions.create(
+        response = self.get_openai_client().chat.completions.create(
             model=ENDPOINT_TEST_MODEL,
             messages=[{"role": "user", "content": "Say hello."}],
             max_tokens=16,
