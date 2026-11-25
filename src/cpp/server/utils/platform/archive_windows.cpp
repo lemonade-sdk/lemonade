@@ -108,6 +108,10 @@ public:
             return false;
         }
 
+        std::error_code size_ec;
+        const auto archive_bytes = fs::file_size(tarball_path, size_ec);
+        const int timeout_seconds = tarball_timeout_seconds(size_ec ? 0 : archive_bytes);
+
         std::string entries;
         int list_result = ProcessManager::run_process_with_output(
             get_native_tar_path(),
@@ -117,7 +121,7 @@ public:
                 return true;
             },
             "",
-            tarball_listing_timeout_seconds,
+            timeout_seconds,
             false
         );
 
@@ -139,7 +143,7 @@ public:
                 return true;
             },
             "",
-            300
+            timeout_seconds
         );
 
         if (result != 0) {

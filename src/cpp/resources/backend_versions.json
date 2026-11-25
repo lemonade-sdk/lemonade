@@ -1,7 +1,7 @@
 {
   "comment": "This configuration file controls which llama.cpp, whisper.cpp, sd.cpp, ryzenai-llm, and FLM versions are downloaded for each backend. You can modify these values to pin specific versions without rebuilding the application.",
   "checksums": {
-    "comment": "Expected SHA-256 of downloaded GitHub release assets, verified after download (see BackendUtils::lookup_expected_asset_hash). Keyed by checksums.github.<owner/repo>.<tag>.<asset>. Values are the sha256:<hex> digests GitHub publishes for each asset. Update alongside the matching version pin below.",
+    "comment": "Expected SHA-256 of downloaded backend artifacts, verified after download (see BackendUtils::lookup_expected_asset_hash). GitHub release assets are keyed by checksums.github.<owner/repo>.<tag>.<asset>, with the sha256:<hex> digests GitHub publishes. Artifacts published outside GitHub are keyed by checksums.<recipe>.<backend>.<version>.<file>, apply to every backend_source, and are required. Update alongside the matching version pin below.",
     "github": {
       "lemonade-sdk/ryzenai-server": {
         "v1.9.0": {
@@ -62,6 +62,13 @@
       "gufo-org/gufo": {
         "v0.36.0": {
           "gufo-v0.36.0-windows-x86_64.zip": "sha256:52ac553e83950d5e1c83096f07288344dee0b871ed0894f6a2fd63b415ed5b48"
+        }
+      }
+    },
+    "vllm": {
+      "rocm": {
+        "vllm-portable-rocm-device-all-0.32.1.dev0_g5df63a720.d20261124.rocm103-py314-x64": {
+          "vllm-portable-rocm-device-all-0.32.1.dev0_g5df63a720.d20261124.rocm103-py314-x64.tar.gz": "sha256:f51ab7675513fca21fd0c876a0fe1935bd2865a5209098f6d23ad850d29925d4"
         }
       }
     },
@@ -430,28 +437,6 @@
             "thenoise-0.16.0-rocm10.1.0-gfx120X-x64.partcount": "sha256:53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3"
           }
         },
-        "lemonade-sdk/vllm-rocm": {
-          "vllm0.20.1-rocm7.12.0-gfx110X": {
-            "vllm0.20.1-rocm7.12.0-gfx110X-x64.part01-of-02.tar.gz": "sha256:cc39c42f6262cf850acd07670d1fb97f82fe11ca75608093c3e88ad7d5f6525c",
-            "vllm0.20.1-rocm7.12.0-gfx110X-x64.part02-of-02.tar.gz": "sha256:d0a1802c60d21b02a29371f3c1e3b4a62b787a0b65d31b2cebcfd9f75965aba9",
-            "vllm0.20.1-rocm7.12.0-gfx110X-x64.partcount": "sha256:53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3"
-          },
-          "vllm0.20.1-rocm7.12.0-gfx1150": {
-            "vllm0.20.1-rocm7.12.0-gfx1150-x64.part01-of-02.tar.gz": "sha256:34a618d10d5869ab04e1388ec8bb67dbde69b9ef3eef0810d4b14dc60ee82174",
-            "vllm0.20.1-rocm7.12.0-gfx1150-x64.part02-of-02.tar.gz": "sha256:354b8ffdf35c4eaea9a7db8513275e7e95da1d2d8e17195352ed9153f5294325",
-            "vllm0.20.1-rocm7.12.0-gfx1150-x64.partcount": "sha256:53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3"
-          },
-          "vllm0.20.1-rocm7.12.0-gfx1151": {
-            "vllm0.20.1-rocm7.12.0-gfx1151-x64.part01-of-02.tar.gz": "sha256:51c35040208aa7cd7ee59030d5a5a98c2360dd27df827947b18a5bb3a1c6d0c7",
-            "vllm0.20.1-rocm7.12.0-gfx1151-x64.part02-of-02.tar.gz": "sha256:a11b9b870a920ef06727b5137e05a6823ca82195a57e184909dcdfe3291bdf4e",
-            "vllm0.20.1-rocm7.12.0-gfx1151-x64.partcount": "sha256:53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3"
-          },
-          "vllm0.20.1-rocm7.12.0-gfx120X": {
-            "vllm0.20.1-rocm7.12.0-gfx120X-x64.part01-of-02.tar.gz": "sha256:402c8a5a84c668930ef82d0e5ecfec7a1ea13cdc9ff1a112f44793e3dbc43803",
-            "vllm0.20.1-rocm7.12.0-gfx120X-x64.part02-of-02.tar.gz": "sha256:415b391085e373138a11e353c0bd15508f833b4dea156011a2fe3b327ec377de",
-            "vllm0.20.1-rocm7.12.0-gfx120X-x64.partcount": "sha256:53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3"
-          }
-        },
         "lemonade-sdk/whisper.cpp-rocm": {
           "v1.8.4": {
             "whisper-b4281-linux-musl-cpu-aarch64.tar.gz": "sha256:8cf426a09b2e9b66d2ba6e94b8589dadbcf7ef5cbd277295f16f35b8fe21b8d9",
@@ -658,12 +643,8 @@
     "metal": "b21"
   },
   "vllm": {
-    "comment": "'rocm' is the default (RDNA) pin. 'rocm_arch_overrides' pins per detected asset family (rocm_asset_family output) where AMD's vLLM/ROCm wheel cadence diverges: CDNA-dcgpu (gfx942, gfx950) shares no release tag with the RDNA line, so it pins its own version. gfx950 (CDNA4) rides the same CDNA vLLM/ROCm line as gfx942 (CDNA3). Review each override at release time - feature/fix parity across arch lines lags until bumped.",
-    "rocm": "vllm0.20.1-rocm7.12.0",
-    "rocm_arch_overrides": {
-      "gfx942": "vllm0.19.1-rocm7.13.0",
-      "gfx950": "vllm0.19.1-rocm7.13.0"
-    }
+    "comment": "'rocm' is AMD's vLLM device-all bundle (every supported GPU in one file), from https://rocm.frameworks-nightlies.amd.com/whl-multi-arch-staging/vllm/tarball/. The pin is a dated file name without .tar.gz; never pin the -latest alias, which changes every night. validate_vllm.yml bumps it weekly together with checksums.vllm.rocm.",
+    "rocm": "vllm-portable-rocm-device-all-0.32.1.dev0_g5df63a720.d20261124.rocm103-py314-x64"
   },
   "thenoise": {
     "comment": "TheNoise shared release: ROCm uses <tag>-gfxNNNN-x64.tar.gz; Linux CUDA uses <tag>-cuda-x64.tar.gz.",

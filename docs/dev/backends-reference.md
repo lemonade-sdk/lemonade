@@ -82,7 +82,7 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `trellis` | cuda | experimental | native | linux, windows | nvidia_gpu |
 | `trellis` | vulkan | experimental | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `trellis` | rocm | experimental | native | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
-| `vllm` | rocm | experimental | python | linux | amd_gpu (gfx110X, gfx1150, gfx1151, gfx120X) |
+| `vllm` | rocm | experimental | python | linux | amd_gpu (gfx110X, gfx1150, gfx1151, gfx120X, gfx942, gfx950) |
 | `whispercpp` | npu | core | native | windows | amd_npu (XDNA2) |
 | `whispercpp` | metal | core | native | macos | metal |
 | `whispercpp` | vulkan | core | native | linux, windows | amd_gpu; cpu (x86_64) |

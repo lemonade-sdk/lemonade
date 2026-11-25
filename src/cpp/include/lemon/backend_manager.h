@@ -58,6 +58,7 @@ public:
         std::string filename;
         std::string version;
         std::string archive_subdir;
+        std::string url;  // Direct download URL; empty for GitHub releases
     };
 
     // Unlike the enrichment helpers above, this returns the repo and lets

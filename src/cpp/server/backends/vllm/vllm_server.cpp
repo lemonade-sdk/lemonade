@@ -20,7 +20,6 @@
 #include <fstream>
 #include <iomanip>
 #include <random>
-#include <regex>
 #include <sstream>
 
 namespace fs = std::filesystem;
@@ -287,47 +286,42 @@ static void configure_vllm_rocm_env(
     env_vars.push_back({"PYTHONPATH", with_prepended_pythonpath(shim_dir)});
 }
 
+// Same check as the bundle's bin/vllm-server, which exits early without these:
+// torch loads libgomp, and Triton links kernel launchers against crti.o.
+static bool host_c_toolchain_missing() {
+#ifdef __linux__
+    auto has = [](const char* name) {
+        for (const char* dir : {"/usr/lib/x86_64-linux-gnu", "/usr/lib64", "/usr/lib"}) {
+            std::error_code ec;
+            if (fs::exists(fs::path(dir) / name, ec)) {
+                return true;
+            }
+        }
+        return false;
+    };
+    return !has("crti.o") || !has("libgomp.so.1");
+#else
+    return false;
+#endif
+}
+
 InstallParams VLLMServer::get_install_params(const std::string& backend, const std::string& version) {
     InstallParams params;
 
     if (backend == "rocm") {
-        params.repo = "lemonade-sdk/vllm-rocm";
-        std::string target_arch =
-            SystemInfo::rocm_asset_family(SystemInfo::get_rocm_arch());
-        if (target_arch.empty()) {
-            throw std::runtime_error(
-                SystemInfo::get_unsupported_backend_error("vllm", "rocm")
-            );
-        }
 #ifdef __linux__
-        // The per-arch override replaces ONLY the builtin default base, so an explicit
-        // vllm.rocm_bin pin is not silently clobbered on an MI300X host.
-        std::string arch_override = SystemInfo::vllm_rocm_version_override(target_arch);
-        std::string default_pin = BackendUtils::get_backend_version("vllm", "rocm");
-        const bool on_builtin_default = version.empty() || version == default_pin;
-        const std::string& effective_version =
-            (!arch_override.empty() && on_builtin_default) ? arch_override : version;
-        // One release per GPU target since 0.19.1 (vllm0.20.1-rocm7.12.0-gfx1151): a bare
-        // base gets the detected suffix appended. An already-suffixed pin is rejected
-        // unless it matches, so a cross-arch pin cannot install against the wrong line.
-        static const std::regex arch_suffix_re("-(gfx[0-9a-fA-FxX]+)$");
-        std::smatch arch_suffix_match;
-        std::string release_tag;
-        if (std::regex_search(effective_version, arch_suffix_match, arch_suffix_re)) {
-            const std::string pinned_arch = arch_suffix_match[1].str();
-            if (pinned_arch != target_arch) {
-                throw std::runtime_error(
-                    "vLLM ROCm pin '" + effective_version + "' targets " + pinned_arch +
-                    " but this host is " + target_arch +
-                    "; pin a " + target_arch +
-                    " release (vllm.rocm_bin) or unset it to use the default.");
-            }
-            release_tag = effective_version;
-        } else {
-            release_tag = effective_version + "-" + target_arch;
+        // AMD publishes one "device-all" bundle for every supported GPU, so the
+        // pin is the bundle's file name without ".tar.gz".
+        if (version.rfind("vllm-portable-", 0) != 0) {
+            throw std::runtime_error(
+                "vLLM ROCm version '" + version + "' is not an AMD vLLM bundle "
+                "(vllm-portable-...); lemonade-sdk/vllm-rocm builds are no longer installed. "
+                "Set vllm.rocm_bin to 'builtin', or to the bin directory of an extracted bundle.");
         }
-        params.version_override = release_tag;
-        params.filename = release_tag + "-x64.tar.gz";
+        params.filename = version + ".tar.gz";
+        params.url =
+            "https://rocm.frameworks-nightlies.amd.com/whl-multi-arch-staging/vllm/tarball/" +
+            params.filename;
 #else
         throw std::runtime_error("vLLM ROCm is only supported on Linux");
 #endif
@@ -544,6 +538,10 @@ void VLLMServer::load(const std::string& model_name,
         if (needs_gfx1151_cwsr_fix()) {
             err += ". Your kernel may be missing the gfx1151 CWSR fix — "
                    "see https://lemonade-server.ai/gfx1151_linux.html";
+        }
+        if (host_c_toolchain_missing()) {
+            err += ". vLLM needs the system C toolchain: install gcc "
+                   "(e.g. 'sudo apt install gcc' or 'sudo dnf install gcc')";
         }
         throw std::runtime_error(err);
     }
@@ -801,7 +799,7 @@ std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
 }
 
 
-const BackendSpec* spec() { return make_spec<VLLMServer>(descriptor, /*split=*/true); }
+const BackendSpec* spec() { return make_spec<VLLMServer>(descriptor); }
 const BackendOps* ops() { return single_ops<VLLMOps>(); }
 }  // namespace vllm
 }  // namespace backends

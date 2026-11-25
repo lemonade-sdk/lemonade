@@ -44,6 +44,14 @@ class PinsTest(unittest.TestCase):
         with_pwilkin = m.pinned_releases(VERSIONS, None, include_pwilkin=True)
         self.assertIn(("pwilkin/trellis.cpp", "v0.8.1"), with_pwilkin)
 
+    def test_amd_vllm_bundle_is_not_mirrored(self):
+        pins = m.pinned_releases(
+            {"vllm": {"rocm": "vllm-portable-rocm-device-all-v1-py314-x64"}},
+            None,
+            True,
+        )
+        self.assertEqual(pins, {})
+
     def test_unknown_backend_is_skipped_not_fatal(self):
         versions = {"newbackend": {"cpu": "v1"}, "onnxruntime": {"cpu": "0.4.0"}}
         self.assertEqual(
