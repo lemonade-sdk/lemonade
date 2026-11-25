@@ -151,8 +151,11 @@ class PinsTest(unittest.TestCase):
         ]
         versions = {"checksums": VERSIONS["checksums"], "onnxruntime": {"cpu": "0.4.0"}}
         versions["therock"] = VERSIONS["therock"]
-        with mock.patch.object(m, "release_item", return_value=item), mock.patch.object(
-            m, "therock_item", side_effect=AssertionError("AMD contacted")
+        with (
+            mock.patch.object(m, "release_item", return_value=item),
+            mock.patch.object(
+                m, "therock_item", side_effect=AssertionError("AMD contacted")
+            ),
         ):
             out = m.checksums_for(versions, False, True, Path("."))
         self.assertEqual(
@@ -171,8 +174,9 @@ class PinsTest(unittest.TestCase):
             {"name": "a.tar.gz", "size": 1, "sha256": "", "url": "ua"},
             {"name": "b.tar.gz", "size": 1, "sha256": "", "url": "ub"},
         ]
-        with mock.patch.object(m, "therock_item", return_value=rock), mock.patch.object(
-            m, "download", side_effect=lambda url, *_: url[-1] * 64
+        with (
+            mock.patch.object(m, "therock_item", return_value=rock),
+            mock.patch.object(m, "download", side_effect=lambda url, *_: url[-1] * 64),
         ):
             out = m.checksums_for(versions, False, True, Path("."))
             check = m.checksums_for(versions, True, False, Path("."))
@@ -240,6 +244,44 @@ class ManifestTest(unittest.TestCase):
         self.assertEqual(
             m.missing_from([item], existing, lambda folder: m.manifest_files(item)), []
         )
+
+
+class TokenTest(unittest.TestCase):
+    def test_token_is_normalized_before_authentication(self):
+        for verify, raw, expected in (
+            (False, "token \t\r\n", "token"),
+            (True, " token \n", "token"),
+            (True, " \t\n", None),
+            (False, " \t\n", None),
+        ):
+            with (
+                self.subTest(verify=verify, raw=raw),
+                tempfile.TemporaryDirectory() as workdir,
+            ):
+                argv = ["modelscope_mirror.py", "--workdir", workdir]
+                if verify:
+                    argv.append("--verify")
+                hub = mock.Mock()
+                hub.HubApi.return_value.repo_exists.return_value = True
+                with (
+                    mock.patch.dict(m.os.environ, {"MODELSCOPE_API_TOKEN": raw}),
+                    mock.patch.dict(m.sys.modules, {"modelscope_hub.api": hub}),
+                    mock.patch.object(m.sys, "argv", argv),
+                    mock.patch.object(m, "load_versions", return_value=VERSIONS),
+                    mock.patch.object(m, "build_plan", return_value=[]),
+                    mock.patch.object(m, "list_existing", return_value={}),
+                ):
+                    if not verify and expected is None:
+                        with self.assertRaisesRegex(
+                            SystemExit, "Set MODELSCOPE_API_TOKEN"
+                        ):
+                            m.main()
+                        hub.HubApi.assert_not_called()
+                    else:
+                        self.assertEqual(m.main(), 0)
+                        hub.HubApi.assert_called_once_with(
+                            token=expected, endpoint=mock.ANY
+                        )
 
 
 class RedirectTest(unittest.TestCase):

@@ -761,7 +761,7 @@ def main() -> int:
 
     existing: dict[str, int] = {}
     api = None
-    token = os.environ.get("MODELSCOPE_API_TOKEN", "")
+    token = os.environ.get("MODELSCOPE_API_TOKEN", "").strip()
     if not args.dry_run:
         from modelscope_hub.api import HubApi
 
