@@ -143,7 +143,7 @@ inline double get_available_memory_gb(DeviceType device_type,
             }
             std::optional<double> available_gpu_gb;
             if (pool.unified && pool.vendor == GpuMemoryVendor::Amd &&
-                gpu_memory_spans_amd_heaps(gpu_backend, gpu_device)) {
+                gpu_memory_spans_amd_heaps(gpu_backend, gpu_device, nvidia_gpus)) {
                 const auto split = auto_context_available_split_gpu_gib(
                     pool.dedicated_gb, pool.dedicated_used_gb,
                     pool.total_gb - pool.dedicated_gb, pool.shared_used_gb,
@@ -491,6 +491,14 @@ inline bool is_rule_head_router_model(const ModelInfo& model_info) {
     return !model_info.checkpoint("rulehead").empty();
 }
 
+/// llama-server reads LLAMA_ARG_DEVICE when it is started without --device.
+inline std::string auto_context_llamacpp_device(
+    const std::string& recipe, const std::string& device,
+    const char* device_env = std::getenv("LLAMA_ARG_DEVICE")) {
+    const bool unset = device.empty() || device == "auto";
+    return recipe == "llamacpp" && unset && device_env ? device_env : device;
+}
+
 /// The registry device is per recipe, so it stays GPU when llama.cpp runs on
 /// the CPU. Context must then be sized from system RAM.
 inline DeviceType auto_context_device(const ModelInfo& model_info,
@@ -540,6 +548,7 @@ inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
     const json device_json = effective_options.get_option(recipe + "_device");
     if (backend_json.is_string()) backend = backend_json.get<std::string>();
     if (device_json.is_string()) device = device_json.get<std::string>();
+    device = auto_context_llamacpp_device(recipe, device);
     const json llama_args = effective_options.get_option("llamacpp_args");
     const std::string llama_args_str = llama_args.is_string()
         ? llama_args.get<std::string>() : "";

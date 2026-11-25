@@ -114,6 +114,11 @@ int main() {
     CHECK(auto_context_device(gpu_model, "llamacpp", "vulkan", "none") == DEVICE_CPU);
     CHECK(auto_context_device(gpu_model, "llamacpp", "vulkan", "") == DEVICE_GPU);
     CHECK(auto_context_device(gpu_model, "llamacpp", "rocm", "ROCm0") == DEVICE_GPU);
+    CHECK(auto_context_llamacpp_device("llamacpp", "", "none") == "none");
+    CHECK(auto_context_llamacpp_device("llamacpp", "auto", "none") == "none");
+    CHECK(auto_context_llamacpp_device("llamacpp", "Vulkan0", "none") == "Vulkan0");
+    CHECK(auto_context_llamacpp_device("llamacpp", "", nullptr).empty());
+    CHECK(auto_context_llamacpp_device("vllm", "", "none").empty());
     const auto npu_model = fixture("flm", 3.0, DEVICE_NPU);
     CHECK(auto_context_device(npu_model, "flm", "", "") == DEVICE_NPU);
 

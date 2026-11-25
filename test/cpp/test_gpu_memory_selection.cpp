@@ -223,23 +223,30 @@ int main() {
         GpuMemoryVendor::Any, unavailable, amd, nvidia, unavailable);
     check(automatic.total_gb == 4.0, "ambiguous target preserves fallback order");
 
-    check(gpu_memory_spans_amd_heaps("vulkan", "") &&
-          gpu_memory_spans_amd_heaps("Vulkan", "Vulkan0") &&
-          gpu_memory_spans_amd_heaps("nathanw", ""),
+    auto spans = [](const std::string& backend, const std::string& device) {
+        return gpu_memory_spans_amd_heaps(backend, device, {});
+    };
+    check(spans("vulkan", "") &&
+          spans("Vulkan", "Vulkan0") &&
+          spans("nathanw", ""),
           "Vulkan builds use both AMD iGPU heaps");
-    check(!gpu_memory_spans_amd_heaps("rocm", "") &&
-          !gpu_memory_spans_amd_heaps("rocm-stable", "ROCm0") &&
-          !gpu_memory_spans_amd_heaps("halobox", "") &&
-          !gpu_memory_spans_amd_heaps("hrx", ""),
+    check(!spans("rocm", "") &&
+          !spans("rocm-stable", "ROCm0") &&
+          !spans("halobox", "") &&
+          !spans("hrx", ""),
           "ROCm and HRX runtimes do not combine the AMD iGPU heaps");
-    check(gpu_memory_spans_amd_heaps("system", "Vulkan0") &&
-          !gpu_memory_spans_amd_heaps("system", "ROCm0") &&
-          !gpu_memory_spans_amd_heaps("system", ""),
+    check(spans("system", "Vulkan0") &&
+          !spans("system", "ROCm0") &&
+          !spans("system", ""),
           "system llama-server combines the heaps only for a named Vulkan device");
-    check(!gpu_memory_spans_amd_heaps("", "") &&
-          !gpu_memory_spans_amd_heaps("cuda", "CUDA0") &&
-          !gpu_memory_spans_amd_heaps("metal", ""),
+    check(!spans("", "") &&
+          !spans("cuda", "CUDA0") &&
+          !spans("metal", ""),
           "unknown and non-AMD targets do not combine the heaps");
+    check(!gpu_memory_spans_amd_heaps("vulkan", "", nvidia) &&
+          !gpu_memory_spans_amd_heaps("vulkan", "Vulkan0", nvidia) &&
+          gpu_memory_spans_amd_heaps("vulkan", "", {unavailable}),
+          "an NVIDIA GPU may be the Vulkan device, so the AMD heaps are not combined");
 
     return failures == 0 ? 0 : 1;
 }

@@ -89,7 +89,12 @@ inline GpuMemoryVendor gpu_memory_vendor_for_target(const std::string& backend,
 }
 
 inline bool gpu_memory_spans_amd_heaps(const std::string& backend,
-                                       const std::string& device) {
+                                       const std::string& device,
+                                       const std::vector<GPUInfo>& nvidia_gpus) {
+    // llama.cpp prefers a discrete GPU, and GPUInfo has no Vulkan ordinal to match.
+    for (const auto& gpu : nvidia_gpus) {
+        if (gpu.available) return false;
+    }
     const std::string lower_backend = gpu_memory_ascii_lower(backend);
     if (lower_backend == "vulkan" || lower_backend == "nathanw") return true;
     return lower_backend == "system" &&
