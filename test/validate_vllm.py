@@ -324,17 +324,17 @@ def test_model(base_url, model_name, backend, max_tokens=50):
             f"{base_url}/stats",
             timeout=TIMEOUT_DEFAULT,
         )
-        if stats_resp.status_code == 200:
-            stats = stats_body
-            print(f"  Stats: {json.dumps(stats)}", flush=True)
-            output_tokens = stats.get("output_tokens")
-            if not isinstance(output_tokens, int) or output_tokens <= 0:
-                return False, f"/stats reported no output tokens: {stats}", stats
-        else:
-            print(
-                f"  Warning: stats returned HTTP {stats_resp.status_code}: {stats_body}",
-                flush=True,
+        if stats_resp.status_code != 200:
+            return (
+                False,
+                f"/stats returned HTTP {stats_resp.status_code}: {stats_body}",
+                {},
             )
+        stats = stats_body
+        print(f"  Stats: {json.dumps(stats)}", flush=True)
+        output_tokens = stats.get("output_tokens")
+        if not isinstance(output_tokens, int) or output_tokens <= 0:
+            return False, f"/stats reported no output tokens: {stats}", stats
 
         response_text = content if content else f"[reasoning] {reasoning}"
         return True, response_text, stats
@@ -417,7 +417,7 @@ def main():
             flush=True,
         )
         sys.exit(1)
-    log_offsets = {path: 0 for path in gpu_log_paths}
+    log_offsets = {}
 
     base_url = f"http://localhost:{args.port}/api/v1"
     output_path = args.output or f"vllm_validation_{args.backend}.json"
@@ -457,6 +457,9 @@ def main():
         for model in hot_models:
             model_name = model["id"]
             print(f"\nTesting: {model_name}", flush=True)
+            # Only lines written during this model's test count as its GPU evidence.
+            for path in gpu_log_paths:
+                log_offsets[path] = os.path.getsize(path) if os.path.isfile(path) else 0
             success, response_text, stats = test_model(
                 base_url, model_name, args.backend
             )

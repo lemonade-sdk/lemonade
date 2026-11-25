@@ -4020,7 +4020,12 @@ set(_VLLM_CDNA_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_vllm_cdna_gat
 if(BUILD_TESTING AND EXISTS "${_VLLM_CDNA_TEST_SRC}")
     add_executable(test_vllm_cdna_gating test/cpp/test_vllm_cdna_gating.cpp)
     target_link_libraries(test_vllm_cdna_gating PRIVATE lemonade-server-core)
-    add_cpp_ci_test(VllmCdnaGatingTest CI OFF COMMAND test_vllm_cdna_gating)
+    # vLLM is Linux-only, so only Linux CI runs it.
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        add_cpp_ci_test(VllmCdnaGatingTest CI ON COMMAND test_vllm_cdna_gating)
+    else()
+        add_cpp_ci_test(VllmCdnaGatingTest CI OFF COMMAND test_vllm_cdna_gating)
+    endif()
 endif()
 
 # llamacpp gfx950 (MI350) install gate: only the Linux + stable-channel asset is

@@ -24,10 +24,9 @@ VERSIONS = {
         "comment": "c",
         "cpu": "b1",
         "nathanw": "img@sha256:" + "0" * 64,
-        "nested": {"gfx942": "x"},
     },
     "onnxruntime": {"cpu": "0.4.0"},
-    "vllm": {"rocm": "vllm-portable-rocm-device-all-v1-py314-x64"},
+    "vllm": {"rocm": "v1", "rocm_arch_overrides": {"gfx942": "x"}},
     "trellis": {"cuda": "v0.8.1"},
     "halogen": {"rocm": "1@sha256:" + "0" * 64},
     "therock": {"version": "10.1.0"},
@@ -39,20 +38,19 @@ class PinsTest(unittest.TestCase):
         pins = m.pinned_releases(VERSIONS, None, include_pwilkin=False)
         self.assertEqual(
             set(pins),
-            {("ggml-org/llama.cpp", "b1"), ("lemonade-sdk/ort-server", "0.4.0")},
+            {("ggml-org/llama.cpp", "b1"), ("lemonade-sdk/ort-server", "0.4.0")}
+            | {("lemonade-sdk/vllm-rocm", f"v1-{f}") for f in m.VLLM_FAMILIES},
         )
         with_pwilkin = m.pinned_releases(VERSIONS, None, include_pwilkin=True)
         self.assertIn(("pwilkin/trellis.cpp", "v0.8.1"), with_pwilkin)
 
-    def test_vllm_is_not_mirrored(self):
-        with mock.patch.object(m, "warn_once") as warn:
-            pins = m.pinned_releases(
-                {"vllm": {"rocm": "vllm-portable-rocm-device-all-v1-py314-x64"}},
-                None,
-                True,
-            )
+    def test_amd_vllm_bundle_is_not_mirrored(self):
+        pins = m.pinned_releases(
+            {"vllm": {"rocm": "vllm-portable-rocm-device-all-v1-py314-x64"}},
+            None,
+            True,
+        )
         self.assertEqual(pins, {})
-        warn.assert_not_called()
 
     def test_unknown_backend_is_skipped_not_fatal(self):
         versions = {"newbackend": {"cpu": "v1"}, "onnxruntime": {"cpu": "0.4.0"}}

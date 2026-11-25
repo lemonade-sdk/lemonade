@@ -182,6 +182,15 @@ int main() {
                    "vllm-portable-rocm-device-all-0.1.0-py314-x64.tar.gz",
                std::string(arch) + ": vllm:rocm downloads from AMD's tarball index");
     }
+    {
+        bool rejected = false;
+        try {
+            lemon::backends::VLLMServer::get_install_params("rocm", "vllm0.20.1-rocm7.12.0");
+        } catch (const std::runtime_error& e) {
+            rejected = std::string(e.what()).find("rocm_bin to 'builtin'") != std::string::npos;
+        }
+        expect(rejected, "an old lemonade-sdk/vllm-rocm tag is refused with a way to fix it");
+    }
 #endif
 
     if (failures != 0) {

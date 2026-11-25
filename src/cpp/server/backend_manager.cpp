@@ -626,10 +626,13 @@ std::string BackendManager::resolve_user_version(const std::string& recipe,
     // to the binary already installed rather than refusing to load a model that
     // is otherwise ready. Only when nothing is installed do we surface an error.
     if (raw == "latest") {
+        // The built-in pin of a backend published outside GitHub is already its
+        // newest validated build, so honor a "latest" left over from older configs.
         if (repo.empty()) {
-            throw std::runtime_error("'latest' needs a GitHub release, and " + recipe + ":" +
-                                     resolved_backend + " is not published on GitHub. "
-                                     "Use 'builtin' or a pinned version.");
+            LOG(WARNING, "BackendManager") << recipe << ":" << resolved_backend
+                                           << " is not published on GitHub, so 'latest' uses the "
+                                           << "built-in version " << pinned_version << std::endl;
+            return pinned_version;
         }
         if (backend_source::is_modelscope(backends::BackendUtils::effective_backend_source())) {
             const std::string installed = read_version_file(

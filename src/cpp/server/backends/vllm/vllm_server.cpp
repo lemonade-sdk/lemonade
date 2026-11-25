@@ -312,6 +312,12 @@ InstallParams VLLMServer::get_install_params(const std::string& backend, const s
 #ifdef __linux__
         // AMD publishes one "device-all" bundle for every supported GPU, so the
         // pin is the bundle's file name without ".tar.gz".
+        if (version.rfind("vllm-portable-", 0) != 0) {
+            throw std::runtime_error(
+                "vLLM ROCm version '" + version + "' is not an AMD vLLM bundle "
+                "(vllm-portable-...); lemonade-sdk/vllm-rocm builds are no longer installed. "
+                "Set vllm.rocm_bin to 'builtin', or to the bin directory of an extracted bundle.");
+        }
         params.filename = version + ".tar.gz";
         params.url =
             "https://rocm.frameworks-nightlies.amd.com/whl-multi-arch-staging/vllm/tarball/" +

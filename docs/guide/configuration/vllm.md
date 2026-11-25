@@ -36,7 +36,8 @@ curl -X POST http://localhost:13305/api/v1/install \
 The pin in [`backend_versions.json`](https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/resources/backend_versions.json) is the bundle's dated file name without `.tar.gz`, and the file's SHA-256 is pinned next to it under `checksums.vllm.rocm`. A weekly workflow moves the pin to AMD's newest bundle once it passes validation on a Strix Halo runner.
 
 - The bundle is not on GitHub, so it is downloaded from AMD for every `backend_source`, including `modelscope`, and is never installed without its pinned SHA-256.
-- `vllm.rocm_bin` accepts `builtin` or the absolute path of an extracted bundle's `bin` directory. `latest` is not supported, and another file name is refused because its SHA-256 is not pinned.
+- `vllm.rocm_bin` accepts `builtin` or the absolute path of an extracted bundle's `bin` directory. `latest` uses the built-in pin, which is already AMD's newest validated bundle. Another bundle file name is refused because its SHA-256 is not pinned.
+- **Upgrading:** older Lemonade versions installed `lemonade-sdk/vllm-rocm` builds. A `vllm.rocm_bin` pinned to one of those tags (e.g. `vllm0.20.1-rocm7.12.0`) now fails with a message to switch it back to `builtin`.
 
 ### Deploying on MI300X (gfx942) and MI350 (gfx950)
 

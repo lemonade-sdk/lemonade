@@ -867,8 +867,8 @@ namespace lemon::backends {
                 // 404 = no manifest = single-file release; fall through.
             }
             if (!is_split) {
-                std::string url = asset_url(filename);
-                LOG(DEBUG, spec.log_name()) << "Downloading from: " << url << std::endl;
+                const std::string download_url = asset_url(filename);
+                LOG(DEBUG, spec.log_name()) << "Downloading from: " << download_url << std::endl;
 
                 utils::ProgressCallback http_progress_cb;
                 if (progress_cb) {
@@ -894,10 +894,10 @@ namespace lemon::backends {
                 archive_download_opts.retry_forbidden = !url.empty();
 
                 auto download_result = utils::HttpClient::download_file(
-                    url, zip_path, http_progress_cb, {}, archive_download_opts);
+                    download_url, zip_path, http_progress_cb, {}, archive_download_opts);
 
                 if (!download_result.success) {
-                    throw std::runtime_error("Failed to download " + spec.binary + " from: " + url +
+                    throw std::runtime_error("Failed to download " + spec.binary + " from: " + download_url +
                                              " - " + download_result.error_message);
                 }
             } else {
