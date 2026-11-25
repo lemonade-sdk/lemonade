@@ -117,10 +117,16 @@ void cleanup_orphaned_blob(const fs::path& file_path, const fs::path& repo_dir) 
 bool remove_blob_if_unreferenced(const fs::path& blob_path, const fs::path& repo_dir,
                                  const fs::path& ignored) {
     std::error_code ec;
-    // A snapshot entry may link anywhere; only a blob the repository stores is its
-    // to reclaim, and the reference scan below sees no link from outside it.
+    // A snapshot entry may link anywhere, and blobs/ may itself be a link to a
+    // directory other repositories share; only a blob this repository stores is its
+    // to reclaim, since the reference scan below sees no link from outside it.
+    const fs::path repo_root = fs::canonical(repo_dir, ec);
+    if (ec) return false;
     const fs::path blobs_root = fs::weakly_canonical(repo_dir / "blobs", ec);
-    if (ec || !path_inside_lexically(blob_path, blobs_root)) return false;
+    if (ec || !path_inside_lexically(blobs_root, repo_root) ||
+        !path_inside_lexically(blob_path, blobs_root)) {
+        return false;
+    }
 
     fs::path snapshots_dir = repo_dir / "snapshots";
     if (!fs::exists(snapshots_dir)) return false;

@@ -894,6 +894,56 @@ void test_snapshot_links_to_one_blob_stay_separately_removable() {
     check(read_file(new_entry) == gguf("same"), "the blob stays for the new link");
 }
 
+bool link_directory(const fs::path& target, const fs::path& at) {
+    fs::create_directories(at.parent_path());
+    std::error_code ec;
+    fs::create_directory_symlink(target, at, ec);
+    if (ec) std::printf("[SKIP] cannot create directory symlinks here (%s)\n", ec.message().c_str());
+    return !ec;
+}
+
+void test_a_blobs_directory_linked_out_of_the_repository_is_not_reclaimed() {
+    CleanupFixture fx = make_cleanup_fixture("cleanup_shared_blobs_dir");
+    const fs::path shared = fx.root / "shared";
+    write_file(shared / "cccc", gguf("shared"));
+    const fs::path other_repo = fx.managed / repo_dir_name("vendor/other");
+    if (!link_directory(shared, fx.repo / "blobs")) return;
+    if (!link_directory(shared, other_repo / "blobs")) return;
+    const fs::path old_entry = fx.repo / "snapshots" / "snap-1" / "model.gguf";
+    const fs::path new_entry = fx.repo / "snapshots" / "snap-2" / "model.gguf";
+    const fs::path other_entry = other_repo / "snapshots" / "snap-1" / "model.gguf";
+    if (!link(fs::path("..") / ".." / "blobs" / "cccc", old_entry)) return;
+    if (!link(fs::path("..") / ".." / "blobs" / "cccc", other_entry)) return;
+    write_file(new_entry, gguf("new"));
+
+    // Nothing registers the other repository, as when another application owns it.
+    const auto report =
+        fx.store->remove_superseded_files({old_entry}, {{"Model", reading(new_entry)}});
+    check(!fs::exists(fx.repo / "snapshots" / "snap-1"),
+          "the superseded entry goes when blobs/ itself links out of the repository");
+    check(read_file(other_entry) == gguf("shared"),
+          "another repository sharing that blobs directory still reads its file");
+    check(report.removed == 1 && report.bytes == 0, "and nothing is counted as freed for it");
+}
+
+void test_a_linked_repository_still_frees_its_own_blob() {
+    CleanupFixture fx = make_cleanup_fixture("cleanup_linked_repo");
+    const fs::path real_repo = fx.root / "bigdisk" / fx.repo.filename();
+    write_file(real_repo / "refs" / "main", "snap-2");
+    const fs::path blob = real_repo / "blobs" / "dddd";
+    write_file(blob, gguf("old"));
+    fs::remove_all(fx.repo);
+    if (!link_directory(real_repo, fx.repo)) return;
+    const fs::path old_entry = fx.repo / "snapshots" / "snap-1" / "model.gguf";
+    const fs::path new_entry = fx.repo / "snapshots" / "snap-2" / "model.gguf";
+    if (!link(fs::path("..") / ".." / "blobs" / "dddd", old_entry)) return;
+    write_file(new_entry, gguf("new"));
+
+    fx.store->remove_superseded_files({old_entry}, {{"Model", reading(new_entry)}});
+    check(!fs::exists(real_repo / "snapshots" / "snap-1") && !fs::exists(blob),
+          "a repository that is itself a link still frees the blob it stores");
+}
+
 }  // namespace
 
 int main() {
@@ -924,6 +974,9 @@ int main() {
         {"cleanup-alias", test_a_file_reached_through_a_local_link_is_kept},
         {"cleanup-alias-chain", test_a_link_chain_through_a_snapshot_keeps_entry_and_blob},
         {"cleanup-shared-blob", test_snapshot_links_to_one_blob_stay_separately_removable},
+        {"cleanup-shared-blobs-dir",
+         test_a_blobs_directory_linked_out_of_the_repository_is_not_reclaimed},
+        {"cleanup-linked-repo", test_a_linked_repository_still_frees_its_own_blob},
     };
     for (const auto& [name, run] : cases) {
         std::printf("\n=== %s ===\n", name);
