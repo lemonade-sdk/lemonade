@@ -1312,6 +1312,7 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
             case CURLE_GOT_NOTHING:
             case CURLE_PARTIAL_FILE:
             case CURLE_SSL_CONNECT_ERROR:
+            case CURLE_HTTP2_STREAM:
                 retryable = true;
                 break;
             // A rejected scheme (e.g. an https-only policy hit on an http URL or
