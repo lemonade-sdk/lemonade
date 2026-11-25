@@ -108,9 +108,10 @@ constexpr const char* kMsgJoinFirst = "Join the network first";
 constexpr const char* kMsgNotInGroup = "That device is not in your group";
 constexpr const char* kMsgChooseAnotherMember = "Choose another member of your group";
 constexpr const char* kMsgInvalidData = "The network returned invalid data";
-constexpr const char* kMsgDeviceName = "Enter a device name (up to 128 characters)";
-constexpr const char* kMsgName = "Enter a name of up to 128 characters";
-constexpr const char* kMsgInviteCode = "Enter an 8-digit code or a full invite token";
+const std::string kMsgDeviceName = "Enter a device name (up to " + std::to_string(kMaxNameBytes) + " characters)";
+const std::string kMsgName = "Enter a name of up to " + std::to_string(kMaxNameBytes) + " characters";
+const std::string kMsgGroupName = "Enter a group name (up to " + std::to_string(kMaxNameBytes) + " UTF-8 bytes)";
+const std::string kMsgInviteCode = "Enter an " + std::to_string(kInviteCodeDigits) + "-digit code or a full invite token";
 constexpr const char* kMsgAccountChanged = "The account changed. Sign in again.";
 constexpr const char* kMsgOwnAccess = "You cannot change your own access";
 constexpr const char* kMsgCreatorAdministers = "The group creator always administers the group";
@@ -2374,7 +2375,7 @@ struct NexusManager::Session {
             if (method == "POST" && (action == "groups" || action == "rename")) {
                 if (!target.at(action == "groups" ? "can_add_group" : "can_rename").get<bool>()) throw NexusError(403, "You do not have permission to change this group");
                 const auto name = body.at("name").get<std::string>();
-                if (name.empty() || name.size() > kMaxNameBytes || name.find_first_not_of(" \t\r\n") == std::string::npos) throw NexusError(400, "Enter a group name (up to 128 UTF-8 bytes)");
+                if (name.empty() || name.size() > kMaxNameBytes || name.find_first_not_of(" \t\r\n") == std::string::npos) throw NexusError(400, kMsgGroupName);
                 const auto result = action == "groups"
                     ? private_call("POST", "/api/tree/node", json{{"parent_id", id}, {"type", "customer"}, {"hostname", name}}.dump())
                     : private_call("POST", std::string(kTreeNodeApi) + "update/" + id, json{{"hostname", name}}.dump());
