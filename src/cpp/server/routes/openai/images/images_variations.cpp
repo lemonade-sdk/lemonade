@@ -93,6 +93,7 @@ protected:
     }
 
     void run(RouteRequest& req, httplib::Response& res) override {
+        auto cancel = cancel_on_disconnect(req);
         auto response = ctx_.router->image_variations(req.body);
         write_image_backend_response(response, res);
     }
