@@ -43,7 +43,8 @@ ClassifierServices make_classifier_services_from_router_calls(
 // Resolve CostInfo from optional typed per-million fields plus recognized
 // extras keys (cost_tier, cost_*_per_million, latency_ms_hint). Typed values
 // win when present; extras fill gaps. cost_tier must be one of
-// free|low|medium|high — other values are dropped. Used by the Router
+// free|low|medium|high — other values are dropped — and is ignored when a
+// typed price is present, since those come from the cloud provider. Used by the Router
 // CostServices wiring and unit tests — keeps ModelInfo out of this header's
 // include graph.
 CostInfo resolve_cost_info(std::optional<double> cost_input_per_million,

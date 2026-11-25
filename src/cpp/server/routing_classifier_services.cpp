@@ -625,7 +625,11 @@ CostInfo resolve_cost_info(std::optional<double> cost_input_per_million,
         out.cost_output_per_million = extras_get_nonneg(extras, kCostOutputPerMillionKey);
     }
 
-    const std::string tier = extras_get<std::string>(extras, kCostTierKey, "");
+    // A typed price comes from the cloud provider, and the provider's price
+    // wins: an entry's cost_tier "free" must not undercut it in cost_select.
+    const bool provider_priced = cost_input_per_million || cost_output_per_million;
+    const std::string tier =
+        provider_priced ? std::string() : extras_get<std::string>(extras, kCostTierKey, "");
     if (is_cost_tier(tier)) {
         out.cost_tier = tier;
     }

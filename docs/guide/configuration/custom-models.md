@@ -656,14 +656,15 @@ Four optional fields describe what a model costs to run:
 policy picks the model, the routing decision carries them as
 `outputs.estimated_cost` (see [Router API](../../api/router.md)). A policy with
 `routing.router.type: "cost_select"` also routes by them: it sends each request
-to the cheapest candidate, and a `cost_tier` of `"free"` always counts as the
-cheapest (see
+to the cheapest candidate, and a `cost_tier` of `"free"` counts as the
+cheapest unless the provider prices the model (see
 [cost-based routing](../../dev/router-policy.md#cost-based-routing-routingroutertype-cost_select)).
 The figures are yours, not a bill: Lemonade does not meter tokens or measure
 latency, and `latency_ms_hint` is reported only.
 
 Cloud models get their prices from the provider and need none of this. When a
-cloud model's entry also sets a price, the provider's price wins.
+cloud model's entry also sets a price or a `cost_tier`, the provider's price
+wins.
 
 A value Lemonade cannot use, such as a `cost_tier` outside the four bands or a
 price that is negative or not a number, is saved as given, logged as a warning
