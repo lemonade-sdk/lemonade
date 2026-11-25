@@ -50,7 +50,7 @@ int main() {
     std::string error;
 
     const auto listed = lemon_cli::mesh_devices(status);
-    check("the mesh port lists this device and every reachable inference device", listed.size() == 2);
+    check("the mesh port lists this device and every reachable Lemonade server", listed.size() == 2);
     check("the mesh port URLs are kept as lemond gives them",
           listed.size() == 2 && listed[1].url == "https://gaming-pc.g1.lo.example.io:13306" && !listed[1].self && listed[0].self);
 
@@ -70,7 +70,7 @@ int main() {
               error.find("Mac mini") != std::string::npos && error.find("offline") != std::string::npos &&
               error.find("Gaming PC (gpu00001)") != std::string::npos && error.find("Laptop") == std::string::npos);
     error.clear();
-    check("a member that is not an inference server is refused the same way",
+    check("a member that is not a Lemonade server is refused the same way",
           !lemon_cli::resolve_mesh_device(status, "phone001", device, error) && error.find("Phone") != std::string::npos);
     error.clear();
     check("an unknown name lists the devices that are available",

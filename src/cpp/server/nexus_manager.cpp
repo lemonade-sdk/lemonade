@@ -36,9 +36,88 @@
 namespace lemon {
 namespace {
 using json = nlohmann::json;
-// Nexus routes live under /v1 only. The /api/v1 prefix of the older routes is legacy and
-// new routes do not take it, so there is no alias.
+using namespace std::chrono_literals;
+// The /api/v1 prefix of the older routes is legacy and new routes do not take it, so
+// there is no alias.
 constexpr const char* nexus_prefix = "/v1/nexus/";
+constexpr const char* kLogTag = "Nexus";
+constexpr const char* kSdkLogTag = "Nexus SDK";
+constexpr const char* kJsonContentType = "application/json";
+constexpr const char* kEventStreamContentType = "text/event-stream";
+constexpr const char* kClientSessionHeader = "X-Client-Session-Id";
+constexpr const char* kPeerNodeHeader = "X-Nexus-Peer-Node";
+constexpr const char* kPeerKeyHeader = "X-Nexus-Peer-Key";
+constexpr const char* kPeerPermissionsHeader = "X-Nexus-Peer-Permissions";
+constexpr const char* kFamilyHeader = "X-Nexus-Family";
+constexpr const char* kCatalogVersionHeader = "X-Nexus-Catalog-Version";
+// Nexus virtual port behind which the SDK reaches lemond's API.
+constexpr uint16_t kMeshServicePort = 13305;
+constexpr int kDefaultServerPort = 9100;
+constexpr int kMaxPort = 65535;
+constexpr size_t kMaxNameBytes = 128;
+constexpr size_t kMaxHierarchyDepth = 128;
+constexpr size_t kMaxNodeIdLength = 256;
+constexpr size_t kAccountTagLength = 16;
+constexpr size_t kMaxRequestBodyBytes = 64 * 1024;
+constexpr size_t kMaxAvatarImageBytes = 128 * 1024;
+constexpr size_t kAvatarRequestEnvelopeBytes = 2048;
+// The largest integer a JavaScript client reads exactly.
+constexpr uint64_t kMaxSafeInteger = 9007199254740991ULL;
+constexpr const char* kPngDataUrlPrefix = "data:image/png;base64,";
+constexpr size_t kLinkTokenLength = 68;
+constexpr const char* kLinkTokenPrefix = "lnk_";
+constexpr size_t kInviteCodeDigits = 8;
+constexpr int kInviteTtlMinSeconds = 60;
+constexpr int kInviteTtlMaxSeconds = 600;
+constexpr size_t kMaxQueuedEvents = 128;
+constexpr std::chrono::seconds kRetryDelayInitial = 5s;
+constexpr std::chrono::seconds kRetryDelayMax = 60s;
+constexpr std::chrono::seconds kSessionDropRetryDelay = 1s;
+constexpr std::chrono::seconds kSupervisorPeriod = 5s;
+constexpr std::chrono::minutes kIdleLockAfter = 5min;
+constexpr time_t kMeshListenerReadTimeoutSeconds = 30;
+constexpr time_t kMeshListenerWriteTimeoutSeconds = 300;
+constexpr long kRelayStreamTimeoutSeconds = 300;
+// WebAuthn authenticator data: the flags byte follows the 32-byte RP ID hash, and
+// user presence (0x01) and user verification (0x04) must both be set.
+constexpr size_t kAuthenticatorDataMinBytes = 37;
+constexpr size_t kAuthenticatorFlagsOffset = 32;
+constexpr unsigned char kUserPresentAndVerified = 0x05;
+constexpr std::string_view kEd25519Prefix = "ed25519:";
+constexpr std::string_view kTreePathPrefix = "/tree/";
+constexpr std::string_view kMembershipsPathPrefix = "/memberships/";
+constexpr std::string_view kNodeIdParameter = "{node_id}";
+constexpr const char* kTreeNodeApi = "/api/tree/node/";
+constexpr const char* kTreeChildrenApi = "/api/tree/children/";
+constexpr const char* kAccountFile = "account.json";
+constexpr const char* kIdentityFile = "identity.json";
+constexpr const char* kDeviceKeyUnlock = "device_key";
+constexpr const char* kServicePermissionPrefix = "svc:";
+constexpr const char* kRoleAdministrator = "administrator";
+constexpr const char* kRoleAdmin = "admin";
+constexpr const char* kRoleModerator = "moderator";
+constexpr const char* kRoleUser = "user";
+constexpr const char* kRoleMember = "member";
+constexpr const char* kAdminPermission = "admin";
+constexpr const char* kReadPermission = "read";
+constexpr const char* kConnectPrivatePermission = "connect_private";
+constexpr const char* kEditNodePermission = "edit_node";
+constexpr const char* kMsgPermissionList = "Send permissions as a list of names";
+constexpr const char* kMsgUnlockFirst = "Unlock your network first";
+constexpr const char* kMsgJoinFirst = "Join the network first";
+constexpr const char* kMsgNotInGroup = "That device is not in your group";
+constexpr const char* kMsgChooseAnotherMember = "Choose another member of your group";
+constexpr const char* kMsgInvalidData = "The network returned invalid data";
+constexpr const char* kMsgDeviceName = "Enter a device name (up to 128 characters)";
+constexpr const char* kMsgName = "Enter a name of up to 128 characters";
+constexpr const char* kMsgInviteCode = "Enter an 8-digit code or a full invite token";
+constexpr const char* kMsgAccountChanged = "The account changed. Sign in again.";
+constexpr const char* kMsgOwnAccess = "You cannot change your own access";
+constexpr const char* kMsgCreatorAdministers = "The group creator always administers the group";
+constexpr const char* kMsgOnlyGroupAdmin = "Only a group admin can change member access";
+constexpr const char* kMsgUnknownTree = "Unknown tree operation";
+constexpr const char* kMsgUnknownNetwork = "Unknown network operation";
+constexpr const char* kMsgAvatarNotSaved = "Profile image could not be saved";
 struct NexusRoute {
     std::string method;
     std::string path;
@@ -70,9 +149,8 @@ const std::vector<NexusRoute>& nexus_routes() {
 bool local_address(const std::string& address) {
     return address == "127.0.0.1" || address == "::1" || address == "::ffff:127.0.0.1";
 }
-// Policy: a client on the local network (RFC 1918) is a local operator for Nexus. The
-// IPv6 front reports an IPv4 client as an IPv4-mapped address, so that form is unwrapped
-// first; any other IPv6 address is not private here.
+// A client on the local network (RFC 1918) is a local operator for Nexus. The IPv6
+// front reports an IPv4 client as an IPv4-mapped address, so that form is unwrapped first.
 bool private_network_address(const std::string& address) {
     if (local_address(address)) return true;
     std::string ipv4 = address;
@@ -139,10 +217,14 @@ json find_member(const json& members, const std::string& node_id) {
     }
     return nullptr;
 }
-void reply_error(httplib::Response& res, int status, const std::string& message) {
-    res.set_header("Cache-Control", "no-store");
+void disable_caching(httplib::Response& res) { res.set_header("Cache-Control", "no-store"); }
+void reply_json(httplib::Response& res, int status, const json& body) {
+    disable_caching(res);
     res.status = status;
-    res.set_content(json{{"error", message}}.dump(), "application/json");
+    res.set_content(body.dump(), kJsonContentType);
+}
+void reply_error(httplib::Response& res, int status, const std::string& message) {
+    reply_json(res, status, json{{"error", message}});
 }
 
 std::string multipart_body(const httplib::MultipartFormData& form, const std::string& boundary) {
@@ -163,8 +245,7 @@ std::string multipart_body(const httplib::MultipartFormData& form, const std::st
 // Bridges a streamed peer reply to the client. The peer request runs on its own thread
 // so the route handler learns the peer's status before httplib commits the response:
 // a refusal before the first body byte keeps its status and JSON body, and a failure
-// after that becomes one SSE error event. One chunk is in flight at a time, so a slow
-// client slows the transfer instead of buffering it.
+// after that becomes one SSE error event.
 class RelayStream {
 public:
     ~RelayStream() { abandon(); }
@@ -252,7 +333,7 @@ private:
         int status = 0;
         try {
             const auto result = utils::HttpClient::post_stream(url, body,
-                [this](const char* data, size_t length) { return push(data, length); }, headers, 300,
+                [this](const char* data, size_t length) { return push(data, length); }, headers, kRelayStreamTimeoutSeconds,
                 [this, &response_headers](int code) { announce(code, response_headers); },
                 utils::HttpSecurityPolicy::TrustedLoopback, [this] { return client_gone(); }, &response_headers);
             status = result.status_code;
@@ -297,7 +378,7 @@ const std::vector<std::string> kPermissions = {"read", "write", "add_child", "ed
 bool same_key(const std::string& a, const std::string& b) {
     // The federation accepts either base64 spelling of a key, with or without the ed25519: prefix.
     const auto canonical = [](std::string key) {
-        if (key.rfind("ed25519:", 0) == 0) key.erase(0, 8);
+        if (key.rfind(kEd25519Prefix, 0) == 0) key.erase(0, kEd25519Prefix.size());
         std::replace(key.begin(), key.end(), '-', '+');
         std::replace(key.begin(), key.end(), '_', '/');
         while (!key.empty() && key.back() == '=') key.pop_back();
@@ -308,7 +389,7 @@ bool same_key(const std::string& a, const std::string& b) {
 }
 
 bool grants(const json& permissions, const std::string& permission) {
-    return contains(permissions, permission) || contains(permissions, "admin");
+    return contains(permissions, permission) || contains(permissions, kAdminPermission);
 }
 
 json account_summary(const json& members, const std::string& group_id,
@@ -318,19 +399,19 @@ json account_summary(const json& members, const std::string& group_id,
         throw NexusError(409, "Account membership could not be verified. Refresh the network and try again.");
     }
     const auto permissions = self.value("permissions", json::array());
-    const auto moderator = role_permissions("moderator");
+    const auto moderator = role_permissions(kRoleModerator);
     // Until Nexus stores named roles, only the complete preset identifies a moderator.
     const bool is_moderator = std::all_of(moderator.begin(), moderator.end(),
         [&](const json& permission) { return contains(permissions, permission.get<std::string>()); });
     return {{"id", group_id}, {"member_id", identity_id}, {"device_node_id", node_id},
-        {"role", self.value("is_admin", false) ? "admin" : is_moderator ? "moderator" : "user"}};
+        {"role", self.value("is_admin", false) ? kRoleAdmin : is_moderator ? kRoleModerator : kRoleUser}};
 }
 
 json account_avatar(const json& value, const std::string& group_id) {
     if (!value.is_object() || value.value("group_id", json()) != group_id ||
         !value.contains("revision") || !value["revision"].is_number_integer() ||
         (!value["revision"].is_number_unsigned() && value["revision"].get<int64_t>() < 0) ||
-        value["revision"].get<uint64_t>() > 9007199254740991ULL ||
+        value["revision"].get<uint64_t>() > kMaxSafeInteger ||
         !value.contains("image") || (!value["image"].is_null() && !value["image"].is_string()) ||
         !value.contains("can_write") || !value["can_write"].is_boolean() ||
         (value.contains("pending") && (!value["pending"].is_boolean() ||
@@ -339,7 +420,7 @@ json account_avatar(const json& value, const std::string& group_id) {
     }
     if (value["image"].is_string()) {
         const auto& image = value["image"].get_ref<const std::string&>();
-        if (image.size() > 128 * 1024 || image.rfind("data:image/png;base64,", 0) != 0) {
+        if (image.size() > kMaxAvatarImageBytes || image.rfind(kPngDataUrlPrefix, 0) != 0) {
             throw NexusError(502, "The network returned an invalid profile image");
         }
     }
@@ -357,8 +438,8 @@ json tree_path(const std::string& id, const std::vector<std::string>& root_ids,
     json path = json::array();
     std::set<std::string> visited;
     auto current = id;
-    while (!current.empty() && visited.size() < 128) {
-        if (current.size() > 256 || current.find_first_not_of("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-") != std::string::npos || !visited.insert(current).second) {
+    while (!current.empty() && visited.size() < kMaxHierarchyDepth) {
+        if (current.size() > kMaxNodeIdLength || current.find_first_not_of("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-") != std::string::npos || !visited.insert(current).second) {
             throw NexusError(400, "Invalid group hierarchy");
         }
         auto node = fetch(current);
@@ -376,27 +457,27 @@ json tree_path(const std::string& id, const std::vector<std::string>& root_ids,
 const std::vector<std::string> kFamilies = {"inference", "mcp", "models_manage", "backends", "jobs", "internal", "system", "management"};
 
 bool service_permission(const std::string& name) {
-    static const std::string prefix = "svc:";
+    static const std::string prefix = kServicePermissionPrefix;
     return name.size() > prefix.size() && name.compare(0, prefix.size(), prefix) == 0 &&
         valid_route_family(name.substr(prefix.size()));
 }
 
 json role_permissions(const std::string& role) {
     const auto with_families = [](json names, std::initializer_list<const char*> families) {
-        for (const char* family : families) names.push_back(std::string("svc:") + family);
+        for (const char* family : families) names.push_back(std::string(kServicePermissionPrefix) + family);
         return names;
     };
-    if (role == "administrator" || role == "admin") {
-        json names = json::array({"read", "connect_private", "admin"});
-        for (const auto& family : kFamilies) names.push_back("svc:" + family);
+    if (role == kRoleAdministrator || role == kRoleAdmin) {
+        json names = json::array({kReadPermission, kConnectPrivatePermission, kAdminPermission});
+        for (const auto& family : kFamilies) names.push_back(kServicePermissionPrefix + family);
         return ordered(names);
     }
-    if (role == "moderator") {
-        return ordered(with_families(json::array({"read", "write", "add_child", "connect_private"}),
+    if (role == kRoleModerator) {
+        return ordered(with_families(json::array({kReadPermission, "write", "add_child", kConnectPrivatePermission}),
             {"inference", "mcp", "models_manage", "jobs"}));
     }
-    if (role == "user" || role == "member") {
-        return ordered(with_families(json::array({"read", "connect_private"}), {"inference"}));
+    if (role == kRoleUser || role == kRoleMember) {
+        return ordered(with_families(json::array({kReadPermission, kConnectPrivatePermission}), {"inference"}));
     }
     throw NexusError(400, "Choose the administrator, moderator or user role");
 }
@@ -406,12 +487,12 @@ json invite_permissions(const json& requested) {
     // The federation refuses any other tree name in an invite; svc: names pass through
     // and the federation reduces them to what the inviter holds.
     static const std::vector<std::string> grantable = {"read", "write", "add_child", "connect_private", "connect_shared"};
-    if (!requested.is_array() || requested.empty()) throw NexusError(400, "Send permissions as a list of names");
+    if (!requested.is_array() || requested.empty()) throw NexusError(400, kMsgPermissionList);
     json result = json::array();
     for (const auto& name : requested) {
-        if (!name.is_string()) throw NexusError(400, "Send permissions as a list of names");
+        if (!name.is_string()) throw NexusError(400, kMsgPermissionList);
         const auto value = name.get<std::string>();
-        if (value == "admin") throw NexusError(400, "An invite cannot grant admin. Change the member's role after it joins.");
+        if (value == kAdminPermission) throw NexusError(400, "An invite cannot grant admin. Change the member's role after it joins.");
         if (std::find(grantable.begin(), grantable.end(), value) == grantable.end() && !service_permission(value)) {
             throw NexusError(400, "An invite cannot grant this permission: " + value);
         }
@@ -436,13 +517,19 @@ std::optional<bool> load_pin_request(bool mesh_peer, const json& pinned, RecipeO
 }
 
 const unsigned kCatalogRevision = 2;
+namespace {
+constexpr size_t kVersionPartDigits = 6;
+constexpr uint64_t kVersionPartMax = 999;
+constexpr uint64_t kVersionPartSpace = 1000;
+constexpr uint64_t kCatalogRevisionSpace = 100;
+}
 
 uint64_t catalog_version(const std::string& lemond_version) {
     uint64_t parts[3] = {0, 0, 0};
     size_t pos = 0;
     for (auto& part : parts) {
         const auto start = pos;
-        while (pos < lemond_version.size() && lemond_version[pos] >= '0' && lemond_version[pos] <= '9' && pos - start < 6) {
+        while (pos < lemond_version.size() && lemond_version[pos] >= '0' && lemond_version[pos] <= '9' && pos - start < kVersionPartDigits) {
             part = part * 10 + static_cast<uint64_t>(lemond_version[pos] - '0');
             ++pos;
         }
@@ -452,8 +539,8 @@ uint64_t catalog_version(const std::string& lemond_version) {
             ++pos;
         }
     }
-    if (parts[1] > 999 || parts[2] > 999) return 0;
-    return ((parts[0] * 1000 + parts[1]) * 1000 + parts[2]) * 100 + kCatalogRevision;
+    if (parts[1] > kVersionPartMax || parts[2] > kVersionPartMax) return 0;
+    return ((parts[0] * kVersionPartSpace + parts[1]) * kVersionPartSpace + parts[2]) * kCatalogRevisionSpace + kCatalogRevision;
 }
 
 namespace {
@@ -496,9 +583,7 @@ void for_each_catalog_claim(const nlohmann::ordered_json& routes,
 
 nlohmann::ordered_json service_catalog(const nlohmann::ordered_json& routes, const std::string& lemond_version) {
     // The SDK refuses a catalog that lists one method and URL twice, even within a
-    // family, so every claim appears once: repeats of a prefix (several {id} routes
-    // under one collection) or of a path collapse, and an exact path that equals a
-    // prefix of the same family and method is already covered by that prefix.
+    // family, so every claim appears once.
     std::set<std::string> prefixes;  // "family METHOD prefix"
     for_each_catalog_claim(routes, [&](const std::string& family, const std::string&, const std::string& method, const CatalogClaim& claim) {
         if (!claim.exact) prefixes.insert(family + " " + method + " " + claim.url);
@@ -518,7 +603,7 @@ nlohmann::ordered_json service_catalog(const nlohmann::ordered_json& routes, con
     const auto flush = [&] {
         if (!current_methods.empty()) {
             family_routes(current_family).push_back({{"methods", current_methods},
-                {current_key.compare(0, 5, "path ") == 0 ? "path" : "prefix", current_key.substr(current_key.find(' ') + 1)}});
+                {current_key.rfind("path ", 0) == 0 ? "path" : "prefix", current_key.substr(current_key.find(' ') + 1)}});
         }
         current_methods = nlohmann::ordered_json::array();
     };
@@ -573,8 +658,8 @@ std::string ingress_denied_log_line(const json& event) {
         field("catalog_version", 32) + ")";
 }
 
-const std::vector<std::string> kPeerHeaders = {"X-Nexus-Peer-Node", "X-Nexus-Peer-Key", "X-Nexus-Peer-Permissions",
-    "X-Nexus-Family", "X-Nexus-Catalog-Version"};
+const std::vector<std::string> kPeerHeaders = {kPeerNodeHeader, kPeerKeyHeader, kPeerPermissionsHeader, kFamilyHeader,
+    kCatalogVersionHeader};
 
 namespace {
 thread_local PeerContext g_request_peer;
@@ -583,8 +668,8 @@ thread_local PeerContext g_request_peer;
 void accept_peer_headers(httplib::Request& req, bool mesh_ingress) {
     g_request_peer = PeerContext{};
     if (mesh_ingress) {
-        g_request_peer.node_id = req.get_header_value("X-Nexus-Peer-Node");
-        g_request_peer.family = req.get_header_value("X-Nexus-Family");
+        g_request_peer.node_id = req.get_header_value(kPeerNodeHeader);
+        g_request_peer.family = req.get_header_value(kFamilyHeader);
         return;
     }
     for (const auto& name : kPeerHeaders) req.headers.erase(name);
@@ -596,9 +681,10 @@ const PeerContext& request_peer() {
 bool request_from_mesh_peer() { return !request_peer().node_id.empty(); }
 
 bool invite_code(const std::string& code) {
-    const bool full_token = code.size() == 68 && code.rfind("lnk_", 0) == 0 &&
-        code.substr(4).find_first_not_of("0123456789abcdef") == std::string::npos;
-    return full_token || (code.size() == 8 && code.find_first_not_of("0123456789") == std::string::npos);
+    const std::string_view prefix = kLinkTokenPrefix;
+    const bool full_token = code.size() == kLinkTokenLength && code.rfind(prefix, 0) == 0 &&
+        code.substr(prefix.size()).find_first_not_of("0123456789abcdef") == std::string::npos;
+    return full_token || (code.size() == kInviteCodeDigits && code.find_first_not_of("0123456789") == std::string::npos);
 }
 
 json tree_entry(const json& node, const std::string& self_key, bool ancestor_admin) {
@@ -606,14 +692,14 @@ json tree_entry(const json& node, const std::string& self_key, bool ancestor_adm
     const bool group = type == "customer" || type == "root";
     const auto assignments = node.value("assignments", json::array());
     const auto permissions = permissions_for(assignments, self_key);
-    const bool admin = ancestor_admin || contains(permissions, "admin");
-    const bool access_known = grants(permissions, "edit_node");
+    const bool admin = ancestor_admin || contains(permissions, kAdminPermission);
+    const bool access_known = grants(permissions, kEditNodePermission);
     return {{"id", text(node, "id")}, {"parent_id", text(node, "parent_id")},
         {"name", text(node, "hostname")}, {"kind", group ? "group" : "node"},
         {"node_type", type}, {"tunnel_ip", text(node, "tunnel_ip")},
         {"is_inference", flag(node, "is_inference")}, {"management_pubkey", text(node, "mgmt_pubkey")},
         {"permissions", permissions}, {"can_add_group", group && (admin || grants(permissions, "add_child"))},
-        {"can_rename", group && (admin || grants(permissions, "edit_node"))},
+        {"can_rename", group && (admin || grants(permissions, kEditNodePermission))},
         {"can_manage", group && admin && access_known}, {"access_known", access_known}, {"is_admin", admin},
         {"assignments", access_known ? assignments : json::array()}};
 }
@@ -623,7 +709,7 @@ json merge_members(const json& group, const json& children, const json& peers,
                    const json& network) {
     const auto group_acl = group.value("assignments", json::array());
     // The federation returns a node's full assignment list only to callers with edit_node on it.
-    const bool group_acl_known = grants(permissions_for(group_acl, self_key), "edit_node");
+    const bool group_acl_known = grants(permissions_for(group_acl, self_key), kEditNodePermission);
     const auto creator = text(group, "mgmt_pubkey");
     const auto network_entry = [&](const std::string& id) {
         if (network.is_array()) {
@@ -678,7 +764,7 @@ json merge_members(const json& group, const json& children, const json& peers,
         const bool owner = same_key(key, creator);
         const auto device_acl = child.value("assignments", json::array());
         const auto own_device = permissions_for(device_acl, self_key);
-        const bool access_known = grants(own_device, "edit_node");
+        const bool access_known = grants(own_device, kEditNodePermission);
         json access = json::array();
         if (access_known && device_acl.is_array()) {
             for (const auto& entry : device_acl) {
@@ -687,14 +773,13 @@ json merge_members(const json& group, const json& children, const json& peers,
                     {"permissions", string_list(entry.value("permissions", json::array()))}});
             }
         }
-        const bool is_inference = flag(child, "is_inference");
         const auto peer = peer_entry(id);
         const auto listed_device = network_entry(id);
         members.push_back({{"node_id", id}, {"device_name", text(child, "hostname")},
             {"tunnel_ip", text(child, "tunnel_ip")}, {"management_pubkey", key},
             {"permissions", ordered(permissions)}, {"permissions_known", permissions_known},
-            {"is_admin", permissions_known ? contains(permissions, "admin") : owner}, {"is_owner", owner},
-            {"is_inference", is_inference}, {"tier", is_inference ? 3 : 4},
+            {"is_admin", permissions_known ? contains(permissions, kAdminPermission) : owner}, {"is_owner", owner},
+            {"is_inference", flag(child, "is_inference")},
             {"access", access}, {"access_known", access_known},
             {"can_remove", !self && grants(own_device, "delete_node")},
             {"is_online", self || flag(peer, "is_online")},
@@ -711,14 +796,13 @@ json merge_members(const json& group, const json& children, const json& peers,
             if (!device.is_object()) continue;
             const auto id = text(device, "node_id");
             if (id.empty() || id == self_node_id || !listed.insert(id).second) continue;
-            const bool is_inference = flag(device, "is_inference");
             const auto peer = peer_entry(id);
             const auto role = text(device, "group_role");
             members.push_back({{"node_id", id}, {"device_name", text(device, "device_name")},
                 {"tunnel_ip", text(device, "tunnel_ip")}, {"management_pubkey", text(device, "mgmt_pubkey")},
                 {"permissions", json::array()}, {"permissions_known", false},
                 {"is_admin", flag(device, "admin")}, {"is_owner", false},
-                {"is_inference", is_inference}, {"tier", is_inference ? 3 : 4},
+                {"is_inference", flag(device, "is_inference")},
                 {"access", json::array()}, {"access_known", false},
                 {"can_remove", false},
                 {"is_online", flag(peer, "is_online")},
@@ -744,42 +828,42 @@ json device_access(const json& members, const std::string& device_id, const std:
         if (id == device_id || id == self_node_id) continue;
         const auto permissions = permissions_for(target.value("access", json::array()), member.value("management_pubkey", ""));
         rows.push_back({{"node_id", id}, {"device_name", member.value("device_name", "")},
-            {"is_admin", member.value("is_admin", false)}, {"tier", member.value("tier", 4)},
-            {"see", grants(permissions, "read")}, {"connect", grants(permissions, "connect_private")},
-            {"editable", can_manage && access_known && !contains(permissions, "admin")}});
+            {"is_admin", member.value("is_admin", false)},
+            {"see", grants(permissions, kReadPermission)}, {"connect", grants(permissions, kConnectPrivatePermission)},
+            {"editable", can_manage && access_known && !contains(permissions, kAdminPermission)}});
     }
     return {{"node_id", device_id}, {"device_name", target.value("device_name", "")},
         {"access_known", access_known}, {"can_manage", can_manage}, {"members", rows}};
 }
 
 json group_permissions(const json& requested, bool admin) {
-    if (!requested.is_array()) throw NexusError(400, "Send permissions as a list of names");
-    json result = json::array({"read"});
+    if (!requested.is_array()) throw NexusError(400, kMsgPermissionList);
+    json result = json::array({kReadPermission});
     for (const auto& name : requested) {
-        if (!name.is_string()) throw NexusError(400, "Send permissions as a list of names");
+        if (!name.is_string()) throw NexusError(400, kMsgPermissionList);
         const auto value = name.get<std::string>();
-        if (value == "admin") throw NexusError(400, "Change the member's role to grant or remove admin");
+        if (value == kAdminPermission) throw NexusError(400, "Change the member's role to grant or remove admin");
         if (std::find(kPermissions.begin(), kPermissions.end(), value) == kPermissions.end() && !service_permission(value)) {
             throw NexusError(400, "Unknown permission: " + value);
         }
         if (!contains(result, value)) result.push_back(value);
     }
-    if (admin) result.push_back("admin");
+    if (admin) result.push_back(kAdminPermission);
     return ordered(result);
 }
 
 json device_permissions(const json& current, bool see, bool connect) {
     json result = json::array();
     for (const auto& name : string_list(current)) {
-        if (name != "read" && name != "connect_private") result.push_back(name);
+        if (name != kReadPermission && name != kConnectPrivatePermission) result.push_back(name);
     }
-    if (see || connect) result.push_back("read");
-    if (connect) result.push_back("connect_private");
+    if (see || connect) result.push_back(kReadPermission);
+    if (connect) result.push_back(kConnectPrivatePermission);
     return ordered(result);
 }
 
 std::pair<int, std::string> assignment_error(const std::string& reason) {
-    if (reason.find("only an admin") != std::string::npos) return {403, "Only a group admin can change member access"};
+    if (reason.find("only an admin") != std::string::npos) return {403, kMsgOnlyGroupAdmin};
     if (reason.find("cannot change its own entry") != std::string::npos) return {403, "You cannot change your own admin access"};
     if (reason.find("has not joined") != std::string::npos) return {403, "That device has not joined your group"};
     if (reason.rfind("unknown permission", 0) == 0) return {400, "The network does not recognize that permission"};
@@ -839,12 +923,12 @@ const char* identity_source_name(IdentitySource source) {
 
 std::string account_file_tag(const std::string& pubkey) {
     auto key = pubkey;
-    if (key.rfind("ed25519:", 0) == 0) key.erase(0, 8);
+    if (key.rfind(kEd25519Prefix, 0) == 0) key.erase(0, kEd25519Prefix.size());
     std::replace(key.begin(), key.end(), '+', '-');
     std::replace(key.begin(), key.end(), '/', '_');
     while (!key.empty() && key.back() == '=') key.pop_back();
     if (key.find_first_not_of("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_") != std::string::npos) return "";
-    return key.substr(0, 16);
+    return key.substr(0, kAccountTagLength);
 }
 
 json account_for_key(const json& previous, const json& archived, const std::string& pubkey) {
@@ -927,7 +1011,7 @@ bool administers_tree(const json& path, const std::string& key) {
     for (const auto& node : path) {
         for (const auto& entry : node.value("assignments", json::array())) {
             if (same_key(text(entry, "management_pubkey"), key) &&
-                contains(entry.value("permissions", json::array()), "admin")) return true;
+                contains(entry.value("permissions", json::array()), kAdminPermission)) return true;
         }
     }
     return false;
@@ -938,10 +1022,10 @@ std::pair<int, std::string> service_access(const json& permissions, const std::s
     if (std::find(kFamilies.begin(), kFamilies.end(), family) == kFamilies.end()) {
         return {403, "Unknown Nexus service family"};
     }
-    if (!grants(permissions, "connect_private") || !grants(permissions, "svc:" + family)) {
+    if (!grants(permissions, kConnectPrivatePermission) || !grants(permissions, kServicePermissionPrefix + family)) {
         return {403, "This Nexus caller lacks connection or service permission"};
     }
-    if (management && (family != "management" || !contains(permissions, "admin"))) {
+    if (management && (family != "management" || !contains(permissions, kAdminPermission))) {
         return {403, "Nexus administration requires an administrator"};
     }
     return {0, ""};
@@ -950,7 +1034,7 @@ std::pair<int, std::string> service_access(const json& permissions, const std::s
 
 json route_permissions(const nlohmann::ordered_json& routes) {
     json result = {{"roles", json::array()}, {"routes", json::array()}};
-    for (const auto* role : {"admin", "moderator", "user"}) {
+    for (const auto* role : {kRoleAdmin, kRoleModerator, kRoleUser}) {
         result["roles"].push_back({{"id", role}, {"permissions", role_permissions(role)}});
     }
     const auto append = [&](const std::string& family, const std::string& method, const json& paths, bool management) {
@@ -989,9 +1073,9 @@ std::pair<int, std::string> mesh_request_access(const httplib::Request& req, boo
             return {403, "A verified Nexus caller identity is required"};
         }
     }
-    const auto family = req.get_header_value("X-Nexus-Family");
+    const auto family = req.get_header_value(kFamilyHeader);
     json permissions = json::array();
-    const auto names = req.get_header_value("X-Nexus-Peer-Permissions");
+    const auto names = req.get_header_value(kPeerPermissionsHeader);
     size_t start = 0;
     while (start < names.size()) {
         const auto end = names.find(',', start);
@@ -1021,8 +1105,8 @@ const char* const kPeerAuthorizationHeader = "X-Lemonade-Peer-Authorization";
 std::pair<int, std::string> relay_target(const json& members, const std::string& self_node_id, const std::string& node_id) {
     if (node_id == self_node_id) return {400, "Use this device directly instead of relaying to it"};
     const auto target = find_member(members, node_id);
-    if (target.is_null()) return {404, "That device is not in your group"};
-    if (!target.value("is_inference", false)) return {409, "That device is not an inference server"};
+    if (target.is_null()) return {404, kMsgNotInGroup};
+    if (!target.value("is_inference", false)) return {409, "That device is not a Lemonade server"};
     // The federation forwards mesh packets only between devices that may connect, so a
     // refused device would also time out; the clear refusal comes first. Without the
     // network list the flag is unknown and the online state decides.
@@ -1038,27 +1122,24 @@ std::pair<int, std::string> relay_target(const json& members, const std::string&
 
 namespace {
 // The GUI aborts a host GET at 35 s, so a stalled health or models poll must not hold a
-// lemond worker for the client's 300 s default. A POST such as a model load answers only
-// once the work is done: a large model takes minutes to load, and the CLI waits a day
-// for a local load. The relay waits an hour, which also releases the worker of a
-// transport that died without a close.
+// lemond worker for the client's 300 s default. A large model takes minutes to load, so
+// the relay waits an hour, which also releases the worker of a transport that died
+// without a close.
 constexpr long kRelayGetTimeoutSeconds = 30;
 constexpr long kRelayPostTimeoutSeconds = 3600;
 
-// A request that found no answer repeats after these waits before the client hears
-// "cannot reach". The first request over a fresh mesh path, as right after lemond or the
-// device started, often meets a connection that is still forming. The last repeat runs
-// over a new mesh bridge: one whose connections failed this often is dead, for example
-// after its mesh path changed, and the SDK's own mesh port replaces such a bridge too.
+// The first request over a fresh mesh path, as right after lemond or the device started,
+// often meets a connection that is still forming. The last repeat runs over a new mesh
+// bridge: one whose connections failed this often is dead, for example after its mesh
+// path changed.
 constexpr std::array<int, 3> kRelayRetryDelaysMs{1000, 2000, 3000};
 
 void relay_failed(httplib::Response& res, const std::string& node_id, const std::string& method, const std::string& path,
                   const RelayFailure& failure) {
-    LOG(WARNING, "Nexus") << "Relay to " << node_id << " failed: " << method << " " << path.substr(0, path.find('?'))
+    LOG(WARNING, kLogTag) << "Relay to " << node_id << " failed: " << method << " " << path.substr(0, path.find('?'))
                           << ": " << failure.detail << std::endl;
-    res.set_header("Cache-Control", "no-store");
     res.status = failure.status;
-    res.set_content(json{{"error", failure.error}, {"detail", failure.detail}}.dump(), "application/json");
+    res.set_content(json{{"error", failure.error}, {"detail", failure.detail}}.dump(), kJsonContentType);
 }
 }
 
@@ -1084,8 +1165,8 @@ void relay_http(uint16_t port, const std::string& node_id, const std::string& pa
                 const std::string& peer_authorization, const std::string& request_body, const std::function<uint16_t()>& reopen) {
     std::map<std::string, std::string> headers;
     if (!peer_authorization.empty()) headers["Authorization"] = peer_authorization;
-    if (req.has_header("X-Client-Session-Id")) headers["X-Client-Session-Id"] = req.get_header_value("X-Client-Session-Id");
-    res.set_header("Cache-Control", "no-store");
+    if (req.has_header(kClientSessionHeader)) headers[kClientSessionHeader] = req.get_header_value(kClientSessionHeader);
+    disable_caching(res);
     const bool read = req.method == "GET";
     const long timeout = read ? kRelayGetTimeoutSeconds : kRelayPostTimeoutSeconds;
     auto body = request_body;
@@ -1097,23 +1178,22 @@ void relay_http(uint16_t port, const std::string& node_id, const std::string& pa
             headers["Content-Type"] = "multipart/form-data; boundary=" + boundary;
             body = multipart_body(req.form, boundary);
         } else {
-            headers["Content-Type"] = req.has_header("Content-Type") ? req.get_header_value("Content-Type") : "application/json";
+            headers["Content-Type"] = req.has_header("Content-Type") ? req.get_header_value("Content-Type") : kJsonContentType;
         }
         const auto request = json::parse(body, nullptr, false);
         streamed = request.is_object() && request.value("stream", false);
     }
     // A request whose connection was refused, reset or closed before any answer never
     // reached the device's server, or that server closed before it read the request;
-    // a read and a POST (a model load, a chat) are both repeated then. A POST the
-    // device answered, even with an error, runs once.
+    // a read and a POST (a model load, a chat) are both repeated then.
     for (size_t attempt = 0;; ++attempt) {
-        const auto url = "http://127.0.0.1:" + std::to_string(port) + path;
+        const auto url = nexus_user_key::loopback_url(port) + path;
         RelayFailure failure;
         try {
             if (read) {
                 const auto reply = utils::HttpClient::get(url, headers, timeout, utils::HttpSecurityPolicy::TrustedLoopback);
                 res.status = reply.status_code;
-                res.set_content(reply.body, "application/json");
+                res.set_content(reply.body, kJsonContentType);
                 return;
             }
             if (streamed) {
@@ -1125,10 +1205,10 @@ void relay_http(uint16_t port, const std::string& node_id, const std::string& pa
                 if (status != 0) {
                     if (status < 200 || status >= 300) {
                         res.status = status;
-                        res.set_content(reply, type.empty() ? "application/json" : type);
+                        res.set_content(reply, type.empty() ? kJsonContentType : type);
                         return;
                     }
-                    res.set_chunked_content_provider(type.empty() ? "text/event-stream" : type,
+                    res.set_chunked_content_provider(type.empty() ? kEventStreamContentType : type,
                         [stream](size_t, httplib::DataSink& sink) { return stream->pull(sink); },
                         [stream](bool) { stream->abandon(); });
                     return;
@@ -1138,7 +1218,7 @@ void relay_http(uint16_t port, const std::string& node_id, const std::string& pa
                 const auto reply = utils::HttpClient::post(url, body, headers, timeout, utils::HttpSecurityPolicy::TrustedLoopback);
                 const auto type = reply.headers.find("content-type");
                 res.status = reply.status_code;
-                res.set_content(reply.body, type != reply.headers.end() ? type->second : "application/json");
+                res.set_content(reply.body, type != reply.headers.end() ? type->second : kJsonContentType);
                 return;
             }
         } catch (const utils::HttpClientException& e) {
@@ -1150,12 +1230,12 @@ void relay_http(uint16_t port, const std::string& node_id, const std::string& pa
             relay_failed(res, node_id, req.method, path, failure);
             return;
         }
-        LOG(INFO, "Nexus") << "Relay to " << node_id << " found no answer (" << failure.detail << "); trying again in "
+        LOG(INFO, kLogTag) << "Relay to " << node_id << " found no answer (" << failure.detail << "); trying again in "
                            << kRelayRetryDelaysMs[attempt] << " ms" << std::endl;
         std::this_thread::sleep_for(std::chrono::milliseconds(kRelayRetryDelaysMs[attempt]));
         if (attempt + 1 == kRelayRetryDelaysMs.size() && reopen) {
             if (const auto fresh = reopen(); fresh != 0) {
-                LOG(INFO, "Nexus") << "Relay to " << node_id << " continues over a new mesh bridge" << std::endl;
+                LOG(INFO, kLogTag) << "Relay to " << node_id << " continues over a new mesh bridge" << std::endl;
                 port = fresh;
             }
         }
@@ -1215,7 +1295,7 @@ json sdk_call(const std::function<ln_error_t(char**)>& operation, int rejected_s
     const auto code = operation(&output);
     std::unique_ptr<char, decltype(&ln_free)> owned(output, ln_free);
     auto value = output ? json::parse(output, nullptr, false) : json::object();
-    if (value.is_discarded()) throw NexusError(502, "The network returned invalid data");
+    if (value.is_discarded()) throw NexusError(502, kMsgInvalidData);
     if (code != LN_OK) {
         const auto failure = nexus_access::sdk_failure(code, value, rejected_status);
         NexusError error(failure.status, failure.message, failure.retryable);
@@ -1238,7 +1318,7 @@ struct NexusManager::Session {
     std::unique_ptr<ln_handoff_t, decltype(&ln_identity_handoff_destroy)> handoff{nullptr, ln_identity_handoff_destroy};
     json identity_store = nullptr;  // the SDK's user store status at the last load attempt (User only)
     std::chrono::steady_clock::time_point store_retry_at{};
-    std::chrono::seconds store_retry_delay{5};
+    std::chrono::seconds store_retry_delay{kRetryDelayInitial};
     std::filesystem::path root;
     int ingress_port;
     int local_service_port;
@@ -1252,15 +1332,15 @@ struct NexusManager::Session {
     bool reconnect{false};
     bool avatar_configured{false};
     std::chrono::steady_clock::time_point retry_at{};
-    std::chrono::seconds retry_delay{5};
+    std::chrono::seconds retry_delay{kRetryDelayInitial};
     std::map<std::string, std::string> egress_ips;
     std::string node_id;
     std::string group_id;
     std::string tunnel_ip;
-    std::string domain{"lemonade-nexus.io"};  // network DNS domain
-    std::string region{"us-west"};            // SEIP region label
-    std::string host;                         // bootstrap server: configured, remembered, or discovered
-    std::string rp_id;                        // configured, else the network's own value from /api/health
+    std::string domain{"lemonade-nexus.io"};
+    std::string region{"us-west"};  // SEIP region label
+    std::string host;               // bootstrap server: configured, remembered, or discovered
+    std::string rp_id;              // configured, else the network's own value from /api/health
     std::string pubkey;
     std::string revoked_pubkey;  // the key the network revoked, until another key is in use
     std::string detail{"locked"};
@@ -1282,7 +1362,7 @@ struct NexusManager::Session {
 #ifndef _WIN32
         std::filesystem::permissions(root, std::filesystem::perms::owner_all);
 #endif
-        std::ifstream input(root / "account.json");
+        std::ifstream input(root / kAccountFile);
         if (input) {
             auto saved = json::parse(input, nullptr, false);
             if (!saved.is_object()) throw NexusError(500, "Device account is invalid; restore account.json");
@@ -1293,14 +1373,12 @@ struct NexusManager::Session {
         if (const auto value = utils::get_environment_variable_utf8("LEMONADE_NEXUS_REGION"); !value.empty()) region = value;
         if (const auto value = utils::get_environment_variable_utf8("LEMONADE_NEXUS_SERVER"); !value.empty()) host = value;
         if (const auto value = utils::get_environment_variable_utf8("LEMONADE_NEXUS_RP_ID"); !value.empty()) rp_id = value;
-        int public_port = 9100;
+        int public_port = kDefaultServerPort;
         const auto configured_port = utils::get_environment_variable_utf8("LEMONADE_NEXUS_PORT");
         if (!configured_port.empty()) public_port = std::stoi(configured_port);
-        if (public_port < 1 || public_port > 65535) throw NexusError(400, "Invalid Nexus server port");
+        if (public_port < 1 || public_port > kMaxPort) throw NexusError(400, "Invalid Nexus server port");
         // The servers' certificates name their own FQDNs, not the network apex, so
         // without a configured host the bootstrap server comes from DNS discovery.
-        // The first discovered name is remembered, so later starts need no network
-        // before the SDK's own verified directory takes over.
         if (host.empty()) host = account.value("server", std::string{});
         if (host.empty()) {
             char* out = nullptr;
@@ -1323,12 +1401,12 @@ struct NexusManager::Session {
         // The region's SEIP records give the SDK more candidate servers for Genesis key
         // discovery and Tier 1 refresh when it knows fewer than three hosts.
         if (const auto code = ln_set_discovery_target(client.get(), domain.c_str(), region.c_str()); code != LN_OK) {
-            LOG(WARNING, "Nexus") << "The SDK refused the discovery target " << region << ".seip." << domain
+            LOG(WARNING, kLogTag) << "The SDK refused the discovery target " << region << ".seip." << domain
                                   << " (SDK error " << code << "); discovery uses the known servers only" << std::endl;
         }
         ln_set_session_moved_callback(client.get(), [](char* event_json, void*) {
             std::unique_ptr<char, decltype(&ln_free)> owned(event_json, ln_free);
-            LOG(INFO, "Nexus") << "Session moved: " << (event_json ? event_json : "") << std::endl;
+            LOG(INFO, kLogTag) << "Session moved: " << (event_json ? event_json : "") << std::endl;
         }, nullptr);
         // The SDK answers a refused mesh request itself and reports it here, on an SDK
         // thread: one log line per event, no SDK call besides releasing the text.
@@ -1336,8 +1414,8 @@ struct NexusManager::Session {
             std::unique_ptr<char, decltype(&ln_free)> owned(event_json, ln_free);
             const auto event = event_json ? json::parse(event_json, nullptr, false) : json();
             const auto line = nexus_access::ingress_denied_log_line(event.is_object() ? event : json::object());
-            if (event.is_object() && event.value("kind", "") == "denied") LOG(WARNING, "Nexus") << line << std::endl;
-            else LOG(INFO, "Nexus") << line << std::endl;
+            if (event.is_object() && event.value("kind", "") == "denied") LOG(WARNING, kLogTag) << line << std::endl;
+            else LOG(INFO, kLogTag) << line << std::endl;
         }, nullptr);
         load_revoked_key();
         if (source == IdentitySource::System) {
@@ -1392,13 +1470,13 @@ struct NexusManager::Session {
         const auto avatar_cache = utils::path_to_utf8(root / "avatar-cache");
         avatar_configured = ln_account_avatar_configure(client.get(), identity.get(), avatar_cache.c_str()) == LN_OK;
         clear_error();
-        LOG(INFO, "Nexus") << "Device identity in use: " << pubkey << " (" << nexus_access::identity_source_name(source) << ")" << std::endl;
+        LOG(INFO, kLogTag) << "Device identity in use: " << pubkey << " (" << nexus_access::identity_source_name(source) << ")" << std::endl;
     }
     void load_system_identity() {
-        const auto path = utils::path_to_utf8(root / "identity.json");
+        const auto path = utils::path_to_utf8(root / kIdentityFile);
         IdentityPtr loaded(ln_identity_load(path.c_str()), ln_identity_destroy);
         if (!loaded) {
-            if (std::filesystem::exists(root / "identity.json")) throw NexusError(500, "Device identity is invalid; restore identity.json");
+            if (std::filesystem::exists(root / kIdentityFile)) throw NexusError(500, "Device identity is invalid; restore identity.json");
             loaded.reset(ln_identity_generate());
             if (!loaded || ln_identity_save(loaded.get(), path.c_str()) != LN_OK) throw NexusError(500, "Cannot save device identity");
         }
@@ -1423,12 +1501,12 @@ struct NexusManager::Session {
         if (!loaded) {
             error = "The device key store is not available: " + nexus_user_key::store_failure_text(code);
             error_retryable = false;
-            LOG(WARNING, "Nexus") << error << " (backend " << identity_store.value("backend", "unknown") << ")" << std::endl;
+            LOG(WARNING, kLogTag) << error << " (backend " << identity_store.value("backend", "unknown") << ")" << std::endl;
             store_retry_at = std::chrono::steady_clock::now() + store_retry_delay;
-            store_retry_delay = std::min(store_retry_delay * 2, std::chrono::seconds(60));
+            store_retry_delay = std::min(store_retry_delay * 2, kRetryDelayMax);
             return;
         }
-        store_retry_delay = std::chrono::seconds(5);
+        store_retry_delay = kRetryDelayInitial;
         adopt_identity(std::move(loaded));
     }
     void require_identity() const {
@@ -1464,7 +1542,7 @@ struct NexusManager::Session {
         persist();
         std::error_code ec;
         std::filesystem::remove(restore_path, ec);
-        LOG(INFO, "Nexus") << "Archived the account of another identity as " << archive_name << std::endl;
+        LOG(INFO, kLogTag) << "Archived the account of another identity as " << archive_name << std::endl;
     }
     static std::string machine_name() {
         char buffer[256] = {};
@@ -1476,7 +1554,7 @@ struct NexusManager::Session {
             name.resize(name.size() - local_suffix.size());
         }
         while (!name.empty() && name.back() == '.') name.pop_back();
-        if (name.size() > 128) name.resize(128);
+        if (name.size() > kMaxNameBytes) name.resize(kMaxNameBytes);
         return name.empty() ? "My Lemonade device" : name;
     }
     std::string device_name() const {
@@ -1487,7 +1565,7 @@ struct NexusManager::Session {
         const auto it = account.find("mesh_udp_port");
         return it != account.end() && it->is_number_integer() ? it->get<int>() : 0;
     }
-    void persist() { write_json(root / "account.json", account); }
+    void persist() { write_json(root / kAccountFile, account); }
     static void write_json(const std::filesystem::path& path, const json& value) {
         auto temporary = path;
         temporary += ".tmp";
@@ -1538,7 +1616,7 @@ struct NexusManager::Session {
         node_id.clear();
         group_id.clear();
         tunnel_ip.clear();
-        LOG(WARNING, "Nexus") << "The network revoked device key " << revoked << "; the account files are removed and a new key replaces it" << std::endl;
+        LOG(WARNING, kLogTag) << "The network revoked device key " << revoked << "; the account files are removed and a new key replaces it" << std::endl;
         std::string next = source == IdentitySource::Handoff ? "Unlock Nexus from the Lemonade tray for a new device key, then join again."
                                                                : "A new device key is in use; join again with an invitation or create a network.";
         try {
@@ -1594,7 +1672,7 @@ struct NexusManager::Session {
         }
         return result;
     }
-    bool key_unlock() const { return account.value("unlock", std::string{}) == "device_key"; }
+    bool key_unlock() const { return account.value("unlock", std::string{}) == kDeviceKeyUnlock; }
     bool has_network() const { return account.value("joined", false); }
     // Accounts written before `joined` was recorded always joined on their first unlock.
     void note_legacy_join() {
@@ -1607,10 +1685,10 @@ struct NexusManager::Session {
         authenticate_identity();
         if (passkey) {
             account.erase("credential_id");
-            LOG(INFO, "Nexus") << "Device key replaces the registered passkey of " << pubkey << std::endl;
+            LOG(INFO, kLogTag) << "Device key replaces the registered passkey of " << pubkey << std::endl;
         }
         if (passkey || !key_unlock()) {
-            account["unlock"] = "device_key";
+            account["unlock"] = kDeviceKeyUnlock;
             persist();
         }
         hold_locked = false;
@@ -1661,12 +1739,12 @@ struct NexusManager::Session {
         return self.is_object() && self.value("is_admin", false);
     }
     json group_children() {
-        auto children = private_call("GET", "/api/tree/children/" + group_id);
-        if (!children.is_array()) throw NexusError(502, "The network returned invalid data");
+        auto children = private_call("GET", kTreeChildrenApi + group_id);
+        if (!children.is_array()) throw NexusError(502, kMsgInvalidData);
         return children;
     }
     json scoped_tree_path(const std::string& id) {
-        const auto fetch = [&](const std::string& current) { return private_call("GET", "/api/tree/node/" + current); };
+        const auto fetch = [&](const std::string& current) { return private_call("GET", kTreeNodeApi + current); };
         try {
             return nexus_access::tree_path(id, group_id, fetch);
         } catch (const NexusError& e) {
@@ -1689,8 +1767,8 @@ struct NexusManager::Session {
         return result;
     }
     json create_invite(const std::string& target, const json& body, const json& held, bool admin) {
-        const auto ttl = body.value("ttl_sec", 600);
-        if (ttl < 60 || ttl > 600) throw NexusError(400, "Invite lifetime must be 60 to 600 seconds");
+        const auto ttl = body.value("ttl_sec", kInviteTtlMaxSeconds);
+        if (ttl < kInviteTtlMinSeconds || ttl > kInviteTtlMaxSeconds) throw NexusError(400, "Invite lifetime must be 60 to 600 seconds");
         json requested = body.contains("permissions") ? body["permissions"] : json();
         if (body.contains("role")) {
             if (!requested.is_null()) throw NexusError(400, "Send a role or a list of permissions, not both");
@@ -1701,7 +1779,7 @@ struct NexusManager::Session {
             // new device without svc:inference, so the user preset is the default here.
             auto defaults = nexus_access::default_invite_permissions(held, admin);
             if (!defaults.second.empty()) {
-                LOG(INFO, "Nexus") << "Invite grants the user preset without " << defaults.second.dump()
+                LOG(INFO, kLogTag) << "Invite grants the user preset without " << defaults.second.dump()
                                    << ": this device does not hold them on the target group" << std::endl;
             }
             requested = std::move(defaults.first);
@@ -1717,7 +1795,7 @@ struct NexusManager::Session {
     void remove_local_account() {
         lock();
         std::error_code ec;
-        for (const auto* name : {"identity.json", "account.json", "account.json.tmp"}) std::filesystem::remove(root / name, ec);
+        for (const auto* name : {kIdentityFile, kAccountFile, "account.json.tmp"}) std::filesystem::remove(root / name, ec);
         std::filesystem::remove_all(root / "avatar-cache", ec);
         std::filesystem::remove_all(root / "certs", ec);
         account = json::object();
@@ -1725,7 +1803,7 @@ struct NexusManager::Session {
     json describe_tree_node(const json& path) {
         bool ancestor_admin = false;
         for (size_t i = 1; i < path.size(); ++i) {
-            ancestor_admin = ancestor_admin || contains(permissions_for(path[i].value("assignments", json::array()), pubkey), "admin");
+            ancestor_admin = ancestor_admin || contains(permissions_for(path[i].value("assignments", json::array()), pubkey), kAdminPermission);
         }
         return nexus_access::tree_entry(path.front(), pubkey, ancestor_admin);
     }
@@ -1733,7 +1811,7 @@ struct NexusManager::Session {
         const auto path = scoped_tree_path(id);
         const auto parent = describe_tree_node(path);
         if (parent.at("kind") != "group") throw NexusError(400, "Only groups can contain other nodes");
-        const auto children = private_call("GET", "/api/tree/children/" + id);
+        const auto children = private_call("GET", kTreeChildrenApi + id);
         if (!children.is_array()) throw NexusError(502, "The network returned invalid children");
         json entries = json::array();
         for (const auto& child : children) {
@@ -1745,9 +1823,9 @@ struct NexusManager::Session {
         return {{"parent", parent}, {"children", entries}};
     }
     void refresh_devices() {
-        const auto own = private_call("GET", "/api/tree/node/" + node_id);
+        const auto own = private_call("GET", kTreeNodeApi + node_id);
         group_id = own.at("parent_id").get<std::string>();
-        const auto group = private_call("GET", "/api/tree/node/" + group_id);
+        const auto group = private_call("GET", kTreeNodeApi + group_id);
         const auto children = group_children();
         const auto peers = sdk_call([&](auto out) { return ln_mesh_peers(client.get(), out); });
         // Children leave out devices that joined this group from their own networks and
@@ -1757,7 +1835,7 @@ struct NexusManager::Session {
         try {
             network = sdk_call([&](auto out) { return ln_list_network_devices(client.get(), out); });
         } catch (const std::exception& e) {
-            LOG(WARNING, "Nexus") << "Cannot list the network devices: " << e.what() << std::endl;
+            LOG(WARNING, kLogTag) << "Cannot list the network devices: " << e.what() << std::endl;
         }
         auto next = nexus_access::merge_members(group, children, peers, pubkey, node_id,
             mesh_status().value("peers", json::array()), network);
@@ -1768,19 +1846,19 @@ struct NexusManager::Session {
                 return device.value("node_id", "") == it->first && ip == it->second;
             });
             if (present == next.end()) {
-                ln_mesh_close_egress(client.get(), it->second.c_str(), 13305);
+                ln_mesh_close_egress(client.get(), it->second.c_str(), kMeshServicePort);
                 it = egress_ips.erase(it);
             } else ++it;
         }
         devices = std::move(next);
     }
     uint16_t relay_port(const std::string& id) {
-        if (locked) throw NexusError(423, "Unlock your network first");
-        if (!joined) throw NexusError(409, "Join the network first");
+        if (locked) throw NexusError(423, kMsgUnlockFirst);
+        if (!joined) throw NexusError(409, kMsgJoinFirst);
         const auto target = nexus_access::relay_target(devices, node_id, id);
         if (target.first != 0) throw NexusError(target.first, target.second);
         uint16_t port = 0;
-        if (ln_mesh_open_egress(client.get(), target.second.c_str(), 13305, &port) != LN_OK || !port) {
+        if (ln_mesh_open_egress(client.get(), target.second.c_str(), kMeshServicePort, &port) != LN_OK || !port) {
             throw NexusError(502, "Cannot open a mesh connection to that device");
         }
         egress_ips[id] = target.second;
@@ -1788,7 +1866,7 @@ struct NexusManager::Session {
     }
     uint16_t reopen_relay_port(const std::string& id) {
         if (const auto known = egress_ips.find(id); known != egress_ips.end()) {
-            ln_mesh_close_egress(client.get(), known->second.c_str(), 13305);
+            ln_mesh_close_egress(client.get(), known->second.c_str(), kMeshServicePort);
             egress_ips.erase(known);
         }
         return relay_port(id);
@@ -1807,7 +1885,7 @@ struct NexusManager::Session {
             {"device_name", device_name()}, {"hostname", machine_name()}, {"server", host},
             {"registered", account.contains("credential_id") || key_unlock()}, {"has_network", has_network()},
             {"unlock", key_unlock() ? "device_key" : "passkey"}, {"members", devices},
-            {"exposed", json::array({{{"vport", 13305}, {"local_port", ingress_port}}})}, {"error", error},
+            {"exposed", json::array({{{"vport", kMeshServicePort}, {"local_port", ingress_port}}})}, {"error", error},
             {"error_retryable", error_retryable}, {"genesis_key_set", genesis_key_set}, {"mesh_port", mesh_port_status()},
             {"catalog_error", catalog_error}, {"identity_source", nexus_access::identity_source_name(source)},
             {"needs_user_key", !identity}, {"public_key", pubkey}, {"needs_rejoin", refounded},
@@ -1837,7 +1915,7 @@ struct NexusManager::Session {
         }
         adopt_identity(std::move(received));
         if (!account.contains("credential_id") && !key_unlock()) {
-            account["unlock"] = "device_key";
+            account["unlock"] = kDeviceKeyUnlock;
             persist();
         }
     }
@@ -1848,23 +1926,22 @@ struct NexusManager::Session {
     }
     // The SDK keeps the catalog with the mesh session, so every join registers it
     // again, before the service is exposed: without a catalog the SDK would bridge
-    // the port raw, so a missing or refused catalog refuses the join (false, with
-    // catalog_error set) and the port is never exposed.
+    // the port raw.
     bool register_catalog() {
         catalog_error.clear();
         if (!catalog.is_object()) {
             catalog_error = "lemond has no route catalog";
-            LOG(WARNING, "Nexus") << catalog_error << std::endl;
+            LOG(WARNING, kLogTag) << catalog_error << std::endl;
             return false;
         }
         const auto text = catalog.dump();
-        const auto code = ln_mesh_service_set_catalog(client.get(), 13305, text.c_str());
+        const auto code = ln_mesh_service_set_catalog(client.get(), kMeshServicePort, text.c_str());
         if (code != LN_OK) {
             catalog_error = "The SDK refused the route catalog (SDK error " + std::to_string(code) + ")";
-            LOG(WARNING, "Nexus") << catalog_error << std::endl;
+            LOG(WARNING, kLogTag) << catalog_error << std::endl;
             return false;
         }
-        LOG(INFO, "Nexus") << "Registered route catalog version " << catalog.value("version", uint64_t{0})
+        LOG(INFO, kLogTag) << "Registered route catalog version " << catalog.value("version", uint64_t{0})
                            << " with " << catalog.value("families", nlohmann::ordered_json::array()).size()
                            << " families" << std::endl;
         return true;
@@ -1875,7 +1952,7 @@ struct NexusManager::Session {
         std::error_code ec;
         std::filesystem::create_directories(root / "certs" / "group-loopback", ec);
         ln_mesh_port_set_cert_dir(client.get(), cert_dir.c_str());
-        const auto local = "http://127.0.0.1:" + std::to_string(local_service_port);
+        const auto local = nexus_user_key::loopback_url(local_service_port);
         const auto started = ln_mesh_port_start(client.get(), static_cast<uint16_t>(mesh_port), local.c_str());
         if (started == LN_ERR_PORT_IN_USE) {
             mesh_port_error = "Another program, such as the Lemonade Nexus app, already uses the mesh port";
@@ -1895,7 +1972,7 @@ struct NexusManager::Session {
             }
             const auto code = ln_mesh_port_set_selection(client.get(), target.empty() ? nullptr : target.c_str(),
                 key.empty() ? nullptr : key.c_str());
-            if (code == LN_ERR_NOT_FOUND) throw NexusError(404, "That device is not in your group");
+            if (code == LN_ERR_NOT_FOUND) throw NexusError(404, kMsgNotInGroup);
             if (code == LN_ERR_AUTH) throw NexusError(403, "This device may not connect to that device");
             if (code == LN_ERR_REJECTED) throw NexusError(409, "The mesh port is not running, or that target cannot be selected");
             if (code != LN_OK) throw NexusError(502, "The mesh port refused the selection");
@@ -1911,7 +1988,7 @@ struct NexusManager::Session {
         if (ingress_port <= 0) throw NexusError(503, "The mesh service listener is not running");
         detail = "joining";
         ln_set_link_token(client.get(), code.c_str());
-        if (ln_set_inference_node(client.get(), 1) != LN_OK) throw NexusError(500, "Cannot join as an inference node");
+        if (ln_set_inference_node(client.get(), 1) != LN_OK) throw NexusError(500, "Cannot join as a Lemonade server");
         // The join names the device; a name the SDK refuses (too long, or with a
         // character peers would drop) leaves the server default, renamed below.
         ln_set_device_name(client.get(), device_name().c_str());
@@ -1935,7 +2012,7 @@ struct NexusManager::Session {
         start_mesh_transport();
         joined = true;
         reconnect = true;
-        retry_delay = std::chrono::seconds(5);
+        retry_delay = kRetryDelayInitial;
         detail = "running";
         clear_error();
         if (!account.value("joined", false)) {
@@ -1959,14 +2036,13 @@ struct NexusManager::Session {
     }
     // A fixed mesh_udp_port binds exclusively, so a router mapping or a manual port
     // forward to it stays valid; the SDK moves the dataplane when the port differs
-    // from the one in use. A failure locks the session and stays in `error` after
-    // the lock, so status names the port the user has to change.
+    // from the one in use.
     void start_mesh_transport() {
         const auto port = mesh_udp_port();
         const auto config = json{{"listen_port", port}}.dump();
         const auto service = "tcp:127.0.0.1:" + std::to_string(ingress_port);
         const bool started = (port == 0 ? ln_mesh_enable(client.get()) : ln_mesh_enable_config(client.get(), config.c_str())) == LN_OK &&
-            ln_mesh_expose_service(client.get(), 13305, service.c_str()) == LN_OK;
+            ln_mesh_expose_service(client.get(), kMeshServicePort, service.c_str()) == LN_OK;
         const auto failure = nexus_access::mesh_transport_failure(started, port, mesh_status());
         if (failure.empty()) return;
         lock();
@@ -1986,9 +2062,7 @@ struct NexusManager::Session {
             persist();
         }
     }
-    // SDK reports its last verified membership without network I/O, so this runs after
-    // every join and every successful poll and writes only when the epoch advanced. A
-    // membership of another chain under the pinned key means the network was founded
+    // A membership of another chain under the pinned key means the network was founded
     // again: the SDK neither follows it nor applies the floor, and status reports
     // needs_rejoin until the user forgets this network and joins it again.
     void remember_tier1_epoch() {
@@ -2015,7 +2089,7 @@ struct NexusManager::Session {
         const auto now = std::chrono::system_clock::now();
         const auto elapsed = now - last_poll;
         last_poll = now;
-        if (!locked && elapsed > std::chrono::minutes(5)) lock();
+        if (!locked && elapsed > kIdleLockAfter) lock();
         if (!identity) {
             if (source == IdentitySource::User && std::chrono::steady_clock::now() >= store_retry_at) load_user_identity();
             if (!identity) return;
@@ -2026,7 +2100,7 @@ struct NexusManager::Session {
             catch (const std::exception& e) {
                 note_failure(e);
                 retry_at = std::chrono::steady_clock::now() + retry_delay;
-                retry_delay = std::min(retry_delay * 2, std::chrono::seconds(60));
+                retry_delay = std::min(retry_delay * 2, kRetryDelayMax);
             }
             return;
         }
@@ -2050,34 +2124,31 @@ struct NexusManager::Session {
             }
         } catch (const std::exception& e) {
             note_failure(e);
-            // Drop a stale session so the next poll authenticates with the device
-            // identity through a current server. A refusal while the SDK moves the
-            // session by itself is an ordinary failure: the next poll finds it moved.
             if (nexus_access::session_dropped(mesh_status())) {
                 ln_mesh_disable(client.get());
                 ln_set_session_token(client.get(), "");
                 egress_ips.clear();
                 joined = false;
-                retry_at = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+                retry_at = std::chrono::steady_clock::now() + kSessionDropRetryDelay;
                 return;
             }
             retry_at = std::chrono::steady_clock::now() + retry_delay;
-            retry_delay = std::min(retry_delay * 2, std::chrono::seconds(60));
+            retry_delay = std::min(retry_delay * 2, kRetryDelayMax);
         }
     }
     json request(const std::string& method, const std::string& path, const json& body, const std::string& caller_key) {
         try {
             if (!caller_key.empty()) {
-                if (locked) throw NexusError(423, "Unlock your network first");
+                if (locked) throw NexusError(423, kMsgUnlockFirst);
                 const auto require_admin = [&](const std::string& id) {
                     if (!nexus_access::administers_tree(scoped_tree_path(id), caller_key)) {
                         throw NexusError(403, "This Nexus caller does not administer the requested group");
                     }
                 };
                 require_admin(group_id);
-                if (path.rfind("/tree/", 0) == 0) {
-                    const auto separator = path.find('/', 6);
-                    require_admin(path.substr(6, separator - 6));
+                if (path.rfind(kTreePathPrefix, 0) == 0) {
+                    const auto separator = path.find('/', kTreePathPrefix.size());
+                    require_admin(path.substr(kTreePathPrefix.size(), separator - kTreePathPrefix.size()));
                     if (path.substr(separator + 1) == "move") require_admin(body.at("parent_id").get<std::string>());
                 }
             }
@@ -2097,7 +2168,7 @@ struct NexusManager::Session {
             if (!body.contains("device_name") && !body.contains("mesh_udp_port")) throw NexusError(400, "Send device_name or mesh_udp_port");
             if (body.contains("device_name")) {
                 const auto name = body.at("device_name").get<std::string>();
-                if (name.empty() || name.size() > 128) throw NexusError(400, "Enter a device name (up to 128 characters)");
+                if (name.empty() || name.size() > kMaxNameBytes) throw NexusError(400, kMsgDeviceName);
                 if (joined && !locked) {
                     const auto updates = json{{"hostname", name}}.dump();
                     sdk_call([&](auto out) { return ln_update_node(client.get(), node_id.c_str(), updates.c_str(), out); });
@@ -2107,7 +2178,7 @@ struct NexusManager::Session {
             }
             if (body.contains("mesh_udp_port")) {
                 const auto& value = body.at("mesh_udp_port");
-                if (!value.is_number_integer() || value.get<int64_t>() < 0 || value.get<int64_t>() > 65535) {
+                if (!value.is_number_integer() || value.get<int64_t>() < 0 || value.get<int64_t>() > kMaxPort) {
                     throw NexusError(400, "Enter a UDP port (1-65535), or 0 for any port");
                 }
                 const auto port = value.get<int>();
@@ -2161,7 +2232,10 @@ struct NexusManager::Session {
             std::replace(encoded.begin(), encoded.end(), '_', '/');
             while (encoded.size() % 4) encoded += '=';
             const auto bytes = utils::JsonUtils::base64_decode(encoded);
-            if (bytes.size() < 37 || (static_cast<unsigned char>(bytes[32]) & 0x05) != 0x05) throw NexusError(403, "Passkey user verification is required");
+            if (bytes.size() < kAuthenticatorDataMinBytes ||
+                (static_cast<unsigned char>(bytes[kAuthenticatorFlagsOffset]) & kUserPresentAndVerified) != kUserPresentAndVerified) {
+                throw NexusError(403, "Passkey user verification is required");
+            }
             const auto payload = json{{"assertion", assertion}}.dump();
             const auto authenticated = sdk_call([&](auto out) { return ln_auth_passkey(client.get(), payload.c_str(), out); });
             if (authenticated.at("user_id") != account.at("user_id")) {
@@ -2177,10 +2251,6 @@ struct NexusManager::Session {
         }
         if (path == "/lock") { hold_locked = true; lock(); return status(); }
         if (path == "/forget") {
-            // Only for a network that was founded again: the account, its node and its
-            // epoch floor belong to the earlier chain and nothing on the servers knows
-            // them. The caller disables the session afterwards; the next Enable Mesh
-            // starts from discovery and a new invitation.
             if (!refounded) throw NexusError(409, "This network was not founded again; use Leave network or Delete account instead");
             ln_mesh_disable(client.get());
             ln_set_session_token(client.get(), "");
@@ -2191,14 +2261,12 @@ struct NexusManager::Session {
             return {{"forgotten", true}};
         }
         if (path == "/link-token/cancel") return {{"cancelled", true}, {"revoked", false}};
-        if (locked) throw NexusError(423, "Unlock your network first");
+        if (locked) throw NexusError(423, kMsgUnlockFirst);
         if (path == "/device/check") {
-            // Advisory: tells the UI whether a device name folds to a free DNS label in
-            // the target group. The federation still refuses a collision on join or
-            // rename, so two devices checking the same name at once cannot both win.
-            // `device_name` is accepted too: it is the field the `device` route uses.
+            // Advisory: the federation still refuses a collision on join or rename, so
+            // two devices checking the same name at once cannot both win.
             const auto name = body.contains("name") ? body.value("name", std::string{}) : body.value("device_name", std::string{});
-            if (name.empty() || name.size() > 128) throw NexusError(400, "Enter a device name (up to 128 characters)");
+            if (name.empty() || name.size() > kMaxNameBytes) throw NexusError(400, kMsgDeviceName);
             const auto code = body.value("code", std::string{});
             if (joined && code.empty()) {
                 return sdk_call([&](auto out) { return ln_check_device_name(client.get(), name.c_str(), group_id.c_str(), "", out); });
@@ -2208,15 +2276,15 @@ struct NexusManager::Session {
         }
         if (path == "/join") {
             const auto code = body.at("code").get<std::string>();
-            if (!nexus_access::invite_code(code)) throw NexusError(400, "Enter an 8-digit code or a full invite token");
+            if (!nexus_access::invite_code(code)) throw NexusError(400, kMsgInviteCode);
             if (joined) throw NexusError(409, "This device already joined. Accept the invite to join another network.");
             join(code);
             return status();
         }
-        if (!joined) throw NexusError(409, "Join the network first");
+        if (!joined) throw NexusError(409, kMsgJoinFirst);
         if (path == "/invites/accept") {
             const auto code = body.at("code").get<std::string>();
-            if (!nexus_access::invite_code(code)) throw NexusError(400, "Enter an 8-digit code or a full invite token");
+            if (!nexus_access::invite_code(code)) throw NexusError(400, kMsgInviteCode);
             auto result = sdk_call([&](auto out) { return ln_invite_accept(client.get(), code.c_str(), out); }, 409);
             refresh_devices();
             return result;
@@ -2226,17 +2294,17 @@ struct NexusManager::Session {
             result["group_node_id"] = group_id;
             return result;
         }
-        if (path.rfind("/memberships/", 0) == 0) {
-            const auto separator = path.find('/', 13);
+        if (path.rfind(kMembershipsPathPrefix, 0) == 0) {
+            const auto separator = path.find('/', kMembershipsPathPrefix.size());
             if (separator == std::string::npos || path.substr(separator) != "/leave") throw NexusError(404, "Unknown membership operation");
-            const auto id = path.substr(13, separator - 13);
+            const auto id = path.substr(kMembershipsPathPrefix.size(), separator - kMembershipsPathPrefix.size());
             if (id == group_id) throw NexusError(403, "This device's own group cannot be left. Remove the device instead.");
             sdk_call([&](auto out) { return ln_membership_leave(client.get(), id.c_str(), out); }, 409);
             return {{"left", true}, {"node_id", id}};
         }
         if (path == "/account/delete" && method == "POST") {
             if (body.value("account_id", "") != group_id || body.value("member_id", "") != account.value("user_id", "") ||
-                body.value("device_node_id", "") != node_id) throw NexusError(409, "The account changed. Sign in again.");
+                body.value("device_node_id", "") != node_id) throw NexusError(409, kMsgAccountChanged);
             if (body.value("confirm", "") != "delete") throw NexusError(400, "Send \"confirm\": \"delete\" to delete this account permanently");
             auto result = sdk_call([&](auto out) { return ln_account_delete(client.get(), out); }, 409);
             if (text(result, "status") == "deleted") replace_key("");
@@ -2251,18 +2319,18 @@ struct NexusManager::Session {
         }
         if (path == "/account/avatar" && method == "POST") {
             if (body.value("account_id", "") != group_id || body.value("member_id", "") != account.value("user_id", "") ||
-                body.value("device_node_id", "") != node_id) throw NexusError(409, "The account changed. Sign in again.");
+                body.value("device_node_id", "") != node_id) throw NexusError(409, kMsgAccountChanged);
             const auto current = read_avatar();
             if (current.at("state") == "unsupported") throw NexusError(501, "This mesh needs a Nexus server update to sync profile images.");
             if (current.at("state") != "ready") throw NexusError(502, "Cannot reach the account image service. Try again.");
             if (!current.at("can_write").get<bool>()) throw NexusError(403, "You do not have permission to change this account image.");
             if (body.at("revision") != current.at("revision")) throw NexusError(409, "The profile image changed. Refresh and try again.");
             const auto revision = current.at("revision").get<uint64_t>();
-            if (revision >= 9007199254740991ULL) throw NexusError(409, "The account image revision limit was reached.");
+            if (revision >= kMaxSafeInteger) throw NexusError(409, "The account image revision limit was reached.");
             const auto& image = body.at("image");
             if (!image.is_null() && !image.is_string()) throw NexusError(400, "Expected a profile image or null");
             const auto data = image.is_null() ? std::string() : image.get<std::string>();
-            if (data.size() > 128 * 1024 || (!data.empty() && data.rfind("data:image/png;base64,", 0) != 0)) throw NexusError(400, "Choose a PNG profile image under 128 KiB.");
+            if (data.size() > kMaxAvatarImageBytes || (!data.empty() && data.rfind(kPngDataUrlPrefix, 0) != 0)) throw NexusError(400, "Choose a PNG profile image under 128 KiB.");
             const auto record = sdk_call([&](auto out) { return ln_account_avatar_sign(identity.get(), group_id.c_str(), data.c_str(), revision + 1, out); });
             char* output = nullptr;
             const auto encoded = record.dump();
@@ -2270,16 +2338,16 @@ struct NexusManager::Session {
             std::unique_ptr<char, decltype(&ln_free)> owned(output, ln_free);
             const auto result = output ? json::parse(output, nullptr, false) : json();
             if (code != LN_OK) {
-                const auto message = result.is_object() ? result.value("error", "Profile image could not be saved") : "Profile image could not be saved";
+                const auto message = result.is_object() ? result.value("error", kMsgAvatarNotSaved) : kMsgAvatarNotSaved;
                 throw NexusError(code == LN_ERR_AUTH ? 403 : code == LN_ERR_REJECTED ? 409 : code == LN_ERR_NOT_FOUND ? 501 : 502, message);
             }
             return nexus_access::account_avatar(result, group_id);
         }
         if (path == "/tree") return tree_children(group_id);
-        if (path.rfind("/tree/", 0) == 0) {
-            const auto separator = path.find('/', 6);
-            if (separator == std::string::npos) throw NexusError(404, "Unknown tree operation");
-            const auto id = path.substr(6, separator - 6);
+        if (path.rfind(kTreePathPrefix, 0) == 0) {
+            const auto separator = path.find('/', kTreePathPrefix.size());
+            if (separator == std::string::npos) throw NexusError(404, kMsgUnknownTree);
+            const auto id = path.substr(kTreePathPrefix.size(), separator - kTreePathPrefix.size());
             const auto action = path.substr(separator + 1);
             if (method == "GET" && action == "children") return tree_children(id);
             const auto chain = scoped_tree_path(id);
@@ -2298,7 +2366,7 @@ struct NexusManager::Session {
             if (method == "POST" && action == "invites") {
                 if (!target.at("can_add_group").get<bool>()) throw NexusError(403, "You do not have permission to invite members to this group");
                 const auto name = body.value("device_name", std::string());
-                if (name.size() > 128) throw NexusError(400, "Enter a name of up to 128 characters");
+                if (name.size() > kMaxNameBytes) throw NexusError(400, kMsgName);
                 auto result = create_invite(id, body, target.at("permissions"), target.at("is_admin").get<bool>());
                 if (!name.empty()) result["device_name"] = name;
                 return result;
@@ -2306,10 +2374,10 @@ struct NexusManager::Session {
             if (method == "POST" && (action == "groups" || action == "rename")) {
                 if (!target.at(action == "groups" ? "can_add_group" : "can_rename").get<bool>()) throw NexusError(403, "You do not have permission to change this group");
                 const auto name = body.at("name").get<std::string>();
-                if (name.empty() || name.size() > 128 || name.find_first_not_of(" \t\r\n") == std::string::npos) throw NexusError(400, "Enter a group name (up to 128 UTF-8 bytes)");
+                if (name.empty() || name.size() > kMaxNameBytes || name.find_first_not_of(" \t\r\n") == std::string::npos) throw NexusError(400, "Enter a group name (up to 128 UTF-8 bytes)");
                 const auto result = action == "groups"
                     ? private_call("POST", "/api/tree/node", json{{"parent_id", id}, {"type", "customer"}, {"hostname", name}}.dump())
-                    : private_call("POST", "/api/tree/node/update/" + id, json{{"hostname", name}}.dump());
+                    : private_call("POST", std::string(kTreeNodeApi) + "update/" + id, json{{"hostname", name}}.dump());
                 if (!result.value("success", false)) throw NexusError(502, "The network could not save the group");
                 return result;
             }
@@ -2318,14 +2386,14 @@ struct NexusManager::Session {
                 const auto member = scoped_tree_path(body.at("member_node_id").get<std::string>()).front();
                 if (text(member, "type") != "endpoint") throw NexusError(400, "Choose a device node");
                 const auto key = text(member, "mgmt_pubkey");
-                if (key.empty() || nexus_access::same_key(key, pubkey)) throw NexusError(403, "You cannot change your own access");
+                if (key.empty() || nexus_access::same_key(key, pubkey)) throw NexusError(403, kMsgOwnAccess);
                 const bool admin = body.at("admin").get<bool>();
-                if (!admin && nexus_access::same_key(key, text(chain.front(), "mgmt_pubkey"))) throw NexusError(403, "The group creator always administers the group");
+                if (!admin && nexus_access::same_key(key, text(chain.front(), "mgmt_pubkey"))) throw NexusError(403, kMsgCreatorAdministers);
                 const auto permissions = nexus_access::group_permissions(body.at("permissions"), admin);
                 set_assignment(id, key, permissions);
                 return tree_children(id);
             }
-            throw NexusError(404, "Unknown tree operation");
+            throw NexusError(404, kMsgUnknownTree);
         }
         if (path == "/devices") { refresh_devices(); return devices; }
         if (path == "/members") {
@@ -2334,7 +2402,7 @@ struct NexusManager::Session {
         }
         if (path == "/link-token") {
             const auto name = body.value("device_name", std::string());
-            if (name.size() > 128) throw NexusError(400, "Enter a name of up to 128 characters");
+            if (name.size() > kMaxNameBytes) throw NexusError(400, kMsgName);
             const auto self = find_member(devices, node_id);
             auto result = create_invite("", body, self.is_object() ? self.value("permissions", json::array()) : json::array(),
                 self.is_object() && self.value("is_admin", false));
@@ -2345,24 +2413,24 @@ struct NexusManager::Session {
         if (path == "/egress") {
             const auto id = body.at("node_id").get<std::string>();
             const auto target = find_member(devices, id);
-            if (target.is_null() || id == node_id) throw NexusError(404, "Choose another member of your group");
+            if (target.is_null() || id == node_id) throw NexusError(404, kMsgChooseAnotherMember);
             auto ip = target.at("tunnel_ip").get<std::string>();
             if (auto slash = ip.find('/'); slash != std::string::npos) ip.resize(slash);
             uint16_t port = 0;
-            if (ln_mesh_open_egress(client.get(), ip.c_str(), 13305, &port) != LN_OK || !port) throw NexusError(502, "Remote server connection failed");
+            if (ln_mesh_open_egress(client.get(), ip.c_str(), kMeshServicePort, &port) != LN_OK || !port) throw NexusError(502, "Remote server connection failed");
             egress_ips[id] = ip;
-            return {{"node_id", id}, {"loopback_port", port}, {"endpoint", "http://127.0.0.1:" + std::to_string(port)}};
+            return {{"node_id", id}, {"loopback_port", port}, {"endpoint", nexus_user_key::loopback_url(port)}};
         }
         const auto first = path.find('/', 1);
         const auto second = first == std::string::npos ? std::string::npos : path.find('/', first + 1);
-        if (second == std::string::npos) throw NexusError(404, "Unknown network operation");
+        if (second == std::string::npos) throw NexusError(404, kMsgUnknownNetwork);
         const auto collection = path.substr(0, first);
         const auto id = path.substr(first + 1, second - first - 1);
         const auto action = path.substr(second + 1);
         const auto target = find_member(devices, id);
-        if (target.is_null()) throw NexusError(404, "That device is not in your group");
+        if (target.is_null()) throw NexusError(404, kMsgNotInGroup);
         if (collection == "/devices" && action == "remove") {
-            if (id == node_id) throw NexusError(404, "Choose another member of your group");
+            if (id == node_id) throw NexusError(404, kMsgChooseAnotherMember);
             if (!target.at("can_remove").get<bool>()) throw NexusError(403, "This device does not have permission to remove that device");
             const auto removed_key = target.at("management_pubkey").get<std::string>();
             private_call("POST", "/api/tree/node/delete/" + id, "{}");
@@ -2379,26 +2447,26 @@ struct NexusManager::Session {
                 const auto member_id = body.at("member_node_id").get<std::string>();
                 const bool connect = body.at("connect").get<bool>();
                 const bool see = body.at("see").get<bool>() || connect;
-                if (member_id == node_id) throw NexusError(403, "You cannot change your own access");
+                if (member_id == node_id) throw NexusError(403, kMsgOwnAccess);
                 const auto member = find_member(devices, member_id);
-                if (member.is_null() || member_id == id) throw NexusError(404, "Choose another member of your group");
+                if (member.is_null() || member_id == id) throw NexusError(404, kMsgChooseAnotherMember);
                 const auto key = member.at("management_pubkey").get<std::string>();
                 const auto current = permissions_for(target.at("access"), key);
-                if (contains(current, "admin")) throw NexusError(409, "That member administers this device; change its role instead");
+                if (contains(current, kAdminPermission)) throw NexusError(409, "That member administers this device; change its role instead");
                 set_assignment(id, key, nexus_access::device_permissions(current, see, connect));
                 refresh_devices();
             }
             return nexus_access::device_access(devices, id, node_id);
         }
         if (collection == "/members" && (action == "role" || action == "permissions")) {
-            if (!group_admin()) throw NexusError(403, "Only a group admin can change member access");
+            if (!group_admin()) throw NexusError(403, kMsgOnlyGroupAdmin);
             if (id == node_id) throw NexusError(403, action == "role" ? "You cannot change your own role. Ask another admin." : "You cannot change your own access. Ask another admin.");
             const auto key = target.at("management_pubkey").get<std::string>();
             const bool admin = target.at("is_admin").get<bool>();
             json permissions;
             if (action == "role") {
                 permissions = nexus_access::role_permissions(body.at("role").get<std::string>());
-                if (!contains(permissions, "admin") && target.at("is_owner").get<bool>()) throw NexusError(403, "The group creator always administers the group");
+                if (!contains(permissions, kAdminPermission) && target.at("is_owner").get<bool>()) throw NexusError(403, kMsgCreatorAdministers);
             } else {
                 permissions = nexus_access::group_permissions(body.at("permissions"), admin);
             }
@@ -2406,24 +2474,22 @@ struct NexusManager::Session {
             refresh_devices();
             return find_member(devices, id);
         }
-        throw NexusError(404, "Unknown network operation");
+        throw NexusError(404, kMsgUnknownNetwork);
     }
 };
 
 namespace {
-// Receives the SDK's log lines (ln_set_log_callback) on SDK threads while the SDK holds
-// locks: copy the text, hand it to the server log, return. No ln_* call, no exception
-// out. The SDK keeps its own level (info, or debug with LN_DEBUG), so debug lines arrive
-// only when that variable is set.
+// Runs on SDK threads while the SDK holds locks: copy the text, hand it to the server
+// log, return. No ln_* call, no exception out.
 void sdk_log_line(int level, const char*, const char* message, void*) noexcept {
     try {
         const std::string text = message ? message : "";
         switch (level) {
-        case 0: LOG(TRACE, "Nexus SDK") << text << std::endl; break;
-        case 1: LOG(DEBUG, "Nexus SDK") << text << std::endl; break;
-        case 2: LOG(INFO, "Nexus SDK") << text << std::endl; break;
-        case 3: LOG(WARNING, "Nexus SDK") << text << std::endl; break;
-        default: LOG(ERROR, "Nexus SDK") << text << std::endl; break;
+        case 0: LOG(TRACE, kSdkLogTag) << text << std::endl; break;
+        case 1: LOG(DEBUG, kSdkLogTag) << text << std::endl; break;
+        case 2: LOG(INFO, kSdkLogTag) << text << std::endl; break;
+        case 3: LOG(WARNING, kSdkLogTag) << text << std::endl; break;
+        default: LOG(ERROR, kSdkLogTag) << text << std::endl; break;
         }
     } catch (...) {
     }
@@ -2433,7 +2499,7 @@ void sdk_log_line(int level, const char*, const char* message, void*) noexcept {
 void route_sdk_log() {
     static const bool routed = [] {
         if (ln_set_log_callback(&sdk_log_line, nullptr) == LN_OK) return true;
-        LOG(WARNING, "Nexus") << "Cannot route the Nexus SDK log to the server log; it stays on stdout" << std::endl;
+        LOG(WARNING, kLogTag) << "Cannot route the Nexus SDK log to the server log; it stays on stdout" << std::endl;
         return false;
     }();
     (void)routed;
@@ -2453,21 +2519,21 @@ NexusManager::NexusManager(const std::string& config_dir,
       role_(process_role ? *process_role : nexus_access::current_process_role()), selection_port_(mesh_port) {
     route_sdk_log();
     if (!catalog_.is_object()) {
-        LOG(INFO, "Nexus") << "Route policy is unavailable: no route catalog" << std::endl;
+        LOG(INFO, kLogTag) << "Route policy is unavailable: no route catalog" << std::endl;
     } else if (!nexus_access::route_policy_available()) {
-        LOG(INFO, "Nexus") << "Route policy is unavailable: the Nexus SDK does not export ln_mesh_service_set_catalog" << std::endl;
+        LOG(INFO, kLogTag) << "Route policy is unavailable: the Nexus SDK does not export ln_mesh_service_set_catalog" << std::endl;
     }
     // Built once and never rebound: a main-port rebind leaves the mesh listener alone.
     register_routes(mesh_server_, NexusListener::MeshIngress);
     install_api(mesh_server_);
-    mesh_server_.set_read_timeout(30, 0);
-    mesh_server_.set_write_timeout(300, 0);
+    mesh_server_.set_read_timeout(kMeshListenerReadTimeoutSeconds, 0);
+    mesh_server_.set_write_timeout(kMeshListenerWriteTimeoutSeconds, 0);
     ingress_port_ = std::max(mesh_server_.bind_to_any_port("127.0.0.1"), 0);
     if (ingress_port_ > 0) {
         mesh_thread_ = std::thread([this] { mesh_server_.listen_after_bind(); });
         mesh_server_.wait_until_ready();
     } else {
-        LOG(WARNING, "Nexus") << "Cannot bind the mesh listener; mesh peers cannot reach this server" << std::endl;
+        LOG(WARNING, kLogTag) << "Cannot bind the mesh listener; mesh peers cannot reach this server" << std::endl;
     }
     register_routes(management_server_, NexusListener::Management);
     if (install_local_api) install_local_api(management_server_);
@@ -2505,7 +2571,7 @@ NexusManager::json NexusManager::status() const {
     std::lock_guard<std::mutex> lock(mutex_);
     auto result = snapshot_;
     result["enabled"] = enabled_;
-    result["controller_url"] = "http://127.0.0.1:" + std::to_string(management_port_);
+    result["controller_url"] = nexus_user_key::loopback_url(management_port_);
     result["remote_management"] = result.value("mesh_up", false);
     result["available"] = true;
     result["event_sequence"] = event_sequence_;
@@ -2610,7 +2676,7 @@ std::pair<int, NexusManager::json> NexusManager::control(const std::string& meth
 
 void NexusManager::emit_locked(const std::string& type, const json& data) {
     events_.push_back({{"sequence", ++event_sequence_}, {"type", type}, {"data", data}});
-    while (events_.size() > 128) events_.pop_front();
+    while (events_.size() > kMaxQueuedEvents) events_.pop_front();
     wake_.notify_all();
 }
 
@@ -2660,22 +2726,18 @@ void NexusManager::supervise() {
             }
         }
         std::unique_lock<std::mutex> lock(mutex_);
-        if (wake_.wait_for(lock, std::chrono::seconds(5), [this] { return stopping_; })) return;
+        if (wake_.wait_for(lock, kSupervisorPeriod, [this] { return stopping_; })) return;
     }
 }
 
 void NexusManager::handle(const httplib::Request& req, httplib::Response& res,
                            const std::string& operation, bool remote, const std::string& controller_url) {
-    res.set_header("Cache-Control", "no-store");
     const auto reply = [&](int code, json body) {
-        if (remote && body.is_object()) {
-            body.erase("controller_url");
-        }
-        res.status = code;
-        res.set_content(body.dump(), "application/json");
+        if (remote && body.is_object()) body.erase("controller_url");
+        reply_json(res, code, body);
     };
     auto body = req.body.empty() ? json::object() : json::parse(req.body, nullptr, false);
-    const std::size_t limit = operation == "account/avatar" ? 128 * 1024 + 2048 : 65536;
+    const std::size_t limit = operation == "account/avatar" ? kMaxAvatarImageBytes + kAvatarRequestEnvelopeBytes : kMaxRequestBodyBytes;
     if (!body.is_object() || req.body.size() > limit) {
         reply(400, {{"error", "Expected a bounded JSON object"}});
         return;
@@ -2704,6 +2766,7 @@ void NexusManager::handle(const httplib::Request& req, httplib::Response& res,
         }
         if (operation == "disable") { disable(); reply(200, status()); return; }
         if (operation == "events") {
+            disable_caching(res);
             std::lock_guard<std::mutex> lock(mutex_);
             uint64_t after = 0;
             if (req.has_param("after")) after = std::stoull(req.get_param_value("after"));
@@ -2714,16 +2777,16 @@ void NexusManager::handle(const httplib::Request& req, httplib::Response& res,
                     "\nevent: " + event.at("type").get<std::string>() + "\ndata: " + event.dump() + "\n\n";
             }
             if (req.has_param("once") && req.get_param_value("once") == "1") {
-                res.set_content(stream.empty() ? ": heartbeat\n\n" : stream, "text/event-stream");
+                res.set_content(stream.empty() ? ": heartbeat\n\n" : stream, kEventStreamContentType);
                 return;
             }
             res.set_header("Connection", "keep-alive");
             res.set_header("X-Accel-Buffering", "no");
-            res.set_chunked_content_provider("text/event-stream", [this, after](size_t offset, httplib::DataSink& sink) mutable {
+            res.set_chunked_content_provider(kEventStreamContentType, [this, after](size_t offset, httplib::DataSink& sink) mutable {
                 std::string output;
                 {
                     std::unique_lock<std::mutex> lock(mutex_);
-                    if (offset > 0) wake_.wait_for(lock, std::chrono::seconds(5), [&] { return stopping_ || event_sequence_ > after; });
+                    if (offset > 0) wake_.wait_for(lock, kSupervisorPeriod, [&] { return stopping_ || event_sequence_ > after; });
                     if (stopping_) { sink.done(); return false; }
                     for (const auto& event : events_) {
                         const auto sequence = event.at("sequence").get<uint64_t>();
@@ -2752,7 +2815,7 @@ void NexusManager::handle(const httplib::Request& req, httplib::Response& res,
         else if (operation == "memberships/leave") path = "/memberships/" + req.matches[1].str() + "/leave";
         else if (operation.rfind("tree/", 0) == 0) path = "/tree/" + req.matches[1].str() + "/" + operation.substr(5);
         else path = "/" + operation;
-        auto result = control(req.method, path, body, remote ? req.get_header_value("X-Nexus-Peer-Key") : "");
+        auto result = control(req.method, path, body, remote ? req.get_header_value(kPeerKeyHeader) : "");
         if ((operation == "account/delete" && result.first == 200 && result.second.value("status", "") == "deleted") ||
             (operation == "forget" && result.first == 200)) disable();
         std::lock_guard<std::mutex> lock(mutex_);
@@ -2791,7 +2854,7 @@ void NexusManager::relay(const httplib::Request& req, httplib::Response& res) {
         }
         try { return session_->reopen_relay_port(node); }
         catch (const std::exception& e) {
-            LOG(WARNING, "Nexus") << "Cannot replace the mesh bridge to " << node << ": " << e.what() << std::endl;
+            LOG(WARNING, kLogTag) << "Cannot replace the mesh bridge to " << node << ": " << e.what() << std::endl;
             return 0;
         }
     };
@@ -2801,25 +2864,19 @@ void NexusManager::relay(const httplib::Request& req, httplib::Response& res) {
 void NexusManager::register_routes(httplib::Server& server, NexusListener listener) {
     const auto dispatch = [this, listener](const httplib::Request& req, httplib::Response& res, const std::string& operation) {
         const auto access = nexus_access::route_access(listener, req, operation);
-        if (access.first != 0) {
-            res.set_header("Cache-Control", "no-store");
-            res.status = access.first;
-            res.set_content(json{{"error", access.second}}.dump(), "application/json");
-            return;
-        }
+        if (access.first != 0) { reply_error(res, access.first, access.second); return; }
         // A loopback or local-network operator on the public port is told to keep using that
         // port: it is the one port an SSH tunnel, a VM or a container forwards, unlike the
-        // ephemeral listener, and the only port a local-network client reaches. The client
-        // keeps the origin it already used; the port is what it checks.
+        // ephemeral listener, and the only port a local-network client reaches.
         const bool local = listener != NexusListener::MeshIngress && private_network_address(req.remote_addr);
         const auto controller = listener == NexusListener::Public && local
-            ? "http://127.0.0.1:" + std::to_string(req.local_port) : std::string();
+            ? nexus_user_key::loopback_url(req.local_port) : std::string();
         handle(req, res, operation, !local, controller);
     };
     for (const auto& route : nexus_routes()) {
         auto pattern = std::string(nexus_prefix) + route.path;
-        const auto parameter = pattern.find("{node_id}");
-        if (parameter != std::string::npos) pattern.replace(parameter, 9, "([A-Za-z0-9_-]+)");
+        const auto parameter = pattern.find(kNodeIdParameter);
+        if (parameter != std::string::npos) pattern.replace(parameter, kNodeIdParameter.size(), "([A-Za-z0-9_-]+)");
         const auto handler = [dispatch, operation = route.operation](const auto& req, auto& res) { dispatch(req, res, operation); };
         if (route.method == "GET") server.Get(pattern, handler);
         else server.Post(pattern, handler);

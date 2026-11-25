@@ -209,7 +209,7 @@ int main(int argc, char** argv) {
 
         // Service managers start lemond with a small descriptor limit (launchd: 256).
         // Raise it before the listeners, worker pools and backends start opening
-        // descriptors; see raise_open_file_limit() for what happens once it is reached.
+        // descriptors.
         const std::size_t open_file_limit = utils::raise_open_file_limit();
 
         LOG(INFO) << "Starting Lemonade Server..." << std::endl;

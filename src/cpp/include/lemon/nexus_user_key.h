@@ -22,10 +22,14 @@ inline bool key_revoked(const nlohmann::json& status, const std::string& pubkey)
     return !pubkey.empty() && status.is_object() && status.value("revoked_public_key", std::string()) == pubkey;
 }
 
+inline constexpr const char* kLoopbackUrlPrefix = "http://127.0.0.1:";
+
+inline std::string loopback_url(int port) { return kLoopbackUrlPrefix + std::to_string(port); }
+
 inline int controller_port(const nlohmann::json& status) {
     if (!status.is_object()) return 0;
     const auto url = status.value("controller_url", std::string());
-    const std::string prefix = "http://127.0.0.1:";
+    const std::string prefix = kLoopbackUrlPrefix;
     if (url.size() <= prefix.size() || url.compare(0, prefix.size(), prefix) != 0) return 0;
     const auto digits = url.substr(prefix.size());
     if (digits.empty() || digits.size() > 5 || digits.find_first_not_of("0123456789") != std::string::npos) return 0;

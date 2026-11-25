@@ -7,11 +7,11 @@
 
 namespace lemon_cli {
 
-/// One device lemond's mesh port names: this server itself, or an online inference
-/// device of the group that this server may connect to. `url` is the mesh port URL
+/// One device the mesh port names: this device itself, or an online Lemonade server
+/// of the group that this device may connect to. `url` is the mesh port URL
 /// "https://<device>.<group>.lo.<base>:13306" (http before the port has its
-/// certificate); the mesh port forwards a request to that name over the mesh to the
-/// device's own lemond.
+/// certificate); the mesh port forwards a request to that name over the mesh to that
+/// device.
 struct MeshDevice {
     std::string node_id;
     std::string device_name;
