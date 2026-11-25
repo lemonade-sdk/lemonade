@@ -267,8 +267,7 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
                                           bool unified_gpu,
                                           double physical_free_gb,
                                           bool bounded_swa,
-                                          double kv_bytes_ratio,
-                                          double carveout_free_gb = 0.0) {
+                                          double kv_bytes_ratio) {
     const int64_t fallback = is_embedding ? EMBEDDING_CTX_SIZE :
         (model_info.max_context_window > 0
              ? (std::min)(model_info.max_context_window, AUTO_CTX_FALLBACK)
@@ -410,7 +409,7 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
     const auto budget = estimate_auto_context_budget(
         available_memory_gb, model_weight_gb,
         kv_bytes_per_token, (model_info.device & DEVICE_GPU) != 0,
-        speculative, unified_gpu, physical_free_gb, carveout_free_gb);
+        speculative, unified_gpu, physical_free_gb);
     const double full_slope = swa_profile
         ? (std::max)(0.0, kv_bytes_per_token - swa_bytes_per_cell) : kv_bytes_per_token;
     double extra_workspace_gib = 0.0;
@@ -553,10 +552,11 @@ inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
     double available_gb = get_available_memory_gb(
         sized_info.device, gpu_memory_vendor_for_target(backend, device), device,
         backend, &ctx_unified_gpu, &memory_known, &physical_free_gb, &carveout_free_gb);
-    // Host-resident weights cannot use the carve-out, so charge them to RAM.
-    if (!auto_context_llamacpp_full_offload(recipe, llama_args_str,
-                                            model_info.gguf.block_count)) {
-        carveout_free_gb = 0.0;
+    // The OS-visible RAM excludes the carve-out, but a full offload can use it.
+    if (physical_free_gb >= 0.0 &&
+        auto_context_llamacpp_full_offload(recipe, llama_args_str,
+                                           model_info.gguf.block_count)) {
+        physical_free_gb += carveout_free_gb;
     }
 
     if (available_gb <= 0) {
@@ -579,8 +579,7 @@ inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
         recipe, llama_args_str);
     int64_t result = compute_auto_context_size(sized_info, available_gb,
                                                is_embedding, ctx_unified_gpu,
-                                               physical_free_gb, bounded_swa, kv_bytes_ratio,
-                                               carveout_free_gb);
+                                               physical_free_gb, bounded_swa, kv_bytes_ratio);
     LOG(DEBUG, "AutoTune") << "resolve_auto_ctx_size: " << model_info.model_name
                            << " → ctx_size=" << result;
     return result;

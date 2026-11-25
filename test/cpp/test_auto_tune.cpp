@@ -608,25 +608,25 @@ static void test_auto_context_budget() {
 
     constexpr double halo_kv = 24576.0;
     auto halo64 = estimate_auto_context_budget(vgm64->available_gib, 44.73, halo_kv, true, false,
-                                               true, 63.8 - 10.7, vgm64->carveout_gib);
+                                               true, 63.8 - 10.7 + vgm64->carveout_gib);
     check("auto ctx split: weights in the carve-out are not charged to RAM",
           halo64.max_tokens >= 262144);
     auto halo64_host = estimate_auto_context_budget(vgm64->available_gib, 44.73, halo_kv, true,
-                                                    false, true, 63.8 - 10.7, 0.0);
+                                                    false, true, 63.8 - 10.7);
     check("auto ctx split: host-resident weights are charged to RAM",
           halo64_host.kv_gib < 3.0 && halo64_host.max_tokens < halo64.max_tokens);
     auto halo_tight = auto_context_available_split_gpu_gib(63.8, 29.3, 47.8, 1.0, 63.8, 43.5);
     auto halo_tight_budget = estimate_auto_context_budget(
-        halo_tight->available_gib, 44.73, halo_kv, true, false, true, 20.3,
-        halo_tight->carveout_gib);
+        halo_tight->available_gib, 44.73, halo_kv, true, false, true,
+        20.3 + halo_tight->carveout_gib);
     check("auto ctx split: memory-limited load scales headroom with the carve-out",
           approx_eq(halo_tight_budget.kv_gib,
                     (33.5 + 20.3) * (1.0 - 0.08) - 44.73 - 44.73 * 0.04));
     // Strix Halo, 64 GB VGM on Linux: GTT is half of the OS-visible RAM, so the GPU limit binds.
     auto linux64 = auto_context_available_split_gpu_gib(64.0, 0.8, 31.3, 0.1, 62.56, 5.6);
     auto linux64_budget = estimate_auto_context_budget(
-        linux64->available_gib, 5.21, 294912.0, true, false, true, 62.56 - 5.6,
-        linux64->carveout_gib);
+        linux64->available_gib, 5.21, 294912.0, true, false, true,
+        62.56 - 5.6 + linux64->carveout_gib);
     check("auto ctx split: a GPU-bound load leaves both the workspace and the headroom free",
           approx_eq(63.2 + 31.2 - 1.0 - 5.21 - linux64_budget.kv_gib, 0.5 + 2.0));
     auto heaps_exhausted = auto_context_available_split_gpu_gib(63.8, 63.8, 47.8, 47.0, 63.8, 60.0);
@@ -635,20 +635,10 @@ static void test_auto_context_budget() {
     // Default firmware carve-out on a 128 GiB machine: weights nearly fill GTT.
     auto default_gtt = auto_context_available_split_gpu_gib(0.5, 0.4, 62.5, 0.8, 124.9, 10.0);
     auto default_gtt_budget = estimate_auto_context_budget(
-        default_gtt->available_gib, 59.03, 36864.0, true, false, true, 114.9,
-        default_gtt->carveout_gib);
+        default_gtt->available_gib, 59.03, 36864.0, true, false, true,
+        114.9 + default_gtt->carveout_gib);
     check("auto ctx split: headroom does not push a default carve-out to the fallback",
           default_gtt_budget.max_tokens > 8192);
-    // With no usable carve-out the budget must equal the plain UMA budget.
-    for (double weights : {20.0, 44.73, 80.0}) {
-        auto uma = estimate_auto_context_budget(small_carveout->available_gib, weights, halo_kv,
-                                                true, false, true, 124.0 - 20.0);
-        auto split_uma = estimate_auto_context_budget(
-            small_carveout->available_gib, weights, halo_kv, true, false, true, 124.0 - 20.0,
-            small_carveout->carveout_gib);
-        check("auto ctx split: small carve-out keeps the plain UMA budget",
-              approx_eq(uma.kv_gib, split_uma.kv_gib));
-    }
 
     using lemon::auto_context_llamacpp_full_offload;
     auto full = [](const std::string& args, const char* env = nullptr) {

@@ -152,8 +152,7 @@ inline AutoContextBudget estimate_auto_context_budget(double free_gib,
                                                        bool gpu,
                                                        bool speculative,
                                                        bool unified_gpu = false,
-                                                       double physical_free_gib = -1.0,
-                                                       double carveout_free_gib = 0.0) {
+                                                       double physical_free_gib = -1.0) {
     AutoContextBudget result;
     if (!std::isfinite(free_gib) || !std::isfinite(weights_gib) ||
         !std::isfinite(kv_bytes_per_token) ||
@@ -166,12 +165,8 @@ inline AutoContextBudget estimate_auto_context_budget(double free_gib,
         : unified_gpu ? AUTO_CTX_UNIFIED_GPU_RESERVE : AUTO_CTX_DISCRETE_GPU_RESERVE;
     const bool separate_ram_budget = gpu && unified_gpu &&
         std::isfinite(physical_free_gib) && physical_free_gib >= 0.0;
-    const double carveout_gib = std::isfinite(carveout_free_gib)
-        ? (std::max)(0.0, carveout_free_gib) : 0.0;
-    // The headroom is kept in OS-visible RAM, but scales with everything free:
-    // a carve-out hides memory from the OS without making the load any smaller.
     const double memory_headroom_gib = reserve_policy.memory_headroom.estimate(
-        separate_ram_budget ? carveout_gib + physical_free_gib : free_gib);
+        separate_ram_budget ? physical_free_gib : free_gib);
     const double compute_workspace_gib =
         reserve_policy.compute_workspace.estimate(result.model_gib);
     const double speculative_workspace_gib =
@@ -181,8 +176,8 @@ inline AutoContextBudget estimate_auto_context_budget(double free_gib,
     if (separate_ram_budget) {
         const double gpu_kv = free_gib - result.model_gib -
                               compute_workspace_gib - speculative_workspace_gib;
-        const double ram_kv = carveout_gib + physical_free_gib -
-                              result.model_gib - result.reserve_gib;
+        const double ram_kv = physical_free_gib - result.model_gib -
+                              result.reserve_gib;
         result.kv_gib = (std::max)(0.0, (std::min)(gpu_kv, ram_kv));
     } else {
         result.kv_gib = (std::max)(0.0, free_gib - result.model_gib - result.reserve_gib);
