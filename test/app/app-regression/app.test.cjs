@@ -17,7 +17,7 @@ const MODEL_MANAGER = 'src/app/src/components/ModelManager.tsx';
 const OMNI_TOOLS = 'src/app/src/tools/omniTools.ts';
 const TOOL_DEFINITIONS = 'src/app/src/tools/toolDefinitions.json';
 
-const monitorPollingTests = require('./monitorPolling.test.cjs').tests;
+const monitorPollingTests = require(path.join(repoRoot, 'src', 'app', 'tests', 'monitor-polling.runtime.cjs')).tests;
 
 // chatModelOverride.ts is dependency-free so it can be transpiled and exercised
 // directly, without standing up React or the rest of ChatView.

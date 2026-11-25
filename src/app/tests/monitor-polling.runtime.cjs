@@ -3,8 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const Module = require('node:module');
 
-const repoRoot = path.resolve(__dirname, '..', '..', '..');
-const appRoot = path.join(repoRoot, 'src', 'app');
+const appRoot = path.resolve(__dirname, '..');
 const hookPath = path.join(appRoot, 'src', 'hooks', 'useMonitorData.ts');
 
 let ts = null;
@@ -14,6 +13,9 @@ catch (_) {
 }
 
 if (!ts) {
+  if (require.main === module) {
+    throw new Error("typescript not installed - run 'npm ci' in src/app first");
+  }
   module.exports = {
     tests: [{
       name: 'Monitor polling rejects stale snapshots',
@@ -448,3 +450,15 @@ const tests = [
 ];
 
 module.exports = { tests };
+
+if (require.main === module) {
+  (async () => {
+    for (const test of tests) {
+      await test.run();
+      console.log(`PASS ${test.name}`);
+    }
+  })().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+}
