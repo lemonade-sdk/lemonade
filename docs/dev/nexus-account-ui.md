@@ -203,7 +203,9 @@ route list is displayed. Its arrow opens the list, which starts collapsed and
 closes when selecting another role or category. Searching filters the selected
 category and opens its list so results are visible. The category header stays
 visible while its routes scroll so the list can be collapsed from any position.
-Saving preserves permissions the client does not recognize. Invitations offer
+Saving preserves `svc:` permissions for route families the client does not
+label; a reply with a permission name outside lemond's tree and `svc:` vocabulary
+(`NexusGrant` in `features/nexus/nexus.ts`) is rejected as invalid data. Invitations offer
 the server's User and Moderator presets; the server limits delegated permissions
 to those the inviting device holds. Administrator access is assigned after joining.
 

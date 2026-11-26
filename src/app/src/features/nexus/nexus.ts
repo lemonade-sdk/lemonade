@@ -1,11 +1,39 @@
 import { useEffect, useSyncExternalStore } from 'react';
 
+export const isOneOf = <T extends string>(values: readonly T[]) => (value: unknown): value is T => (values as readonly unknown[]).includes(value);
+export const NEXUS_PERMISSIONS = ['read', 'write', 'add_child', 'edit_node', 'delete_node', 'expand_subnet', 'connect_private', 'connect_shared',
+  'relay_forward', 'routing_coordinate', 'stun_respond', 'relay_register', 'allocate_ip', 'admin'] as const;
+export type NexusPermission = typeof NEXUS_PERMISSIONS[number];
+export const isNexusPermission = isOneOf(NEXUS_PERMISSIONS);
+export const NEXUS_ROUTE_FAMILIES = ['inference', 'mcp', 'models_manage', 'backends', 'jobs', 'internal', 'system', 'management'] as const;
+export type NexusRouteFamily = typeof NEXUS_ROUTE_FAMILIES[number];
+export const isNexusRouteFamily = isOneOf(NEXUS_ROUTE_FAMILIES);
+export type NexusServicePermission = `svc:${NexusRouteFamily}`;
+export const nexusServicePermission = (family: NexusRouteFamily): NexusServicePermission => `svc:${family}`;
+// lemond's route registry accepts any family name of this shape (valid_route_family), and
+// the shared tree carries `svc:` grants for families a newer lemond added after this app
+// shipped, so a grant received from the server is open beyond NEXUS_ROUTE_FAMILIES.
+export const NEXUS_ROUTE_FAMILY_NAME = /^[a-z0-9][a-z0-9_.-]{0,62}$/;
+export type NexusGrant = NexusPermission | `svc:${string}`;
+export const isNexusGrant = (value: unknown): value is NexusGrant =>
+  typeof value === 'string' && (isNexusPermission(value) || (value.startsWith('svc:') && NEXUS_ROUTE_FAMILY_NAME.test(value.slice(4))));
+export const isNexusGrantList = (value: unknown): value is NexusGrant[] => Array.isArray(value) && value.every(isNexusGrant);
+export const NEXUS_GROUP_ROLES = ['home', 'member'] as const;
+export type NexusGroupRole = typeof NEXUS_GROUP_ROLES[number];
+export const isNexusGroupRole = isOneOf(NEXUS_GROUP_ROLES);
+export const NEXUS_MEMBERSHIP_STATES = ['member', 'pending', 'refused'] as const;
+export type NexusMembershipState = typeof NEXUS_MEMBERSHIP_STATES[number];
+export const isNexusMembershipState = isOneOf(NEXUS_MEMBERSHIP_STATES);
+export const NEXUS_MEMBER_ROLES = ['administrator', 'moderator', 'user'] as const;
+export type NexusMemberRole = typeof NEXUS_MEMBER_ROLES[number];
+export const isNexusMemberRole = isOneOf(NEXUS_MEMBER_ROLES);
+
 export interface NexusDevice {
   node_id: string;
   device_name: string;
   tunnel_ip: string;
   management_pubkey: string;
-  permissions: string[];
+  permissions: NexusGrant[];
   permissions_known?: boolean;
   is_admin?: boolean;
   is_owner?: boolean;
@@ -16,17 +44,17 @@ export interface NexusDevice {
   connection_type?: 'local' | 'p2p' | 'relay' | 'unknown';
   latency_ms?: number;
   member?: boolean;
-  group_role?: 'home' | 'member';
+  group_role?: NexusGroupRole;
   group_id?: string;
   can_connect?: boolean;
 }
-export interface NexusJoinMembership { status: 'member' | 'pending' | 'refused'; group_id?: string; error?: string }
+export interface NexusJoinMembership { status: NexusMembershipState; group_id?: string; error?: string }
 export interface NexusMembership {
   node_id: string;
   hostname: string;
   parent_id?: string;
-  role: 'home' | 'member';
-  permissions: string[];
+  role: NexusGroupRole;
+  permissions: NexusGrant[];
 }
 export interface NexusAccessEntry {
   node_id: string;
@@ -43,7 +71,7 @@ export interface NexusDeviceAccess {
   can_manage: boolean;
   members: NexusAccessEntry[];
 }
-export const NEXUS_GROUP_PERMISSIONS: { name: string; label: string }[] = [
+export const NEXUS_GROUP_PERMISSIONS: { name: NexusPermission; label: string }[] = [
   { name: 'read', label: 'See the group' },
   { name: 'write', label: 'Write' },
   { name: 'add_child', label: 'Invite devices' },
@@ -58,7 +86,7 @@ export const NEXUS_GROUP_PERMISSIONS: { name: string; label: string }[] = [
   { name: 'stun_respond', label: 'Answer STUN requests' },
   { name: 'routing_coordinate', label: 'Coordinate routing' },
 ];
-export const NEXUS_SERVICE_PERMISSIONS: { name: string; label: string }[] = [
+export const NEXUS_SERVICE_PERMISSIONS: { name: NexusServicePermission; label: string }[] = [
   { name: 'svc:inference', label: 'Run inference' },
   { name: 'svc:mcp', label: 'Use MCP tools' },
   { name: 'svc:models_manage', label: 'Manage models' },
@@ -75,7 +103,7 @@ export const NEXUS_INVITE_CODE = /^[0-9]{8}$/;
 export const NEXUS_INVITE_TOKEN = /^lnk_[0-9a-f]{64}$/;
 export const NEXUS_INVITE_TOKEN_LENGTH = 68;
 export const NEXUS_INVITE_TTL_SEC = 600;
-export function hasNexusPermission(permissions: string[] | undefined, name: string): boolean {
+export function hasNexusPermission(permissions: readonly NexusGrant[] | undefined, name: NexusGrant): boolean {
   return Boolean(permissions?.includes(name) || permissions?.includes('admin'));
 }
 export interface NexusMeshPortUrl { device_name: string; node_id: string; self: boolean; url: string }
@@ -590,11 +618,10 @@ export async function selectNexusLemonadeServer(nodeId: string, suppliedKey?: st
   } finally { publish({ ...state, switchingServer: false }); }
 }
 
-export type NexusMemberRole = 'administrator' | 'moderator' | 'user';
 export function setNexusMemberRole(nodeId: string, role: NexusMemberRole): Promise<NexusDevice> {
   return nexusRequest(`members/${encodeURIComponent(nodeId)}/role`, { role });
 }
-export function setNexusMemberPermissions(nodeId: string, permissions: string[]): Promise<NexusDevice> {
+export function setNexusMemberPermissions(nodeId: string, permissions: NexusGrant[]): Promise<NexusDevice> {
   return nexusRequest(`members/${encodeURIComponent(nodeId)}/permissions`, { permissions });
 }
 export function getNexusDeviceAccess(nodeId: string): Promise<NexusDeviceAccess> {
@@ -607,7 +634,7 @@ export function setNexusDeviceAccess(nodeId: string, memberNodeId: string, see: 
 // the space or a dash, so the server receives the digits alone.
 export const normalizeNexusInvitation = (value: string) => value.replace(/[\s-]/g, '');
 export const formatNexusInviteCode = (code: string) => `${code.slice(0, 4)} ${code.slice(4)}`;
-export function acceptNexusInvite(code: string, request = nexusRequest): Promise<{ status?: string; group_id?: string; error?: string }> {
+export function acceptNexusInvite(code: string, request = nexusRequest): Promise<{ status?: NexusMembershipState; group_id?: string; error?: string }> {
   return request('invites/accept', { code: normalizeNexusInvitation(code) });
 }
 export function getNexusMemberships(request = nexusRequest): Promise<{ memberships: NexusMembership[]; group_node_id: string }> {

@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useState } from 'react';
 import { friendlyErrorMessage } from '../api';
-import { NEXUS_SERVICE_PERMISSIONS } from '../features/nexus/nexus';
+import { NEXUS_SERVICE_PERMISSIONS, type NexusRouteFamily } from '../features/nexus/nexus';
 import { NEXUS_ROLES, getNexusRoutePermissions, type NexusRole, type NexusRoutePermissions as RoutePermissions } from '../features/nexus/routePermissions';
 import { useI18n } from '../i18n';
 import { Icon } from './Icon';
@@ -14,7 +14,7 @@ export function NexusRoutePermissions({ viewerRole }: { viewerRole: NexusRole })
   const [open, setOpen] = useState(false);
   const [listOpen, setListOpen] = useState(false);
   const [selectedRole, setRole] = useState<NexusRole>('user');
-  const [selectedFamily, setFamily] = useState('inference');
+  const [selectedFamily, setFamily] = useState<string>('inference' satisfies NexusRouteFamily);
   const visibleRoles = NEXUS_ROLES.slice(NEXUS_ROLES.indexOf(viewerRole));
   const role = visibleRoles.includes(selectedRole) ? selectedRole : viewerRole;
   const [query, setQuery] = useState('');

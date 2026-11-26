@@ -59,4 +59,11 @@ assert.equal(nexusKeysEqual('', ''), false);
 assert.equal(nexusKeysEqual('first', 'second'), false);
 assert.throws(() => readNexusTreeBranch({ status: 'running' }), /invalid group data/, 'a different API response must fail before it reaches React state');
 assert.throws(() => readNexusTreeBranch(null), /invalid group data/);
+const wireEntry = (overrides) => ({ id: 'home', parent_id: '', name: 'Home', kind: 'group', node_type: 'customer', tunnel_ip: '', is_inference: false,
+  management_pubkey: 'home-key', permissions: ['read', 'admin'], can_add_group: true, can_rename: true, can_manage: true, access_known: true,
+  assignments: [{ management_pubkey: 'peer-key', permissions: ['read', 'svc:inference', 'svc:audio'] }], ...overrides });
+assert.equal(readNexusTreeBranch({ parent: wireEntry({}), children: [] }).parent.assignments[0].permissions.length, 3, 'a service grant for a family this app does not label is kept');
+assert.throws(() => readNexusTreeBranch({ parent: wireEntry({ permissions: ['read', 'owner'] }), children: [] }), /invalid group data/, 'an unknown permission name is invalid data');
+assert.throws(() => readNexusTreeBranch({ parent: wireEntry({ assignments: [{ management_pubkey: 'k', permissions: ['svc:Inference'] }] }), children: [] }), /invalid group data/);
+assert.throws(() => readNexusTreeBranch({ parent: wireEntry({ kind: 'leaf' }), children: [] }), /invalid group data/, 'an unknown tree kind is invalid data');
 console.log('Nexus hierarchy: recursive groups, leaf nodes, collapse, breadcrumbs, cycle protection and identity matching passed.');

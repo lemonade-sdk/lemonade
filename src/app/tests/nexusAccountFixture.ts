@@ -1,6 +1,6 @@
 import { expect, type Page } from '@playwright/test';
-import type { NexusDevice, NexusStatus } from '../src/features/nexus/nexus';
-import type { NexusTreeBranch, NexusTreeEntry } from '../src/features/nexus/tree';
+import type { NexusDevice, NexusGrant, NexusMemberRole, NexusStatus } from '../src/features/nexus/nexus';
+import type { NexusTreeBranch, NexusTreeEntry, NexusTreeKind } from '../src/features/nexus/tree';
 import type { NexusRole } from '../src/features/nexus/routePermissions';
 
 const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Authorization, Content-Type', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS' };
@@ -16,7 +16,7 @@ export async function setupNexusAccount(page: Page, options: {
   const source = options.remote || options.localNetwork ? 'http://192.168.10.20:13305' : 'http://127.0.0.1:13305';
   const deviceName = options.remote || options.localNetwork ? 'Remote server' : 'My laptop';
   const accountRole = options.role || (options.readOnly ? 'user' : 'admin');
-  const members = [{ ...self, device_name: deviceName, is_admin: accountRole === 'admin',
+  const members: NexusDevice[] = [{ ...self, device_name: deviceName, is_admin: accountRole === 'admin',
     permissions: accountRole === 'admin' ? ['read', 'admin'] : accountRole === 'moderator'
       ? ['read', 'write', 'add_child', 'connect_private', 'svc:inference', 'svc:mcp', 'svc:models_manage', 'svc:jobs'] : ['read'] }, { ...peer }];
   const state: NexusStatus = { available: true, controller_url: 'http://127.0.0.1:15555', enabled: true,
@@ -27,7 +27,7 @@ export async function setupNexusAccount(page: Page, options: {
     ...(options.freshKey ? { locked: false, status: 'ready', registered: true, unlock: 'device_key' as const, identity_source: 'handoff' as const } : {}),
     ...(options.needsUserKey ? { identity_source: 'handoff' as const, needs_user_key: true } : {}),
     ...(options.deviceKey ? { identity_source: 'user' as const, unlock: options.registered === false ? 'passkey' as const : 'device_key' as const } : {}) };
-  const entry = (id: string, name: string, kind: 'group' | 'node', parent_id: string): NexusTreeEntry => ({
+  const entry = (id: string, name: string, kind: NexusTreeKind, parent_id: string): NexusTreeEntry => ({
     id, name, kind, parent_id, node_type: kind === 'group' ? 'customer' : 'endpoint', tunnel_ip: '', is_inference: false,
     management_pubkey: `${id}-key`, permissions: options.readOnly ? ['read'] : ['admin'],
     can_add_group: kind === 'group' && !options.readOnly, can_rename: kind === 'group' && !options.readOnly,
@@ -173,11 +173,11 @@ export async function setupNexusAccount(page: Page, options: {
     const roleMatch = path.match(/\/members\/([^/]+)\/role$/);
     if (roleMatch) {
       if (fixture.rejectWrites) return route.fulfill({ status: 403, headers, json: { error: 'Only a group admin can change member access' } });
-      const presets: Record<string, string[]> = {
+      const presets: Record<NexusMemberRole, NexusGrant[]> = {
         administrator: ['read', 'connect_private', 'admin'], moderator: ['read', 'write', 'add_child', 'connect_private', 'svc:inference', 'svc:mcp', 'svc:models_manage', 'svc:jobs'],
         user: ['read', 'connect_private', 'svc:inference'],
       };
-      const permissions = presets[String(body?.role)];
+      const permissions = presets[String(body?.role) as NexusMemberRole];
       if (!permissions) return route.fulfill({ status: 400, headers, json: { error: 'Choose the administrator, moderator or user role' } });
       const member = state.members.find(item => item.node_id === roleMatch[1]);
       if (member) { member.permissions = permissions; member.is_admin = permissions.includes('admin'); }
@@ -212,7 +212,7 @@ export async function setupNexusAccount(page: Page, options: {
       if (action === 'rename') branch.parent.name = String(body?.name);
       if (action === 'permissions') {
         const assignment = branch.parent.assignments.find(item => item.management_pubkey === `${body?.member_node_id}-key`);
-        if (assignment) assignment.permissions = [...body?.permissions as string[], ...(body?.admin ? ['admin'] : [])];
+        if (assignment) assignment.permissions = [...body?.permissions as NexusGrant[], ...(body?.admin ? ['admin' as const] : [])];
       }
       return route.fulfill({ headers, json: {} });
     }

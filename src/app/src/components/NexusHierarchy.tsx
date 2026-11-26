@@ -2,8 +2,8 @@ import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { friendlyErrorMessage } from '../api';
 import { useI18n } from '../i18n';
 import {
-  NEXUS_GROUP_PERMISSIONS, NEXUS_NAME_MAX_BYTES, NEXUS_SERVICE_PERMISSIONS, getNexusDeviceAccess, nexusNameTooLong, nexusConnectionLabel, nexusDeviceOnline,
-  setNexusDeviceAccess, setNexusMemberRole, type NexusAccessEntry, type NexusDeviceAccess, type NexusMemberRole, type NexusStatus,
+  NEXUS_GROUP_PERMISSIONS, NEXUS_NAME_MAX_BYTES, NEXUS_SERVICE_PERMISSIONS, getNexusDeviceAccess, isNexusMemberRole, nexusNameTooLong, nexusConnectionLabel, nexusDeviceOnline,
+  setNexusDeviceAccess, setNexusMemberRole, type NexusAccessEntry, type NexusDeviceAccess, type NexusGrant, type NexusMemberRole, type NexusStatus,
 } from '../features/nexus/nexus';
 import {
   createNexusGroup, getNexusTreeBranch, moveNexusNode, renameNexusGroup, saveNexusGroupPermissions,
@@ -221,7 +221,7 @@ function GroupManagement({ entry, entries, selfId, service, onSaved }: {
   const [name, setName] = useState('');
   const [memberId, setMemberId] = useState('');
   const [admin, setAdmin] = useState(false);
-  const [permissions, setPermissions] = useState<string[]>([]);
+  const [permissions, setPermissions] = useState<NexusGrant[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const actionRef = useRef<HTMLButtonElement | null>(null);
@@ -395,7 +395,7 @@ function DeviceManagement({ entry, entries, status, service, onSaved }: {
   return <div className="nexus-group-management nexus-device-management">
     {homeMember && <div className="nexus-device-role">
       <label htmlFor={`${id}-role`}>{t('Role in this group')}</label>
-      <select id={`${id}-role`} className="input" value={role} disabled={busy} onChange={event => void changeRole(event.target.value as NexusMemberRole)}>
+      <select id={`${id}-role`} className="input" value={role} disabled={busy} onChange={event => { if (isNexusMemberRole(event.target.value)) void changeRole(event.target.value); }}>
         <option value="user">{t('User')}</option>
         <option value="moderator">{t('Moderator')}</option>
         <option value="administrator">{t('Administrator')}</option>
