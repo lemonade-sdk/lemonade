@@ -334,7 +334,8 @@ void RequestMiddleware::log_response(const httplib::Request& req, const httplib:
     const auto& peer = nexus_access::request_peer();
     if (!peer.node_id.empty()) {
         LOG(INFO, "Server") << req.method << " " << req.path << " - " << res.status
-                            << " peer " << peer.node_id << " family " << peer.family << std::endl;
+                            << " peer " << peer.node_id << " family "
+                            << (peer.family ? nexus_access::name(*peer.family) : std::string_view("unknown")) << std::endl;
     } else if (!is_quiet_get) {
         LOG(DEBUG, "Server") << req.method << " " << req.path << " - " << res.status << std::endl;
     }

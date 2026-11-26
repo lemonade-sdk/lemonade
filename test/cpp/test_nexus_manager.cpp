@@ -18,6 +18,7 @@
 #include <set>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <LemonadeNexusSDK/lemonade_nexus.h>
 
 namespace lemon {
@@ -43,6 +44,10 @@ void register_mcp_routes(RouteRegistry& registry, ServerContext& ctx);
 namespace {
 using nlohmann::json;
 namespace access = lemon::nexus_access;
+using access::Operation;
+using access::Permission;
+using access::Role;
+using access::RouteFamily;
 
 // Every manager in this test runs as a system service with its own identity file under
 // the temporary root, whatever the host OS: no test reaches an OS keystore.
@@ -85,7 +90,7 @@ void set_environment(const char* name, const std::string& value) {
 
 void check_route_access(const std::function<void(bool, const char*)>& check) {
     using lemon::NexusListener;
-    const auto route = [](NexusListener listener, const std::string& address, const std::string& operation,
+    const auto route = [](NexusListener listener, const std::string& address, Operation operation,
                           const httplib::Headers& headers = httplib::Headers{}) {
         httplib::Request req;
         req.remote_addr = address;
@@ -95,24 +100,26 @@ void check_route_access(const std::function<void(bool, const char*)>& check) {
     check(access::constant_time_equals("secret", "secret"), "Equal secrets match");
     check(!access::constant_time_equals("secre", "secret") && !access::constant_time_equals("secrets", "secret"), "Length differences never match");
     check(!access::bearer_matches("Bearer ", "", ""), "Empty API keys are not credentials");
+    const auto mixed = {Operation::Status, Operation::Members, Operation::Enable, Operation::Relay, Operation::KeyHandoff,
+        Operation::AccountDelete, Operation::RoutePermissions};
     for (const auto* address : {"203.0.113.1", "9.255.255.255", "172.32.0.0", "192.169.0.0", "100.64.0.1", "169.254.1.2",
                                 "fc00::1", "2001:db8::1", "::ffff:203.0.113.1", "", "10.1.2.3.invalid"}) {
-        for (const auto* op : {"status", "members", "enable", "relay", "key/handoff", "account/delete", "route-permissions"}) {
+        for (const auto op : mixed) {
             check(route(NexusListener::Public, address, op, {{"Authorization", "Bearer admin"}}).first == 403,
                   "Neither a public address nor an API key authorizes remote Nexus requests");
         }
     }
     for (const auto* address : {"192.168.1.2", "10.1.2.3", "172.16.0.1", "172.31.255.255", "::ffff:192.168.1.2", "::FFFF:ac10:1"}) {
-        for (const auto* op : {"status", "members", "enable", "relay", "key/handoff", "account/delete", "route-permissions"}) {
+        for (const auto op : mixed) {
             check(route(NexusListener::Public, address, op).first == 0,
                   "A client on the local network is a local operator on the public port");
         }
-        check(route(NexusListener::Management, address, "enable").first == 403, "Bootstrap on the management listener stays loopback");
+        check(route(NexusListener::Management, address, Operation::Enable).first == 403, "Bootstrap on the management listener stays loopback");
     }
-    check(route(NexusListener::Public, "127.0.0.1", "status").first == 0, "Local discovery is key-free");
-    check(route(NexusListener::Public, "127.0.0.1", "members").first == 0, "Local management is served on the public port");
-    check(route(NexusListener::Management, "127.0.0.1", "enable").first == 0, "Local bootstrap is key-free");
-    for (const auto* role : {"administrator", "moderator", "user"}) {
+    check(route(NexusListener::Public, "127.0.0.1", Operation::Status).first == 0, "Local discovery is key-free");
+    check(route(NexusListener::Public, "127.0.0.1", Operation::Members).first == 0, "Local management is served on the public port");
+    check(route(NexusListener::Management, "127.0.0.1", Operation::Enable).first == 0, "Local bootstrap is key-free");
+    for (const auto role : access::kRoles) {
         std::string permissions;
         for (const auto& name : access::role_permissions(role)) {
             if (!permissions.empty()) permissions += ',';
@@ -120,17 +127,20 @@ void check_route_access(const std::function<void(bool, const char*)>& check) {
         }
         const httplib::Headers identity = {{"X-Nexus-Peer-Node", "caller"}, {"X-Nexus-Peer-Key", "ed25519:caller"},
             {"X-Nexus-Peer-Permissions", permissions}, {"X-Nexus-Family", "management"}, {"X-Nexus-Catalog-Version", "2"}};
-        for (const auto* op : {"status", "members", "members/role", "tree/permissions", "tree/move", "invites", "route-permissions"}) {
-            check(route(NexusListener::MeshIngress, "127.0.0.1", op, identity).first == (std::string(role) == "administrator" ? 0 : 403),
+        for (const auto op : {Operation::Status, Operation::Members, Operation::MembersRole, Operation::TreePermissions,
+                              Operation::TreeMove, Operation::Invites, Operation::RoutePermissions}) {
+            check(route(NexusListener::MeshIngress, "127.0.0.1", op, identity).first == (role == Role::Administrator ? 0 : 403),
                   "Only attributed administrators may use remote management");
         }
-        for (const auto* op : {"key/handoff", "key/unlock", "passkey/register", "account/delete", "enable", "disable", "relay", "selection", "invites/accept", "memberships/leave"}) {
+        for (const auto op : {Operation::KeyHandoff, Operation::KeyUnlock, Operation::PasskeyRegister, Operation::AccountDelete,
+                              Operation::Enable, Operation::Disable, Operation::Relay, Operation::Selection, Operation::InvitesAccept,
+                              Operation::MembershipsLeave}) {
             check(route(NexusListener::MeshIngress, "127.0.0.1", op, identity).first == 403,
                   "Even an administrator cannot remotely control local identity, lifecycle or relay");
         }
     }
-    check(route(NexusListener::MeshIngress, "127.0.0.1", "members").first == 403, "Missing caller identity is refused");
-    check(route(NexusListener::Public, "127.0.0.1", "relay").first == 0, "Local operators retain the relay");
+    check(route(NexusListener::MeshIngress, "127.0.0.1", Operation::Members).first == 403, "Missing caller identity is refused");
+    check(route(NexusListener::Public, "127.0.0.1", Operation::Relay).first == 0, "Local operators retain the relay");
     const json group_path = json::array({{{"assignments", json::array({
         {{"management_pubkey", "ed25519:owner"}, {"permissions", {"admin"}}},
         {{"management_pubkey", "ed25519:user"}, {"permissions", {"read", "connect_private", "svc:inference"}}}})}}});
@@ -477,7 +487,7 @@ void check_service_catalog(const std::function<void(bool, const char*)>& check) 
     bool known = true;
     for (const auto& route : all) {
         const auto family = route.value("family", std::string());
-        known = known && std::find(access::kFamilies.begin(), access::kFamilies.end(), family) != access::kFamilies.end();
+        known = known && access::parse_family(family).has_value();
         ++per_family[family];
         if (route.value("prefixes", std::string()) == "Internal") known = known && family == "internal";
     }
@@ -531,10 +541,11 @@ void check_service_catalog(const std::function<void(bool, const char*)>& check) 
             parameterized = parameterized || path.find("{id}") != std::string::npos;
             const auto nexus = path.find("/nexus/");
             if (nexus != std::string::npos) {
-                auto operation = path.substr(nexus + 7);
-                const auto parameter = operation.find("{node_id}/");
-                if (parameter != std::string::npos) operation.erase(parameter, 10);
-                accurate = accurate && access::remote_operation(operation);
+                const auto registered = std::find_if(access::nexus_routes().begin(), access::nexus_routes().end(),
+                    [&](const access::NexusRoute& candidate) {
+                        return route.at("method") == candidate.method && path.substr(nexus + 7) == candidate.path;
+                    });
+                accurate = accurate && registered != access::nexus_routes().end() && access::remote_operation(registered->operation);
             }
         }
         const auto family = route.at("family").get<std::string>();
@@ -563,11 +574,16 @@ void check_role_presets(const std::function<void(bool, const char*)>& check) {
         "svc:backends", "svc:jobs", "svc:internal", "svc:system", "svc:management"});
     const json moderator = json::array({"read", "write", "add_child", "connect_private", "svc:inference", "svc:mcp", "svc:models_manage", "svc:jobs"});
     const json user = json::array({"read", "connect_private", "svc:inference"});
-    check(access::role_permissions("administrator") == administrator, "Administrator holds admin, connect and every family");
-    check(access::role_permissions("moderator") == moderator, "Moderator holds the tree names and the four families");
-    check(access::role_permissions("user") == user, "User holds read, connect and inference");
-    check(access::role_permissions("admin") == administrator && access::role_permissions("member") == user, "The former role names map to the presets");
-    check(throws([&] { access::role_permissions("owner"); }) && throws([&] { access::role_permissions(""); }), "Unknown roles are refused");
+    check(access::role_permissions(Role::Administrator) == administrator, "Administrator holds admin, connect and every family");
+    check(access::role_permissions(Role::Moderator) == moderator, "Moderator holds the tree names and the four families");
+    check(access::role_permissions(Role::User) == user, "User holds read, connect and inference");
+    check(access::parse_role("administrator") == Role::Administrator && access::parse_role("moderator") == Role::Moderator &&
+          access::parse_role("user") == Role::User, "The request role names parse");
+    check(access::parse_role("admin") == Role::Administrator && access::parse_role("member") == Role::User, "The former role names map to the presets");
+    check(!access::parse_role("owner") && !access::parse_role("") && !access::parse_role("Administrator") && !access::parse_role("users"),
+          "Unknown roles are refused");
+    check(access::name(Role::Administrator) == "admin" && access::name(Role::Moderator) == "moderator" && access::name(Role::User) == "user",
+          "Roles report their ids");
     check(access::kFamilies.size() == 8, "Every family appears in the administrator preset");
 
     check(access::service_permission("svc:inference") && access::service_permission("svc:a.b-c_d") &&
@@ -580,9 +596,9 @@ void check_role_presets(const std::function<void(bool, const char*)>& check) {
           throws([&] { access::group_permissions(json::array({"svc:Bad"}), false); }), "Group permissions refuse malformed svc names");
     check(access::invite_permissions(json::array({"svc:inference", "read"})) == json::array({"read", "svc:inference"}), "Invites carry svc names");
     check(throws([&] { access::invite_permissions(json::array({"svc:Bad"})); }), "Invites refuse malformed svc names");
-    check(access::invite_permissions(access::role_permissions("moderator")) == moderator &&
-          access::invite_permissions(access::role_permissions("user")) == user, "The moderator and user presets fit an invite");
-    check(throws([&] { access::invite_permissions(access::role_permissions("administrator")); }), "An invite cannot carry the administrator preset");
+    check(access::invite_permissions(access::role_permissions(Role::Moderator)) == moderator &&
+          access::invite_permissions(access::role_permissions(Role::User)) == user, "The moderator and user presets fit an invite");
+    check(throws([&] { access::invite_permissions(access::role_permissions(Role::Administrator)); }), "An invite cannot carry the administrator preset");
 
     const json denied = {{"kind", "denied"}, {"vport", 13305}, {"peer_node_id", "node-a"}, {"peer_key", "ed25519:secret-key"},
         {"peer_tunnel_ip", "10.8.0.3"}, {"method", "POST"}, {"path", "/api/v1/chat/completions"}, {"family", "inference"},
@@ -600,6 +616,108 @@ void check_role_presets(const std::function<void(bool, const char*)>& check) {
           "Long fields are cut");
 }
 
+// The names are the wire spellings the SDK and the GUI read; the tables keep their order.
+void check_enum_names(const std::function<void(bool, const char*)>& check) {
+    const std::vector<std::string> permissions = {"read", "write", "add_child", "edit_node", "delete_node", "expand_subnet",
+        "connect_private", "connect_shared", "relay_forward", "routing_coordinate", "stun_respond", "relay_register", "allocate_ip", "admin"};
+    bool permissions_match = access::kPermissions.size() == permissions.size();
+    for (size_t i = 0; permissions_match && i < permissions.size(); ++i) {
+        permissions_match = access::name(access::kPermissions[i]) == permissions[i] &&
+            access::parse_permission(permissions[i]) == access::kPermissions[i];
+    }
+    check(permissions_match, "Permissions keep their names and order and round-trip");
+    check(!access::parse_permission("Admin") && !access::parse_permission("") && !access::parse_permission("svc:inference"),
+          "Unknown permission names parse to nothing");
+    check(access::grants(json::array({"write"}), Permission::Write) && !access::grants(json::array({"write"}), Permission::Read),
+          "Permission grants compare by name");
+
+    const std::vector<std::string> families = {"inference", "mcp", "models_manage", "backends", "jobs", "internal", "system", "management"};
+    bool families_match = access::kFamilies.size() == families.size();
+    for (size_t i = 0; families_match && i < families.size(); ++i) {
+        families_match = access::name(access::kFamilies[i]) == families[i] && access::parse_family(families[i]) == access::kFamilies[i] &&
+            access::service_permission(access::kFamilies[i]) == "svc:" + families[i];
+    }
+    check(families_match, "Families keep their names and order, round-trip and name their svc permission");
+    check(!access::parse_family("Inference") && !access::parse_family("") && !access::parse_family("svc:inference"),
+          "Unknown family names parse to nothing");
+
+    bool roles_match = true;
+    for (const auto role : access::kRoles) roles_match = roles_match && access::parse_role(access::name(role)) == role;
+    check(roles_match, "Every role id parses back to its role");
+
+    using access::NodeType;
+    using access::TreeKind;
+    using access::UnlockMethod;
+    using access::AvatarState;
+    using access::ConnectionType;
+    using access::SessionStatus;
+    using access::EventType;
+    check(access::name(NodeType::Root) == "root" && access::name(NodeType::Customer) == "customer" && access::name(NodeType::Endpoint) == "endpoint",
+          "Node types carry the federation names");
+    bool node_types_match = true;
+    for (const auto type : {NodeType::Root, NodeType::Customer, NodeType::Endpoint}) {
+        node_types_match = node_types_match && access::parse_node_type(access::name(type)) == type;
+    }
+    check(node_types_match && !access::parse_node_type("relay") && !access::parse_node_type(""), "Node types round-trip and other types parse to nothing");
+    check(access::name(TreeKind::Group) == "group" && access::name(TreeKind::Node) == "node" &&
+          access::parse_tree_kind("group") == TreeKind::Group && access::parse_tree_kind("node") == TreeKind::Node && !access::parse_tree_kind("leaf"),
+          "Tree kinds round-trip");
+    check(access::name(UnlockMethod::Passkey) == "passkey" && access::name(UnlockMethod::DeviceKey) == "device_key" &&
+          access::parse_unlock_method("passkey") == UnlockMethod::Passkey && access::parse_unlock_method("device_key") == UnlockMethod::DeviceKey &&
+          !access::parse_unlock_method(""), "Unlock methods round-trip");
+    check(access::name(AvatarState::Ready) == "ready" && access::name(AvatarState::Unsupported) == "unsupported" &&
+          access::name(AvatarState::Unavailable) == "unavailable" && access::parse_avatar_state("ready") == AvatarState::Ready &&
+          access::parse_avatar_state("unsupported") == AvatarState::Unsupported && access::parse_avatar_state("unavailable") == AvatarState::Unavailable &&
+          !access::parse_avatar_state("pending"), "Avatar states round-trip");
+    check(access::name(ConnectionType::Local) == "local" && access::name(ConnectionType::P2p) == "p2p" &&
+          access::name(ConnectionType::Relay) == "relay" && access::name(ConnectionType::Unknown) == "unknown", "Connection types carry their names");
+    check(access::name(SessionStatus::Disabled) == "disabled" && access::name(SessionStatus::Locked) == "locked" &&
+          access::name(SessionStatus::Ready) == "ready" && access::name(SessionStatus::Joining) == "joining" &&
+          access::name(SessionStatus::Running) == "running" && access::name(SessionStatus::Degraded) == "degraded", "Status values carry their names");
+    check(access::name(EventType::LockChanged) == "nexus.lock_changed" && access::name(EventType::MeshChanged) == "nexus.mesh_changed" &&
+          access::name(EventType::MemberJoined) == "nexus.member_joined" && access::name(EventType::MemberLeft) == "nexus.member_left",
+          "Event types carry the SSE event names");
+
+    const std::vector<std::tuple<std::string, std::string, std::string>> routes = {
+        {"GET", "status", "status"}, {"GET", "passkey/challenge", "passkey/challenge"}, {"GET", "key/handoff", "key/handoff"},
+        {"GET", "devices", "devices"}, {"GET", "members", "members"}, {"GET", "join/status", "join/status"}, {"GET", "events", "events"},
+        {"GET", "tree", "tree"}, {"GET", "account", "account"}, {"GET", "selection", "selection"}, {"GET", "memberships", "memberships"},
+        {"GET", "route-permissions", "route-permissions"},
+        {"POST", "enable", "enable"}, {"POST", "disable", "disable"}, {"POST", "passkey/register", "passkey/register"},
+        {"POST", "passkey/unlock", "passkey/unlock"}, {"POST", "key/unlock", "key/unlock"}, {"POST", "invites", "invites"},
+        {"POST", "invites/cancel", "invites/cancel"}, {"POST", "join", "join"}, {"POST", "egress", "egress"}, {"POST", "lock", "lock"},
+        {"POST", "device", "device"}, {"POST", "device/check", "device/check"}, {"POST", "account/avatar", "account/avatar"},
+        {"POST", "selection", "selection"}, {"POST", "invites/accept", "invites/accept"}, {"POST", "account/delete", "account/delete"},
+        {"POST", "forget", "forget"},
+        {"POST", "devices/{node_id}/remove", "devices/remove"}, {"GET", "devices/{node_id}/access", "devices/access"},
+        {"POST", "devices/{node_id}/access", "devices/access"}, {"POST", "members/{node_id}/role", "members/role"},
+        {"POST", "members/{node_id}/permissions", "members/permissions"}, {"POST", "memberships/{node_id}/leave", "memberships/leave"},
+        {"GET", "tree/{node_id}/children", "tree/children"}, {"POST", "tree/{node_id}/groups", "tree/groups"},
+        {"POST", "tree/{node_id}/rename", "tree/rename"}, {"POST", "tree/{node_id}/permissions", "tree/permissions"},
+        {"POST", "tree/{node_id}/invites", "tree/invites"}, {"POST", "tree/{node_id}/move", "tree/move"}};
+    const auto& table = access::nexus_routes();
+    bool routes_match = table.size() == routes.size();
+    std::set<std::string> operation_names;
+    std::set<Operation> operations;
+    for (size_t i = 0; routes_match && i < routes.size(); ++i) {
+        routes_match = std::get<0>(routes[i]) == table[i].method && std::get<1>(routes[i]) == table[i].path &&
+            std::get<2>(routes[i]) == access::name(table[i].operation);
+        operation_names.insert(std::string(access::name(table[i].operation)));
+        operations.insert(table[i].operation);
+    }
+    check(routes_match, "The route table keeps every method, path and operation id in order");
+    check(table.size() == 41 && operation_names.size() == operations.size() && operations.size() == 39 && !operations.count(Operation::Relay) &&
+          access::name(Operation::Relay) == "relay", "Every operation has one id and the relay is the route outside the table");
+    const std::set<std::string> remote = {"status", "join/status", "devices", "members", "members/role", "members/permissions", "devices/access",
+        "devices/remove", "invites", "invites/cancel", "device/check", "tree", "tree/children", "tree/groups", "tree/rename", "tree/permissions",
+        "tree/invites", "tree/move", "route-permissions"};
+    std::set<std::string> remote_found;
+    for (const auto& route : table) {
+        if (access::remote_operation(route.operation)) remote_found.insert(std::string(access::name(route.operation)));
+    }
+    check(remote_found == remote && !access::remote_operation(Operation::Relay), "The remote operations are the ones an administrator may run over the mesh");
+}
+
 void check_peer_headers(const std::function<void(bool, const char*)>& check) {
     const httplib::Headers spoofed = {{"X-Nexus-Peer-Node", "node-a"}, {"X-Nexus-Peer-Key", "ed25519:k"}, {"X-Nexus-Peer-Permissions", "read,svc:inference"},
         {"x-nexus-family", "inference"}, {"X-Nexus-Catalog-Version", "7"}, {"Authorization", "Bearer key"}};
@@ -614,11 +732,15 @@ void check_peer_headers(const std::function<void(bool, const char*)>& check) {
     mesh.headers = spoofed;
     access::accept_peer_headers(mesh, true);
     check(mesh.get_header_value("X-Nexus-Peer-Node") == "node-a" && access::request_peer().node_id == "node-a" &&
-          access::request_peer().family == "inference" && access::request_from_mesh_peer(),
+          access::request_peer().family == RouteFamily::Inference && access::request_from_mesh_peer(),
           "The mesh ingress listener keeps the headers and records the peer");
+    httplib::Request unknown_family;
+    unknown_family.headers = {{"X-Nexus-Peer-Node", "node-a"}, {"X-Nexus-Family", "inference_extra"}};
+    access::accept_peer_headers(unknown_family, true);
+    check(access::request_peer().node_id == "node-a" && !access::request_peer().family.has_value(), "A family lemond does not know records no family");
     httplib::Request plain;
     access::accept_peer_headers(plain, false);
-    check(access::request_peer().node_id.empty() && access::request_peer().family.empty(), "The next request clears the peer");
+    check(access::request_peer().node_id.empty() && !access::request_peer().family.has_value(), "The next request clears the peer");
 
     const auto install = [](httplib::Server& server, bool mesh_ingress) {
         server.set_pre_routing_handler([mesh_ingress](const httplib::Request& req, httplib::Response&) {
@@ -626,8 +748,9 @@ void check_peer_headers(const std::function<void(bool, const char*)>& check) {
             return httplib::Server::HandlerResponse::Unhandled;
         });
         server.Get("/echo", [](const httplib::Request& req, httplib::Response& res) {
-            res.set_content(json{{"header", req.get_header_value("X-Nexus-Peer-Node")}, {"peer", access::request_peer().node_id},
-                {"family", access::request_peer().family}}.dump(), "application/json");
+            const auto& peer = access::request_peer();
+            res.set_content(json{{"header", req.get_header_value("X-Nexus-Peer-Node")}, {"peer", peer.node_id},
+                {"family", peer.family ? std::string(access::name(*peer.family)) : std::string()}}.dump(), "application/json");
         });
     };
     httplib::Server front;
@@ -846,7 +969,7 @@ void check_private_management(const std::filesystem::path& root, const std::func
             return "X-Nexus-Peer-Node: caller\r\nX-Nexus-Peer-Key: ed25519:caller\r\nX-Nexus-Catalog-Version: 2\r\n" +
                 std::string("X-Nexus-Peer-Permissions: ") + permissions + "\r\nX-Nexus-Family: " + family + "\r\n";
         };
-        for (const auto* role : {"administrator", "moderator", "user"}) {
+        for (const auto role : access::kRoles) {
             std::string permissions;
             for (const auto& name : access::role_permissions(role)) {
                 if (!permissions.empty()) permissions += ',';
@@ -856,7 +979,7 @@ void check_private_management(const std::filesystem::path& root, const std::func
                 const auto identity = attributed(permissions, "management") + authorization;
                 const auto status = mesh.request("127.0.0.1", "GET", "/v1/nexus/status", "", identity);
                 const auto routes = mesh.request("127.0.0.1", "GET", "/v1/nexus/route-permissions", "", identity);
-                check(routes.status == (std::string(role) == "administrator" ? 200 : 403),
+                check(routes.status == (role == Role::Administrator ? 200 : 403),
                     "Only an attributed mesh administrator can read the route metadata remotely");
                 if (routes.status == 200) {
                     const auto route_data = json::parse(routes.body);
@@ -870,13 +993,13 @@ void check_private_management(const std::filesystem::path& root, const std::func
                         }
                     }
                 }
-                check(status.status == (std::string(role) == "administrator" ? 200 : 403),
+                check(status.status == (role == Role::Administrator ? 200 : 403),
                       "Real middleware permits only SDK-attributed administrators to read Nexus status without an API key");
                 if (status.status == 200) check(!json::parse(status.body).contains("controller_url"), "Remote status hides the local controller");
                 check(mesh.request("127.0.0.1", "GET", "/api/v1/models", "", attributed(permissions, "inference") + authorization).status == 200,
                       "All preset roles may use attributed inference without an API key");
                 check(mesh.request("127.0.0.1", "POST", "/mcp", "{}", attributed(permissions, "mcp") + authorization).status ==
-                      (std::string(role) == "user" ? 403 : 200), "Service grants distinguish user and moderator access");
+                      (role == Role::User ? 403 : 200), "Service grants distinguish user and moderator access");
                 check(server.request("203.0.113.1", "GET", "/v1/nexus/status", "", identity).status == 403,
                       "Public listener rejects forged SDK identity headers");
                 check(mesh.request("127.0.0.1", "POST", "/v1/nexus/account/delete", "{}", identity).status == 403,
@@ -965,8 +1088,10 @@ void check_access_rules(const std::function<void(bool, const char*)>& check) {
     const std::string laptop_key = "ed25519:bGFwdG9w";
     check(access::same_key(admin_key, "ed25519:YWRt-aW4_bg"), "Keys match across base64 spellings");
     check(!access::same_key("", ""), "Empty keys never match");
-    check(access::grants(json::array({"admin"}), "delete_node"), "Admin grants every permission");
-    check(!access::grants(json::array({"read"}), "connect_private"), "Read does not grant connect");
+    check(access::grants(json::array({"admin"}), Permission::DeleteNode) && access::grants(json::array({"admin"}), "svc:mcp"),
+          "Admin grants every permission");
+    check(!access::grants(json::array({"read"}), Permission::ConnectPrivate) && !access::grants(json::array({"read"}), "svc:mcp"),
+          "Read does not grant connect");
 
     const json group = {{"id", "customer-admin"}, {"mgmt_pubkey", admin_key}, {"assignments", {
         {{"management_pubkey", admin_key}, {"permissions", {"read", "write", "add_child", "delete_node", "edit_node", "admin"}}},
@@ -1072,8 +1197,9 @@ void check_access_rules(const std::function<void(bool, const char*)>& check) {
     check(member_view[2].at("permissions_known") && member_view[2].at("permissions") == json::array({"read"}), "Members see their own permissions");
     check(!access::device_access(member_view, "workstation", "laptop").at("can_manage"), "Members cannot manage access");
 
-    check(access::role_permissions("admin").back() == "svc:management" && access::role_permissions("admin")[2] == "admin", "Promotion grants the administrator preset");
-    check(!access::grants(access::role_permissions("member"), "write"), "Demotion leaves the user preset");
+    check(access::role_permissions(Role::Administrator).back() == "svc:management" && access::role_permissions(Role::Administrator)[2] == "admin",
+          "Promotion grants the administrator preset");
+    check(!access::grants(access::role_permissions(Role::User), Permission::Write), "Demotion leaves the user preset");
     check(access::group_permissions(json::array({"add_child"}), false) == json::array({"read", "add_child"}), "Group permissions always include read");
     check(access::group_permissions(json::array({"write"}), true) == json::array({"read", "write", "admin"}), "Group permissions keep the admin role");
     check(throws([&] { access::group_permissions(json::array({"admin"}), false); }), "Admin is granted only through the role");
@@ -1434,13 +1560,13 @@ int main() {
         auto ordinary_members = verified_members;
         ordinary_members[0]["is_admin"] = false;
         check(access::account_summary(ordinary_members, "cluster", "device", "identity").at("role") == "user", "Joining an account does not imply administrator access");
-        ordinary_members[0]["permissions"] = access::role_permissions("moderator");
+        ordinary_members[0]["permissions"] = access::role_permissions(Role::Moderator);
         check(access::account_summary(ordinary_members, "cluster", "device", "identity").at("role") == "moderator", "The verified moderator preset is reported as moderator");
         ordinary_members[0]["permissions"].push_back("svc:future_service");
         check(access::account_summary(ordinary_members, "cluster", "device", "identity").at("role") == "moderator", "Additional grants do not hide a complete moderator preset");
         ordinary_members[0]["permissions"] = json::array({"read", "write", "add_child", "connect_private", "svc:inference"});
         check(access::account_summary(ordinary_members, "cluster", "device", "identity").at("role") == "user", "Partial grants do not imply the moderator preset");
-        ordinary_members[0]["permissions"] = access::role_permissions("moderator");
+        ordinary_members[0]["permissions"] = access::role_permissions(Role::Moderator);
         ordinary_members[0]["is_admin"] = true;
         check(access::account_summary(ordinary_members, "cluster", "device", "identity").at("role") == "admin", "Administrator status takes precedence over moderator grants");
         ordinary_members[0]["is_admin"] = false;
@@ -1488,6 +1614,7 @@ int main() {
         check_access_rules(check);
         check_identity_rules(check);
         check_role_presets(check);
+        check_enum_names(check);
         check_service_catalog(check);
         check_peer_headers(check);
         check_sdk_failures(check);
