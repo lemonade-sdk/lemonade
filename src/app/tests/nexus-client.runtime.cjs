@@ -67,9 +67,10 @@ global.fetch = async (url, init = {}) => {
   const api = require('../src/api.ts').default;
   const nexus = require('../src/features/nexus/nexus.ts');
   const lemond = fs.readFileSync(path.join(__dirname, '../../cpp/server/nexus_manager.cpp'), 'utf8');
-  const lemondTable = name => lemond.match(new RegExp(`\\b${name} = \\{([^}]*)\\}`))[1].match(/"[^"]+"/g).map(item => item.slice(1, -1));
-  assert.deepEqual([...nexus.NEXUS_PERMISSIONS], lemondTable('kPermissions'), 'the tree permissions and their order follow nexus_access::kPermissions');
-  assert.deepEqual([...nexus.NEXUS_ROUTE_FAMILIES], lemondTable('kFamilies'), 'the labelled route families follow nexus_access::kFamilies');
+  const lemondNames = type => lemond.match(new RegExp(`std::string_view name\\(${type} [^)]*\\) \\{\\s*switch[^{]*\\{([\\s\\S]*?)\\n    \\}`))[1]
+    .match(/return "[^"]+"/g).map(item => item.slice(8, -1));
+  assert.deepEqual([...nexus.NEXUS_PERMISSIONS], lemondNames('Permission'), 'the tree permissions and their order follow nexus_access::Permission');
+  assert.deepEqual([...nexus.NEXUS_ROUTE_FAMILIES], lemondNames('RouteFamily'), 'the labelled route families follow nexus_access::RouteFamily');
   assert.deepEqual(nexus.NEXUS_GROUP_PERMISSIONS.map(permission => permission.name).sort(), nexus.NEXUS_PERMISSIONS.filter(name => name !== 'admin').sort(),
     'the group editor offers every tree permission except admin, which the role controls');
   for (const { name } of [...nexus.NEXUS_GROUP_PERMISSIONS, ...nexus.NEXUS_SERVICE_PERMISSIONS]) assert.ok(nexus.isNexusGrant(name), name);
