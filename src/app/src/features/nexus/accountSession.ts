@@ -1,10 +1,11 @@
 import type { NexusAccount, NexusDevice } from './NexusAccountContext';
 import {
-  acceptNexusInvite, getNexusMemberships, isNexusDesktop, leaveNexusMembership, nexusAccountController, NexusRequestError, normalizeNexusInvitation, prepareNexus, usesNexusDeviceKey,
+  acceptNexusInvite, getNexusMemberships, hasNexusPermission, isNexusDesktop, isNexusGrantList, isNexusGroupRole, isNexusMembershipState, leaveNexusMembership,
+  nexusAccountController, NexusRequestError, normalizeNexusInvitation, prepareNexus, usesNexusDeviceKey,
   NEXUS_INVITE_CODE, NEXUS_INVITE_TOKEN, NEXUS_INVITE_TTL_SEC, nexusNameTooLong,
-  type NexusDevice as NetworkDevice, type NexusInvite, type NexusJoinMembership, type NexusMembership, type NexusStatus,
+  type NexusDevice as NetworkDevice, type NexusInvite, type NexusJoinMembership, type NexusMemberRole, type NexusMembership, type NexusStatus,
 } from './nexus';
-import { NEXUS_ROLES } from './routePermissions';
+import { isNexusRole } from './routePermissions';
 
 export const NEXUS_AVATAR_MAX_BYTES = 128 * 1024;
 export const NEXUS_JOINED_AS_MEMBER = 'This device joined the invited network as a member and keeps its own network.';
@@ -35,7 +36,7 @@ export interface NexusAccountService {
   resume: () => Promise<VerifiedNexusAccount | undefined>;
   signIn: (input: NexusSignInInput) => Promise<VerifiedNexusAccount>;
   refresh: (session: VerifiedNexusAccount) => Promise<VerifiedNexusAccount>;
-  invite: (session: VerifiedNexusAccount, role?: 'user' | 'moderator') => Promise<NexusInvite>;
+  invite: (session: VerifiedNexusAccount, role?: Exclude<NexusMemberRole, 'administrator'>) => Promise<NexusInvite>;
   joinNetwork: (session: VerifiedNexusAccount, invitation: string) => Promise<NexusJoinMembership>;
   memberships: (session: VerifiedNexusAccount) => Promise<NexusMembership[]>;
   leaveNetwork: (session: VerifiedNexusAccount, groupId: string) => Promise<void>;
@@ -87,7 +88,7 @@ interface AccountReply { id: string; member_id: string; device_node_id: string; 
 export function verifyAccountReply(value: unknown, source: string, expectedId?: string, fallbackName = ''): VerifiedNexusAccount {
   const reply = value as AccountReply | null;
   if (!reply || typeof reply.id !== 'string' || !reply.id || typeof reply.member_id !== 'string' || !reply.member_id
-    || typeof reply.device_node_id !== 'string' || !reply.device_node_id || !NEXUS_ROLES.includes(reply.role) || !Array.isArray(reply.devices)) {
+    || typeof reply.device_node_id !== 'string' || !reply.device_node_id || !isNexusRole(reply.role) || !Array.isArray(reply.devices)) {
     throw new Error('The server did not return a verified account. Update the server and try again.');
   }
   if (expectedId && reply.id !== expectedId) throw new Error('The account on this device changed. Enable Mesh again.');
@@ -104,7 +105,7 @@ export function verifyAccountReply(value: unknown, source: string, expectedId?: 
   const deviceName = [self.device_name, fallbackName].map(name => (typeof name === 'string' ? name : '').trim()).find(boundedName) || 'Lemonade device';
   return { account: { id: reply.id, deviceName, role: reply.role, avatarUrl: avatar.state === 'ready' ? avatar.image ?? undefined : undefined },
     devices, memberId: reply.member_id, deviceNodeId: reply.device_node_id, source, avatar,
-    canInvite: Boolean(self.permissions?.includes('admin') || self.permissions?.includes('add_child')) };
+    canInvite: hasNexusPermission(self.permissions, 'add_child') };
 }
 
 export const validNexusInvitation = (value: string) => {
@@ -172,16 +173,17 @@ export function createNexusAccountService(dependencies = { controller: nexusAcco
       if (!validNexusInvitation(invitation)) throw new Error(INVITATION_FORMAT_ERROR);
       const controller = await requireController(session.source);
       const reply = await acceptNexusInvite(invitation, controller.request);
-      const status = typeof reply?.status === 'string' ? reply.status : 'member';
-      if (!['member', 'pending', 'refused'].includes(status)) throw new Error('The server returned an invalid membership. Refresh and check your networks.');
-      return { status: status as NexusJoinMembership['status'], group_id: typeof reply.group_id === 'string' ? reply.group_id : undefined, ...(typeof reply.error === 'string' ? { error: reply.error } : {}) };
+      const status = reply?.status ?? 'member';
+      if (!isNexusMembershipState(status)) throw new Error('The server returned an invalid membership. Refresh and check your networks.');
+      return { status, group_id: typeof reply.group_id === 'string' ? reply.group_id : undefined, ...(typeof reply.error === 'string' ? { error: reply.error } : {}) };
     },
     async memberships(session) {
       const controller = await requireController(session.source);
       const reply = await getNexusMemberships(controller.request);
       if (!reply || !Array.isArray(reply.memberships)) throw new Error('The server returned invalid memberships.');
-      return reply.memberships.filter(group => group && typeof group.node_id === 'string' && (group.role === 'home' || group.role === 'member'))
-        .map(group => ({ ...group, hostname: typeof group.hostname === 'string' ? group.hostname : '', permissions: Array.isArray(group.permissions) ? group.permissions : [] }));
+      return reply.memberships.filter(group => group && typeof group.node_id === 'string' && isNexusGroupRole(group.role)
+          && (group.permissions === undefined || isNexusGrantList(group.permissions)))
+        .map(group => ({ ...group, hostname: typeof group.hostname === 'string' ? group.hostname : '', permissions: group.permissions ?? [] }));
     },
     async leaveNetwork(session, groupId) {
       const controller = await requireController(session.source);

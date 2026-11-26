@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const path = require('node:path');
 const ts = require('typescript');
 
 require.extensions['.ts'] = (module, filename) => {
@@ -65,6 +66,20 @@ global.fetch = async (url, init = {}) => {
   assert.deepEqual(workspaceRouteFromPath('connect/devices-and-mesh'), { workspace: 'connect', section: 'nexus' }, 'existing Nexus links keep working');
   const api = require('../src/api.ts').default;
   const nexus = require('../src/features/nexus/nexus.ts');
+  const lemond = fs.readFileSync(path.join(__dirname, '../../cpp/server/nexus_manager.cpp'), 'utf8');
+  const lemondTable = name => lemond.match(new RegExp(`\\b${name} = \\{([^}]*)\\}`))[1].match(/"[^"]+"/g).map(item => item.slice(1, -1));
+  assert.deepEqual([...nexus.NEXUS_PERMISSIONS], lemondTable('kPermissions'), 'the tree permissions and their order follow nexus_access::kPermissions');
+  assert.deepEqual([...nexus.NEXUS_ROUTE_FAMILIES], lemondTable('kFamilies'), 'the labelled route families follow nexus_access::kFamilies');
+  assert.deepEqual(nexus.NEXUS_GROUP_PERMISSIONS.map(permission => permission.name).sort(), nexus.NEXUS_PERMISSIONS.filter(name => name !== 'admin').sort(),
+    'the group editor offers every tree permission except admin, which the role controls');
+  for (const { name } of [...nexus.NEXUS_GROUP_PERMISSIONS, ...nexus.NEXUS_SERVICE_PERMISSIONS]) assert.ok(nexus.isNexusGrant(name), name);
+  assert.ok(nexus.isNexusGrant('admin'));
+  assert.ok(nexus.isNexusGrant('svc:audio-2.0'), 'a family a newer lemond registers is still a grant');
+  for (const rejected of ['svc:Inference', 'owner', 'svc:', 'svc:-audio', 'svc:' + 'a'.repeat(64), 'Admin', 42, null]) {
+    assert.equal(nexus.isNexusGrant(rejected), false, String(rejected));
+  }
+  assert.equal(nexus.hasNexusPermission(['read', 'admin'], 'add_child'), true);
+  assert.equal(nexus.hasNexusPermission(['read'], 'add_child'), false);
   for (const identity_source of ['user', 'handoff', 'system']) {
     assert.equal(nexus.usesNexusDeviceKey({ registered: true, unlock: 'passkey', identity_source }), false,
       'a registered passkey takes precedence over the device key storage location');

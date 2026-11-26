@@ -1,19 +1,26 @@
-import { nexusAccountController, NexusRequestError } from './nexus';
+import { isNexusGrantList, isOneOf, NEXUS_ROUTE_FAMILY_NAME, nexusAccountController, NexusRequestError, type NexusGrant } from './nexus';
 
-export type NexusRole = 'admin' | 'moderator' | 'user';
+export const NEXUS_ROLES = ['admin', 'moderator', 'user'] as const;
+export type NexusRole = typeof NEXUS_ROLES[number];
+export const isNexusRole = isOneOf(NEXUS_ROLES);
+export const NEXUS_ROUTE_POLICIES = ['enforced', 'unavailable'] as const;
+export type NexusRoutePolicy = typeof NEXUS_ROUTE_POLICIES[number];
+const isNexusRoutePolicy = isOneOf(NEXUS_ROUTE_POLICIES);
+export const NEXUS_ROUTE_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'] as const;
+export type NexusRouteMethod = typeof NEXUS_ROUTE_METHODS[number];
+const isNexusRouteMethod = isOneOf(NEXUS_ROUTE_METHODS);
 export interface NexusRoutePermission {
   family: string;
-  method: string;
+  method: NexusRouteMethod;
   paths: string[];
   roles: NexusRole[];
 }
 export interface NexusRoutePermissions {
   catalog_version: number;
-  route_policy: 'enforced' | 'unavailable';
-  roles: { id: NexusRole; permissions: string[] }[];
+  route_policy: NexusRoutePolicy;
+  roles: { id: NexusRole; permissions: NexusGrant[] }[];
   routes: NexusRoutePermission[];
 }
-export const NEXUS_ROLES: readonly NexusRole[] = ['admin', 'moderator', 'user'];
 const strings = (value: unknown): value is string[] => Array.isArray(value) && value.every(item => typeof item === 'string');
 
 export async function getNexusRoutePermissions(): Promise<NexusRoutePermissions> {
@@ -24,13 +31,13 @@ export async function getNexusRoutePermissions(): Promise<NexusRoutePermissions>
     if (error instanceof NexusRequestError && error.status === 404) throw new Error('Update this server to view route permissions.');
     throw error;
   }
-  if (!value || !Number.isSafeInteger(value.catalog_version) || !['enforced', 'unavailable'].includes(value.route_policy) ||
+  if (!value || !Number.isSafeInteger(value.catalog_version) || !isNexusRoutePolicy(value.route_policy) ||
       !Array.isArray(value.roles) || value.roles.length !== NEXUS_ROLES.length ||
-      !NEXUS_ROLES.every(id => value.roles.filter(role => role?.id === id && strings(role.permissions)).length === 1) ||
-      !Array.isArray(value.routes) || !value.routes.every(route => route && typeof route.family === 'string' &&
-        ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'].includes(route.method) &&
+      !NEXUS_ROLES.every(id => value.roles.filter(role => role?.id === id && isNexusGrantList(role.permissions)).length === 1) ||
+      !Array.isArray(value.routes) || !value.routes.every(route => route && typeof route.family === 'string' && NEXUS_ROUTE_FAMILY_NAME.test(route.family) &&
+        isNexusRouteMethod(route.method) &&
         strings(route.paths) && route.paths.length > 0 && route.paths.every(path => path.startsWith('/')) &&
-        strings(route.roles) && route.roles.every(role => (NEXUS_ROLES as readonly string[]).includes(role)))) {
+        Array.isArray(route.roles) && route.roles.every(isNexusRole))) {
     throw new Error('The server returned an invalid route permission list.');
   }
   return value;

@@ -40,7 +40,7 @@ const request = async (path, body) => {
   }
   if (path === 'join') return {};
   if (path === 'invites/accept') return refuseMembership ? {status:'refused',group_id:'studio',error:'expired'} : {status:'member',group_id:'studio'};
-  if (path === 'memberships') return {group_node_id:'cluster',memberships:[{node_id:'cluster',hostname:'Home',role:'home',permissions:['admin']},{node_id:'studio',hostname:'Studio',role:'member',permissions:['read']},{node_id:'bad',role:'owner'}]};
+  if (path === 'memberships') return {group_node_id:'cluster',memberships:[{node_id:'cluster',hostname:'Home',role:'home',permissions:['admin']},{node_id:'studio',hostname:'Studio',role:'member',permissions:['read']},{node_id:'bad',role:'owner'},{node_id:'odd',role:'member',permissions:['owner']}]};
   if (path === 'memberships/studio/leave') return {left:true,node_id:'studio'};
   if (path === 'account/delete') {
     assert.deepEqual(body, {account_id:reply.id, member_id:reply.member_id, device_node_id:reply.device_node_id, confirm:'delete'}, 'deletion names the verified account, member and device');
@@ -132,7 +132,7 @@ const input = { action:'create',deviceName:'Workstation',source };
   assert.equal((await service.joinNetwork(account,'12345678')).status,'refused','a refused membership is reported, not thrown');
   refuseMembership = false;
   const groups = await service.memberships(account);
-  assert.deepEqual(groups.map(group=>[group.node_id,group.role]),[['cluster','home'],['studio','member']],'memberships keep home and member groups and drop unknown roles');
+  assert.deepEqual(groups.map(group=>[group.node_id,group.role]),[['cluster','home'],['studio','member']],'memberships keep home and member groups and drop unknown roles and permission names');
   await service.leaveNetwork(account,'studio');
   assert.equal(calls.at(-1).path,'memberships/studio/leave');
   deletePending = true;

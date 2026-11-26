@@ -1,8 +1,9 @@
 import { test, expect, type Page } from '@playwright/test';
+import type { NexusDevice } from '../src/features/nexus/nexus';
 import { setupNexusAccount, enableNexusMesh } from './nexusAccountFixture';
 
-const gpuBox = { node_id: 'gpu', device_name: 'GPU box', tunnel_ip: '10.8.0.9', management_pubkey: 'gpu-key', permissions: ['read'], permissions_known: true,
-  is_admin: false, is_online: true, can_remove: false, is_inference: true, can_connect: true, connection_type: 'p2p' as const };
+const gpuBox: NexusDevice = { node_id: 'gpu', device_name: 'GPU box', tunnel_ip: '10.8.0.9', management_pubkey: 'gpu-key', permissions: ['read'], permissions_known: true,
+  is_admin: false, is_online: true, can_remove: false, is_inference: true, can_connect: true, connection_type: 'p2p' };
 const gpuModel = { id: 'Qwen-on-gpu', model_name: 'Qwen-on-gpu', labels: ['chat'], recipe: 'llamacpp', downloaded: true };
 
 async function openPickerWithMeshHost(page: Page, prepare: (fixture: Awaited<ReturnType<typeof setupNexusAccount>>) => void) {

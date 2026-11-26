@@ -1,20 +1,23 @@
-import { nexusRequest } from './nexus';
+import { isNexusGrantList, isOneOf, nexusRequest, type NexusGrant } from './nexus';
 
+export const NEXUS_TREE_KINDS = ['group', 'node'] as const;
+export type NexusTreeKind = typeof NEXUS_TREE_KINDS[number];
+const isNexusTreeKind = isOneOf(NEXUS_TREE_KINDS);
 export interface NexusTreeEntry {
   id: string;
   parent_id: string;
   name: string;
-  kind: 'group' | 'node';
+  kind: NexusTreeKind;
   node_type: string;
   tunnel_ip: string;
   is_inference: boolean;
   management_pubkey: string;
-  permissions: string[];
+  permissions: NexusGrant[];
   can_add_group: boolean;
   can_rename: boolean;
   can_manage: boolean;
   access_known: boolean;
-  assignments: { management_pubkey: string; permissions: string[] }[];
+  assignments: { management_pubkey: string; permissions: NexusGrant[] }[];
 }
 
 export interface NexusTreeBranch { parent: NexusTreeEntry; children: NexusTreeEntry[] }
@@ -65,10 +68,10 @@ export function treeBreadcrumbs(entry: NexusTreeEntry, entries: ReadonlyMap<stri
 export function readNexusTreeBranch(value: unknown): NexusTreeBranch {
   const branch = value as NexusTreeBranch | null;
   const entryValid = (entry: NexusTreeEntry | undefined) => entry && typeof entry.id === 'string' && Boolean(entry.id)
-    && typeof entry.parent_id === 'string' && typeof entry.name === 'string' && ['group', 'node'].includes(entry.kind)
-    && Array.isArray(entry.permissions) && entry.permissions.every(permission => typeof permission === 'string')
+    && typeof entry.parent_id === 'string' && typeof entry.name === 'string' && isNexusTreeKind(entry.kind)
+    && isNexusGrantList(entry.permissions)
     && Array.isArray(entry.assignments) && entry.assignments.every(assignment => assignment && typeof assignment.management_pubkey === 'string'
-      && Array.isArray(assignment.permissions) && assignment.permissions.every(permission => typeof permission === 'string'))
+      && isNexusGrantList(assignment.permissions))
     && typeof entry.node_type === 'string' && typeof entry.management_pubkey === 'string'
     && typeof entry.tunnel_ip === 'string' && typeof entry.is_inference === 'boolean'
     && ['can_add_group', 'can_rename', 'can_manage', 'access_known'].every(key => typeof entry[key as keyof NexusTreeEntry] === 'boolean');
@@ -82,5 +85,5 @@ export const getNexusTreeBranch = async (id?: string) => readNexusTreeBranch(awa
 export const createNexusGroup = (id: string, name: string) => nexusRequest<{ node_id: string }>(`tree/${encodeURIComponent(id)}/groups`, { name });
 export const renameNexusGroup = (id: string, name: string) => nexusRequest(`tree/${encodeURIComponent(id)}/rename`, { name });
 export const moveNexusNode = (id: string, parentId: string) => nexusRequest(`tree/${encodeURIComponent(id)}/move`, { parent_id: parentId });
-export const saveNexusGroupPermissions = (id: string, memberId: string, admin: boolean, permissions: string[]) =>
+export const saveNexusGroupPermissions = (id: string, memberId: string, admin: boolean, permissions: NexusGrant[]) =>
   nexusRequest<NexusTreeBranch>(`tree/${encodeURIComponent(id)}/permissions`, { member_node_id: memberId, admin, permissions });
