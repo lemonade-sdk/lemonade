@@ -2619,23 +2619,27 @@ const ChatView: React.FC<ChatViewProps> = ({
     onModelSelect(model);
   }, [onModelSelect]);
 
-  const handleDeleteConversation = useCallback((id: string) => {
-    streaming.stop(id);
-    // A video job would keep the GPU busy for a conversation that no longer exists.
+  // A video job would keep the GPU busy for a conversation that no longer exists,
+  // and so would one the chat lost track of, which only its Resume control still
+  // reaches. The conversation is going away, so a failed cancel is not kept.
+  const cancelConversationVideos = useCallback((id: string) => {
     videoAbortRef.current.get(id)?.abort();
-    // So would one the chat lost track of, which only its Resume control still
-    // reaches. The conversation is going away, so a failed cancel is not kept.
     const retainedJobs = conversations.find(c => c.id === id)?.messages.flatMap(m => (m.videoJob ? [m.videoJob] : [])) || [];
     if (retainedJobs.length > 0) {
       void getApiClient().then(api => Promise.allSettled(retainedJobs.map(job => api.cancelVideoJob(job))));
     }
+  }, [conversations]);
+
+  const handleDeleteConversation = useCallback((id: string) => {
+    streaming.stop(id);
+    cancelConversationVideos(id);
     delete streamModelsRef.current[id];
     imageRegistry.clearConversation(id);
     setConversations(prev => prev.filter(c => c.id !== id));
     const wasActive = activeId === id;
     if (wasActive) setActiveId(null);
     setFallbackModelOverride(prev => releaseConversationModel(prev, wasActive));
-  }, [activeId, conversations, streaming.stop]);
+  }, [activeId, cancelConversationVideos, streaming.stop]);
 
 
   const handleRailToggle = useCallback(() => {
