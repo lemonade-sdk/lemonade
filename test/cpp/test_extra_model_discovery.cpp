@@ -2,6 +2,7 @@
 #include "support/test_state_isolation.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -24,10 +25,37 @@ static fs::path make_temp_dir() {
     return lemon::test::make_scratch_dir("extra-models");
 }
 
-// Discovery never reads GGUF content, so an empty file is a valid fixture.
+// Discovery keeps a GGUF whose header it cannot read, so an empty file is a
+// valid fixture wherever the architecture does not matter.
 static void touch(const fs::path& path) {
     fs::create_directories(path.parent_path());
     std::ofstream(path).close();
+}
+
+template <typename T>
+static void write_le(std::ofstream& out, T value) {
+    out.write(reinterpret_cast<const char*>(&value), sizeof(value));
+}
+
+static void write_gguf_string(std::ofstream& out, const std::string& value) {
+    write_le<uint64_t>(out, value.size());
+    out.write(value.data(), static_cast<std::streamsize>(value.size()));
+}
+
+// A GGUF v3 header with only `general.architecture`, or no keys at all when
+// `architecture` is empty.
+static void write_gguf(const fs::path& path, const std::string& architecture) {
+    fs::create_directories(path.parent_path());
+    std::ofstream out(path, std::ios::binary);
+    out.write("GGUF", 4);
+    write_le<uint32_t>(out, 3);
+    write_le<uint64_t>(out, 0);
+    write_le<uint64_t>(out, architecture.empty() ? 0 : 1);
+    if (!architecture.empty()) {
+        write_gguf_string(out, "general.architecture");
+        write_le<uint32_t>(out, 8);
+        write_gguf_string(out, architecture);
+    }
 }
 
 static const ModelInfo* find_model(const std::map<std::string, ModelInfo>& models,
@@ -455,6 +483,83 @@ static void test_qualified_id_skips_kept_folder_name() {
     fs::remove_all(dir);
 }
 
+static void test_unsupported_architectures_are_skipped() {
+    fs::path dir = make_temp_dir();
+    write_gguf(dir / "Qwen3-4B.gguf", "qwen3");
+    write_gguf(dir / "z-image-Q8_0.gguf", "lumina2");
+    write_gguf(dir / "no-arch.gguf", "");
+    write_gguf(dir / "image" / "z-image" / "z-image-Q8_0.gguf", "lumina2");
+    write_gguf(dir / "image" / "z-image" / "text_encoder" / "Qwen3-4B.gguf", "qwen3");
+    write_gguf(dir / "chat" / "lumina.gguf", "lumina2");
+
+    auto models = ScanCatalog::for_dir(dir.string()).enumerate({});
+
+    check("supported root file is kept", find_model(models, "extra.Qwen3-4B") != nullptr);
+    check("unsupported root file is skipped", find_model(models, "extra.z-image-Q8_0") == nullptr);
+    check("file without an architecture is skipped", find_model(models, "extra.no-arch") == nullptr);
+    check("folder of unsupported files is skipped", find_model(models, "extra.z-image") == nullptr);
+    check("supported file in a nested folder is kept",
+          find_model(models, "extra.text_encoder") != nullptr);
+    check("unsupported category file is skipped", find_model(models, "extra.lumina") == nullptr);
+
+    fs::remove_all(dir);
+}
+
+static void test_first_shard_decides_architecture() {
+    fs::path dir = make_temp_dir();
+    write_gguf(dir / "good" / "Good-00001-of-00002.gguf", "qwen3");
+    write_gguf(dir / "good" / "Good-00002-of-00002.gguf", "");
+    write_gguf(dir / "bad" / "Bad-00001-of-00002.gguf", "ltxv");
+    write_gguf(dir / "bad" / "Bad-00002-of-00002.gguf", "");
+
+    auto models = ScanCatalog::for_dir(dir.string()).enumerate({});
+
+    const ModelInfo* good = find_model(models, "extra.good");
+    check("supported shard set is kept", good != nullptr);
+    check("later shards follow the first shard",
+          good != nullptr && good->size > 0.0 &&
+              good->resolved_paths.at("main").find("Good-00001-of-00002.gguf") != std::string::npos);
+    check("unsupported shard set is skipped", find_model(models, "extra.bad") == nullptr);
+
+    fs::remove_all(dir);
+}
+
+static void test_mmproj_is_not_checked() {
+    fs::path dir = make_temp_dir();
+    write_gguf(dir / "vision" / "model.gguf", "gemma3");
+    write_gguf(dir / "vision" / "mmproj-model.gguf", "clip");
+
+    auto models = ScanCatalog::for_dir(dir.string()).enumerate({});
+
+    const ModelInfo* vision = find_model(models, "extra.vision");
+    check("mmproj with a non-llama architecture stays attached",
+          vision != nullptr && vision->checkpoints.count("mmproj") == 1 && has_label(*vision, "vision"));
+
+    fs::remove_all(dir);
+}
+
+static void test_local_llamacpp_trusts_categories() {
+    fs::path dir = make_temp_dir();
+    write_gguf(dir / "chat" / "Engram.gguf", "deepseek41-engram");
+    write_gguf(dir / "chat" / "Engram-folder" / "Engram.gguf", "deepseek41-engram");
+    write_gguf(dir / "image" / "z-image" / "z-image-Q8_0.gguf", "lumina2");
+    write_gguf(dir / "loose.gguf", "lumina2");
+
+    auto models = ScanCatalog::for_dir(dir.string(), true).enumerate({});
+
+    check("local build keeps an unknown architecture in a category",
+          find_model(models, "extra.Engram") != nullptr);
+    check("local build keeps an unknown architecture in a category folder",
+          find_model(models, "extra.Engram-folder") != nullptr);
+    check("local build still skips unknown architectures outside categories",
+          find_model(models, "extra.z-image") == nullptr && find_model(models, "extra.loose") == nullptr);
+
+    auto shipped = ScanCatalog::for_dir(dir.string()).enumerate({});
+    check("shipped builds skip the same category file", find_model(shipped, "extra.Engram") == nullptr);
+
+    fs::remove_all(dir);
+}
+
 int main() {
     test_root_files();
     test_split_variant_folder();
@@ -476,6 +581,10 @@ int main() {
     test_non_normalized_search_path();
     test_discovery_is_independent_of_creation_order();
     test_qualified_id_skips_kept_folder_name();
+    test_unsupported_architectures_are_skipped();
+    test_first_shard_decides_architecture();
+    test_mmproj_is_not_checked();
+    test_local_llamacpp_trusts_categories();
 
     if (g_failures == 0) {
         std::printf("All extra model discovery tests passed.\n");

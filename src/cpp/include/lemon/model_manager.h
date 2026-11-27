@@ -75,6 +75,9 @@ struct ModelManagerConfig {
     std::function<std::string()> default_model_source;
     std::function<json()> model_catalogs;
     std::vector<std::shared_ptr<models::ModelCatalog>> extra_catalogs;
+    // Whether llama.cpp runs from the operator's own build (`llamacpp.backend=system`),
+    // read at every rebuild; empty means the shipped builds.
+    std::function<bool()> llamacpp_is_local_build;
 
     // What this machine can run, read at the start of every rebuild; empty probes the
     // hardware. A caller that means a particular machine says so here.
