@@ -69,7 +69,10 @@ THEROCK_URL = "https://stable.repo.amd.com/rocm/core/tarball/"
 USER_AGENT = "lemonade-modelscope-mirror"
 
 # Client GPUs only; datacenter targets are not mirrored.
+# These lemonade-sdk/vllm-rocm releases are still pinned by older Lemonade releases.
 VLLM_FAMILIES = ["gfx110X", "gfx120X", "gfx1150", "gfx1151"]
+# AMD's vLLM bundle is not a GitHub release; lemond always downloads it from AMD.
+VLLM_AMD_BUNDLE_PREFIX = "vllm-portable-"
 THEROCK_DATACENTER = {"gfx908", "gfx90a", "gfx94X-dcgpu", "gfx950-dcgpu"}
 THEROCK_OS = ["windows", "linux"]
 
@@ -260,6 +263,8 @@ def pinned_releases(
                 continue  # comments and vllm.rocm_arch_overrides (datacenter)
             if "@sha256:" in tag:
                 continue  # container image pin inside a native recipe
+            if recipe == "vllm" and tag.startswith(VLLM_AMD_BUNDLE_PREFIX):
+                continue
             src = SOURCES[recipe].get(variant) or SOURCES[recipe].get("*")
             if src is None:
                 warn_once(

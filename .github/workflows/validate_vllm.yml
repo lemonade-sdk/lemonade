@@ -30,26 +30,26 @@ env:
 
 jobs:
   # ========================================================================
-  # Discover the latest vllm-rocm release
+  # Discover AMD's newest vLLM device-all bundle
   # ========================================================================
   get-latest-releases:
-    name: Get latest releases
+    name: Get latest vLLM bundle
     # Only the auto-update runs resolve upstream releases. Everywhere else the
     # build validates the pins committed in backend_versions.json, so a bad
     # upstream release can't fail a merge or hide a broken pin.
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     outputs:
-      vllm_rocm_release: ${{ steps.vllm_rocm.outputs.release }}
+      vllm_rocm_release: ${{ steps.vllm_rocm.outputs.stem }}
+      vllm_rocm_sha256: ${{ steps.vllm_rocm.outputs.sha256 }}
     steps:
-      - name: Get latest vllm-rocm release
+      - uses: actions/checkout@v5
+
+      - name: Find the newest dated bundle and its SHA-256
         id: vllm_rocm
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          RELEASE=$(gh api repos/lemonade-sdk/vllm-rocm/releases/latest --jq '.tag_name')
-          echo "Latest vllm-rocm release: $RELEASE"
-          echo "release=$RELEASE" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          python3 .github/scripts/update_vllm_pin.py discover | tee -a "$GITHUB_OUTPUT"
 
   # ========================================================================
   # Build binaries with updated backend version
@@ -70,21 +70,8 @@ jobs:
         if: needs.get-latest-releases.result == 'success'
         env:
           VLLM_ROCM_RELEASE: ${{ needs.get-latest-releases.outputs.vllm_rocm_release }}
-        run: |
-          set -e
-          python3 - << 'PY'
-          import json, os
-          path = "src/cpp/resources/backend_versions.json"
-          with open(path) as f:
-              data = json.load(f)
-          release = os.environ["VLLM_ROCM_RELEASE"]
-          old = data["vllm"].get("rocm", "")
-          data["vllm"]["rocm"] = release
-          with open(path, "w") as f:
-              json.dump(data, f, indent=2)
-              f.write("\n")
-          print(f"vllm.rocm: {old} -> {release}")
-          PY
+          VLLM_ROCM_SHA256: ${{ needs.get-latest-releases.outputs.vllm_rocm_sha256 }}
+        run: python3 .github/scripts/update_vllm_pin.py write "$VLLM_ROCM_RELEASE" "$VLLM_ROCM_SHA256"
 
       - name: Build lemond and the CLI
         run: |
@@ -115,6 +102,8 @@ jobs:
     needs: [get-latest-releases, build]
     if: always() && needs.build.result == 'success'
     runs-on: [self-hosted, stx-halo, Linux, X64, lemon-prod]
+    # A cold install downloads ~10 GB; this leaves room for ~2.3 MB/s on average.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v5
         with:
@@ -150,6 +139,55 @@ jobs:
           mkdir -p "$HF_HOME"
           echo "HF_HOME=$HF_HOME" >> "$GITHUB_ENV"
 
+      - name: Check the C toolchain vllm-server needs
+        run: |
+          # Same check as the bundle's bin/vllm-server, which exits without these.
+          has() { for d in /usr/lib/x86_64-linux-gnu /usr/lib64 /usr/lib; do [ -e "$d/$1" ] && return 0; done; return 1; }
+          if has crti.o && has libgomp.so.1; then
+            echo "gcc toolchain present"
+            exit 0
+          fi
+          echo "crti.o or libgomp.so.1 is missing; trying a non-interactive gcc install"
+          if sudo -n true 2>/dev/null; then
+            sudo -n apt-get update -qq || true
+            sudo -n apt-get install -y -qq gcc || true
+            if has crti.o && has libgomp.so.1; then
+              echo "gcc installed"
+              exit 0
+            fi
+          fi
+          echo "::error::Runner $RUNNER_NAME is missing gcc (crti.o / libgomp.so.1), which vllm-server needs. Install it once on the runner: sudo apt install gcc"
+          exit 1
+
+      - name: Prepare the persistent vLLM backend cache
+        run: |
+          set -euo pipefail
+          # The checkout clean wipes the workspace, so without this every run
+          # would download the ~10 GB bundle. Each pin's SHA gets its own folder;
+          # folders unused for 10 days are removed (a bot pin PR can wait days).
+          ROOT="$HOME/.cache/lemonade-ci/vllm-bin"
+          SHA=$(python3 -c 'import json; d = json.load(open("build/resources/backend_versions.json")); pin = d["vllm"]["rocm"]; print(d["checksums"]["vllm"]["rocm"][pin][pin + ".tar.gz"].split(":")[1])')
+          KEY="$ROOT/${SHA:0:16}"
+          mkdir -p "$KEY"
+          exec 9>"$ROOT/.lock"
+          flock -w 3600 9
+          if [ "${{ github.event_name }}" = schedule ] || [ "${{ github.event_name }}" = workflow_dispatch ]; then
+            echo "Forcing a cold install on ${{ github.event_name }} runs"
+            rm -rf "$KEY/rocm" "$KEY/rocm.staging" "$KEY/rocm.old"
+          fi
+          touch "$KEY"
+          find "$ROOT" -mindepth 1 -maxdepth 1 -type d ! -path "$KEY" -mmin +$((10 * 24 * 60)) -print -exec rm -rf {} +
+          df -h "$ROOT" "$RUNNER_TEMP"
+          if [ ! -f "$KEY/rocm/version.txt" ]; then
+            avail=$(df -BG --output=avail "$KEY" | tail -1 | tr -dc 0-9)
+            if [ "$avail" -lt 45 ]; then
+              echo "::error::A cold vLLM install needs 45 GB free on $ROOT; runner $RUNNER_NAME has ${avail} GB"
+              exit 1
+            fi
+          fi
+          echo "VLLM_BIN_KEY=$KEY" >> "$GITHUB_ENV"
+          echo "VLLM_BIN_LOCK=$ROOT/.lock" >> "$GITHUB_ENV"
+
       - name: Run validation with lemond
         env:
           HOME: ${{ github.workspace }}/.home
@@ -161,6 +199,13 @@ jobs:
           CACHE_DIR="$(pwd)/ci-cache-vllm"
           LOGS_DIR="$(pwd)/server-logs-rocm"
           mkdir -p "$CACHE_DIR" "$LOGS_DIR"
+
+          # One job at a time may install into or run from the shared backend cache.
+          exec 9>"$VLLM_BIN_LOCK"
+          flock -w 3600 9 || { echo "ERROR: timed out waiting for the vLLM backend cache lock"; exit 1; }
+          mkdir -p "$CACHE_DIR/bin"
+          ln -sfn "$VLLM_BIN_KEY" "$CACHE_DIR/bin/vllm"
+          VLLM_PIN=$(python3 -c 'import json; print(json.load(open("build/resources/backend_versions.json"))["vllm"]["rocm"])')
           mkdir -p "$RUNNER_TEMP/xdg-runtime"
           chmod 700 "$RUNNER_TEMP/xdg-runtime"
           echo "XDG_RUNTIME_DIR=$RUNNER_TEMP/xdg-runtime" >> "$GITHUB_ENV"
@@ -186,7 +231,8 @@ jobs:
           for start_attempt in $(seq 1 5); do
             PORT=$(pick_free_port) || { echo "ERROR: could not find a free port"; exit 1; }
             echo "Attempt $start_attempt: starting lemond on 127.0.0.1:$PORT..."
-            ./build/lemond "$CACHE_DIR" --port "$PORT" --host 127.0.0.1 \
+            # 9>&-: lemond and vLLM must not hold the cache lock after this step.
+            ./build/lemond "$CACHE_DIR" --port "$PORT" --host 127.0.0.1 9>&- \
               > "$LOGS_DIR/lemond.stdout.log" 2> "$LOGS_DIR/lemond.stderr.log" &
             LEMOND_PID=$!
             for i in $(seq 1 30); do
@@ -219,6 +265,7 @@ jobs:
             --port "$PORT"
             --output vllm_validation_rocm.json
             --logs-dir "$LOGS_DIR"
+            --expected-pin "$VLLM_PIN"
           )
           if [ "${LITE_MODE}" = "true" ]; then
             VALIDATION_ARGS+=(--lite)
@@ -226,10 +273,12 @@ jobs:
 
           .venv/bin/python "${VALIDATION_ARGS[@]}" || EXIT_CODE=$?
 
-          # Shut the server down cleanly so logs flush.
+          # Shut the server down cleanly so logs flush, and stop everything this
+          # job started before the cache lock is released to the next job.
           curl -sf -X POST "http://127.0.0.1:$PORT/internal/shutdown" || true
-          sleep 2
-          kill $LEMOND_PID 2>/dev/null || true
+          for _ in $(seq 1 15); do kill -0 "$LEMOND_PID" 2>/dev/null || break; sleep 1; done
+          kill -9 "$LEMOND_PID" 2>/dev/null || true
+          pkill -9 -f "$CACHE_DIR/" 2>/dev/null || true
 
           exit $EXIT_CODE
 
@@ -270,21 +319,20 @@ jobs:
 
       - name: Cleanup
         if: always()
-        run: |
-          pkill -9 -f lemond 2>/dev/null || true
-          pkill -9 -f "vllm" 2>/dev/null || true
-          pkill -9 -f "resource_tracker" 2>/dev/null || true
+        # Kills only this workspace's processes; another job may hold the runner's vLLM cache.
+        uses: ./.github/actions/cleanup-processes-linux
 
   # ========================================================================
   # Create PR if validation passed (schedule or workflow_dispatch only)
   # ========================================================================
   create-pr:
     name: Create update PR
-    needs: [get-latest-releases, validate]
+    needs: [get-latest-releases, validate, gpu-offload-gate]
     runs-on: ubuntu-latest
     if: >-
       (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
-      needs.validate.result == 'success'
+      needs.validate.result == 'success' &&
+      needs.gpu-offload-gate.result == 'success'
     steps:
       - uses: actions/checkout@v5
 
@@ -303,19 +351,8 @@ jobs:
       - name: Update backend_versions.json
         env:
           VLLM_ROCM_RELEASE: ${{ needs.get-latest-releases.outputs.vllm_rocm_release }}
-        run: |
-          python3 - << 'PY'
-          import json, os
-          path = 'src/cpp/resources/backend_versions.json'
-          with open(path) as f:
-              data = json.load(f)
-          rocm = os.environ['VLLM_ROCM_RELEASE']
-          data['vllm']['rocm'] = rocm
-          with open(path, 'w') as f:
-              json.dump(data, f, indent=2)
-              f.write('\n')
-          print(f"Updated: vllm.rocm = {rocm}")
-          PY
+          VLLM_ROCM_SHA256: ${{ needs.get-latest-releases.outputs.vllm_rocm_sha256 }}
+        run: python3 .github/scripts/update_vllm_pin.py write "$VLLM_ROCM_RELEASE" "$VLLM_ROCM_SHA256"
 
       - name: Generate PR body
         env:
@@ -329,21 +366,22 @@ jobs:
 
           lines.append("## Auto-update vLLM backend")
           lines.append("")
-          lines.append(f"- **vllm-rocm**: `{rocm}`")
+          lines.append(f"- **vLLM ROCm bundle**: `{rocm}`")
           lines.append("")
           lines.append("## Validation Results")
           lines.append("")
-          lines.append("| Model | Result | Response | input_tokens | output_tokens | time_to_first_token | tokens_per_second |")
-          lines.append("|-------|--------|----------|--------------|---------------|---------------------|-------------------|")
+          lines.append("| Model | Result | GPU | Response | input_tokens | output_tokens | time_to_first_token | tokens_per_second |")
+          lines.append("|-------|--------|-----|----------|--------------|---------------|---------------------|-------------------|")
 
           results_file = "vllm_validation_rocm.json"
           if not os.path.isfile(results_file):
-              lines.append("| _rocm: no results_ | | | | | | |")
+              lines.append("| _rocm: no results_ | | | | | | | |")
           else:
               with open(results_file) as f:
                   results = json.load(f)
               for r in results:
                   status = "PASS" if r["pass"] else "FAIL"
+                  gpu = r.get("gpu", "N/A")
                   resp = str(r.get("response", ""))[:80].replace("|", "\\|").replace("\n", " ")
                   ttft = r.get("time_to_first_token", "N/A")
                   if isinstance(ttft, float):
@@ -352,7 +390,7 @@ jobs:
                   if isinstance(tps, float):
                       tps = f"{tps:.1f}"
                   lines.append(
-                      f"| {r['model']} (rocm) | {status} | {resp} | "
+                      f"| {r['model']} (rocm) | {status} | {gpu} | {resp} | "
                       f"{r.get('input_tokens', 'N/A')} | {r.get('output_tokens', 'N/A')} | "
                       f"{ttft} | {tps} |"
                   )
@@ -388,21 +426,38 @@ jobs:
 
           git checkout -b "$BRANCH"
           git add src/cpp/resources/backend_versions.json docs/tools/api_examples_cache.json docs/api
-          git commit -m "Update vllm-rocm to ${VLLM_ROCM_RELEASE}"
+          git commit -m "Update vLLM ROCm bundle to ${VLLM_ROCM_RELEASE}"
           git push origin "$BRANCH"
 
           gh pr create \
-            --title "Update vllm-rocm to ${VLLM_ROCM_RELEASE}" \
+            --title "Update vLLM ROCm bundle to ${VLLM_ROCM_RELEASE}" \
             --body-file pr_body.md \
             --base main \
             --head "$BRANCH"
+
+  gpu-offload-gate:
+    name: GPU offload gate
+    needs: validate
+    if: always() && needs.validate.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download validation evidence
+        uses: actions/download-artifact@v7
+        with:
+          pattern: validation-results-*
+          merge-multiple: true
+
+      - name: Enforce GPU offload
+        run: python3 .github/scripts/check_gpu_offload.py 'vllm_validation_*.json'
 
   # Gate job that ensures: 1. in the merge queue, all jobs in `needs:` ran
   # successfully (otherwise the merge is blocked), and 2. these jobs do not need
   # to run on ordinary pull request pushes.
   validation-gate:
     name: vLLM validation
-    needs: [build, validate]
+    needs: [build, validate, gpu-offload-gate]
     if: always()
     runs-on: ubuntu-latest
     steps:

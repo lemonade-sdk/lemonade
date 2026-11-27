@@ -915,21 +915,7 @@ static std::string get_expected_backend_version(const std::string& recipe, const
     if (!recipe_config.contains(resolved_backend) || !recipe_config[resolved_backend].is_string()) {
         return "";
     }
-    std::string base_version = recipe_config[resolved_backend].get<std::string>();
-
-    // The expected version must resolve the SAME per-arch override that install used,
-    // or these GPUs report update_required forever: versions_match tolerates the
-    // "-{family}" suffix but not a different base.
-    if (recipe == "vllm" && resolved_backend == "rocm") {
-        std::string asset_family = SystemInfo::rocm_asset_family(SystemInfo::get_rocm_arch());
-        if (!asset_family.empty()) {
-            std::string override_version = SystemInfo::vllm_rocm_version_override(asset_family);
-            if (!override_version.empty()) {
-                return override_version;
-            }
-        }
-    }
-    return base_version;
+    return recipe_config[resolved_backend].get<std::string>();
 }
 
 // ============================================================================
@@ -2320,27 +2306,6 @@ std::string SystemInfo::rocm_asset_family(const std::string& arch) {
         return it->get<std::string>();
     }
     return arch;
-}
-
-std::string SystemInfo::vllm_rocm_version_override(const std::string& asset_family) {
-    static const json overrides = []() -> json {
-        try {
-            std::string config_path = utils::get_resource_path("resources/backend_versions.json");
-            std::ifstream file(config_path);
-            if (!file.is_open()) {
-                return json::object();
-            }
-            json vllm = json::parse(file).value("vllm", json::object());
-            return vllm.value("rocm_arch_overrides", json::object());
-        } catch (...) {
-            return json::object();
-        }
-    }();
-
-    if (auto it = overrides.find(asset_family); it != overrides.end() && it->is_string()) {
-        return it->get<std::string>();
-    }
-    return "";
 }
 
 std::string SystemInfo::select_rocm_arch(const json& amd_gpu_devices) {

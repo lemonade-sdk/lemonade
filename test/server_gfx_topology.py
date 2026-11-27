@@ -43,8 +43,11 @@ from utils.test_models import PORT, TIMEOUT_DEFAULT
 # each one supports are reported by the server.
 ROCM_ASSET_BACKENDS = [
     ("whispercpp", "rocm"),
-    ("vllm", "rocm"),
     ("llamacpp", "rocm-nightly"),
+]
+# One "device-all" asset serves every supported arch, so the URL must not vary.
+DEVICE_ALL_BACKENDS = [
+    ("vllm", "rocm"),
 ]
 
 
@@ -238,6 +241,43 @@ class GfxTopologyTests(ServerTestBase):
                 "Could not reach asset host for some probes (no 404s seen):\n  "
                 + "\n  ".join(network_errors)
             )
+
+    def test_003_device_all_assets_resolve_to_one_live_url(self):
+        """A device-all backend resolves every supported arch to the same URL.
+
+        The liveness probe only skips on failure: AMD's nightly CDN answers 403 both
+        for a missing file and, transiently, for a valid one, so it must not block
+        every PR. validate_vllm.yml's weekly cold install catches a missing bundle.
+        """
+        for recipe, backend in DEVICE_ALL_BACKENDS:
+            urls = {}
+            for arch in arch_matrix():
+                response = self._dry_run(recipe, backend, arch)
+                self.assertEqual(
+                    response.status_code,
+                    200,
+                    f"dry-run failed for {recipe}:{backend} arch={arch}: "
+                    f"{response.text[:500]}",
+                )
+                body = response.json()
+                if body.get("supported"):
+                    self.assertFalse(body.get("supports_split_archive"))
+                    urls[arch] = body["url"]
+
+            with self.subTest(recipe=recipe, backend=backend):
+                self.assertTrue(urls, f"{recipe}:{backend} supports no arch")
+                self.assertEqual(
+                    len(set(urls.values())),
+                    1,
+                    f"{recipe}:{backend} resolved different URLs per arch: {urls}",
+                )
+                url = next(iter(urls.values()))
+                try:
+                    status = self._probe_not_404(url)
+                except requests.RequestException as exc:
+                    self.skipTest(f"Could not reach {url}: {exc}")
+                if status not in (200, 206):
+                    self.skipTest(f"{url} returned HTTP {status}")
 
 
 if __name__ == "__main__":

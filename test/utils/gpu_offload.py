@@ -1,6 +1,6 @@
-"""Shared GPU-offload log assertions for GGML-backed validators.
+"""Shared GPU-offload log assertions for the backend validators.
 
-Both the sd-cpp and llama.cpp validators wrap GGML engines whose subprocess logs
+The sd-cpp, llama.cpp and vLLM validators wrap engines whose subprocess logs
 are captured by lemond when it runs in debug mode (``LEMONADE_CI_MODE=1``).
 
 The validators tail those logs per model and assert the engine actually engaged a GPU

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -8,6 +10,15 @@
 namespace lemon::utils {
 
 inline constexpr int tarball_listing_timeout_seconds = 300;
+
+// Each tar pass decompresses the whole archive, so a fixed limit kills large
+// bundles on slower disks. Allow 1 s per 5 MiB (well below real gzip speed),
+// never less than the 300 s that small archives always had.
+inline int tarball_timeout_seconds(std::uintmax_t archive_bytes) {
+    const std::uintmax_t scaled = archive_bytes / (5ull * 1024 * 1024);
+    return static_cast<int>(std::clamp<std::uintmax_t>(
+        scaled, static_cast<std::uintmax_t>(tarball_listing_timeout_seconds), 24ull * 3600));
+}
 
 // Decide the tar --strip-components value from a newline-separated `tar -tf`
 // listing. Strips one level only when every entry lives under a single shared

@@ -261,6 +261,7 @@ lemonade config set default_model_source=modelscope
 - Each file must match the SHA-256 pinned for it in `checksums.modelscope`; a file without one is refused. GitHub downloads do not use these hashes.
 - Only pinned versions are mirrored. With a `*_bin` of `latest`, the installed version is reused; with none installed, the install fails.
 - `thinksound`, `acestep`, `trellis`, `openmoss` and datacenter GPU builds are not mirrored; install them with `--source github`. Container backends pull from their own registries.
+- `vllm` is published by AMD rather than on GitHub, so it always downloads from AMD's server, still checked against its pinned SHA-256.
 - `rocm_install_method=auto` installs the TheRock tarball, since the mirror has no pip wheel index. A runtime already installed from wheels keeps working.
 - `MODELSCOPE_ENDPOINT` moves the API, as for model pulls. No token is sent: the dataset is public.
 

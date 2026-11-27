@@ -183,6 +183,26 @@ int main() {
         check(threw, "modelscope refuses a file with no pinned hash, naming the file");
     }
 
+    {
+        const std::string pinned = "sha256:" + std::string(64, 'b');
+        const std::string url = "https://cdn.example.com/a/b/c.tar.gz";
+        check_eq(bs::require_url_hash(pinned, url), pinned,
+                 "a pinned hash passes through for a direct-URL download");
+        bool threw = false;
+        try {
+            bs::require_url_hash("", url);
+        } catch (const std::runtime_error& e) {
+            threw = std::string(e.what()).find(url) != std::string::npos;
+        }
+        check(threw, "a direct-URL download with no pinned hash is refused, naming the URL");
+
+        check_eq(bs::url_origin(url), "https://cdn.example.com/",
+                 "url_origin keeps only the scheme and host");
+        check_eq(bs::url_origin("https://cdn.example.com"), "https://cdn.example.com/",
+                 "url_origin of a bare host adds the trailing slash");
+        check_eq(bs::url_origin("cdn.example.com/a"), "", "url_origin needs a scheme");
+    }
+
     std::printf("\n%d passed, %d failed\n", passed, failures);
     return failures == 0 ? 0 : 1;
 }

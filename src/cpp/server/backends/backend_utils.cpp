@@ -668,7 +668,8 @@ namespace lemon::backends {
                                            const std::string& asset_pattern,
                                            const std::string& backend,
                                            DownloadProgressCallback progress_cb,
-                                           const std::string& archive_subdir) {
+                                           const std::string& archive_subdir,
+                                           const std::string& url) {
         std::string install_dir;
         std::string version_file;
         std::string exe_path = find_external_backend_binary(spec.recipe, backend);
@@ -717,8 +718,9 @@ namespace lemon::backends {
             // Resolve any '*' wildcard in the asset name (e.g. the macOS runner
             // version in sd-cpp's Darwin asset) to the concrete published name
             // before building any download URL. No-op when there is no wildcard.
-            const std::string filename =
-                resolve_asset_wildcard(repo, expected_version, asset_pattern, spec);
+            const std::string filename = url.empty()
+                ? resolve_asset_wildcard(repo, expected_version, asset_pattern, spec)
+                : asset_pattern;
 
             // Stage the new install in a sibling directory so the currently
             // installed (working) binary is left untouched until the download is
@@ -756,7 +758,10 @@ namespace lemon::backends {
             // Preserve the actual filename (sanitised for use in a path) so that
             // extract_archive() dispatches to the correct extractor based on extension,
             // and architecture-specific assets (e.g. sm_86 vs sm_89) don't collide.
-            fs::path cache_dir = fs::temp_directory_path();
+            // /tmp is often RAM-backed tmpfs, too small for a multi-GB direct-URL
+            // bundle, so that goes under the backend bin dir like TheRock's tarballs.
+            fs::path cache_dir = url.empty() ? fs::temp_directory_path()
+                                             : get_backend_download_cache_dir();
             fs::create_directories(cache_dir);
             std::string zip_name = backend.empty() ? spec.recipe : spec.recipe + "_" + backend;
             std::string safe_filename = filename;
@@ -781,9 +786,24 @@ namespace lemon::backends {
             const std::string source = BackendUtils::effective_backend_source();
             const std::string endpoint = modelscope_endpoint();
             auto asset_url = [&](const std::string& name) {
-                return backend_source::release_asset_url(source, endpoint, repo, expected_version, name);
+                return url.empty()
+                    ? backend_source::release_asset_url(source, endpoint, repo, expected_version, name)
+                    : url;
             };
-            if (backend_source::is_modelscope(source)) {
+            auto expected_hash_for = [&](const std::string& name) {
+                const std::string hash =
+                    lookup_expected_asset_hash(source, spec.recipe, backend, expected_version, repo, name);
+                return url.empty()
+                    ? backend_source::require_pinned_hash(source, hash, repo + "@" + expected_version + "/" + name)
+                    : backend_source::require_url_hash(hash, url);
+            };
+            if (!url.empty()) {
+                LOG(INFO, spec.log_name()) << "Downloading " << url
+                                           << (backend_source::is_modelscope(source)
+                                                   ? " (published outside GitHub, so not on the ModelScope mirror)"
+                                                   : "")
+                                           << std::endl;
+            } else if (backend_source::is_modelscope(source)) {
                 LOG(INFO, spec.log_name()) << "Downloading " << repo << "@" << expected_version
                                            << " from the ModelScope mirror" << std::endl;
             }
@@ -808,7 +828,7 @@ namespace lemon::backends {
 
             bool is_split = false;
             std::vector<std::string> part_assets;
-            if (spec.supports_split_archive) {
+            if (spec.supports_split_archive && url.empty()) {
                 const std::string partcount_url = asset_url(base + ".partcount");
                 auto resp = utils::HttpClient::get(partcount_url);
                 if (resp.status_code == 200) {
@@ -847,8 +867,8 @@ namespace lemon::backends {
                 // 404 = no manifest = single-file release; fall through.
             }
             if (!is_split) {
-                std::string url = asset_url(filename);
-                LOG(DEBUG, spec.log_name()) << "Downloading from: " << url << std::endl;
+                const std::string download_url = asset_url(filename);
+                LOG(DEBUG, spec.log_name()) << "Downloading from: " << download_url << std::endl;
 
                 utils::ProgressCallback http_progress_cb;
                 if (progress_cb) {
@@ -868,16 +888,16 @@ namespace lemon::backends {
                 }
 
                 utils::DownloadOptions archive_download_opts;
-                archive_download_opts.expected_hash = backend_source::require_pinned_hash(
-                    source, lookup_expected_asset_hash(source, spec.recipe, backend, expected_version, repo, filename),
-                    repo + "@" + expected_version + "/" + filename);
+                archive_download_opts.expected_hash = expected_hash_for(filename);
                 archive_download_opts.resume_partial = false;
+                // AMD's frameworks CDN intermittently answers a valid file with 403.
+                archive_download_opts.retry_forbidden = !url.empty();
 
                 auto download_result = utils::HttpClient::download_file(
-                    url, zip_path, http_progress_cb, {}, archive_download_opts);
+                    download_url, zip_path, http_progress_cb, {}, archive_download_opts);
 
                 if (!download_result.success) {
-                    throw std::runtime_error("Failed to download " + spec.binary + " from: " + url +
+                    throw std::runtime_error("Failed to download " + spec.binary + " from: " + download_url +
                                              " - " + download_result.error_message);
                 }
             } else {
@@ -926,10 +946,7 @@ namespace lemon::backends {
                     }
 
                     utils::DownloadOptions part_download_opts;
-                    part_download_opts.expected_hash = backend_source::require_pinned_hash(
-                        source,
-                        lookup_expected_asset_hash(source, spec.recipe, backend, expected_version, repo, part_filename),
-                        repo + "@" + expected_version + "/" + part_filename);
+                    part_download_opts.expected_hash = expected_hash_for(part_filename);
                     part_download_opts.resume_partial = false;
 
                     auto part_result = utils::HttpClient::download_file(

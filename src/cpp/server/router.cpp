@@ -408,6 +408,12 @@ void Router::transition_server_residency_locked(
         return;
     }
 
+    if (requested_residency_class == ResidencyClass::RoutingHelper &&
+        server->get_residency_class() == ResidencyClass::Standard &&
+        active_policy_helper_models_.count(server->get_model_name()) == 0) {
+        return;
+    }
+
     if (!is_unmetered_recipe(server->get_recipe_options().get_recipe())) {
         // Admit into the destination pool before changing the live role. Standard
         // admission remains type-wide; helper admission is keyed by model name.
@@ -458,22 +464,6 @@ bool Router::ensure_loaded_model_residency_canonical(
         return false;
     }
 
-    // Refuse to durably promote an already-loaded Standard model into a routing
-    // helper for a policy that no longer needs it. An in-flight request can carry
-    // a copy of a policy that was edited or deleted after it started; without this
-    // guard that stale copy would flip a user-facing Standard model to
-    // RoutingHelper, bypassing every stale-helper check in load_model() and
-    // stranding it since reconcile ignored it while it was still Standard. Checking
-    // the needed-set directly (not pinning) keeps a pin from letting an obsolete
-    // policy override the current role. The backend stays resident and still serves
-    // the old request as Standard.
-    if (requested_residency_class == ResidencyClass::RoutingHelper &&
-        existing->get_residency_class() != ResidencyClass::RoutingHelper &&
-        !is_needed_helper_locked(canonical_model_name)) {
-        existing->update_access_time();
-        return true;
-    }
-
     transition_server_residency_locked(
         existing, requested_residency_class);
     existing->update_access_time();
@@ -489,6 +479,123 @@ void Router::reconcile_routing_helpers(const std::set<std::string>& needed_helpe
         needed.insert(resolve_model_name(model));
     }
     apply_routing_helper_reconcile(std::move(needed), generation);
+}
+
+Router::RoutingHelperLease::RoutingHelperLease(
+    Router* router, std::set<std::string> model_names)
+    : router_(router), model_names_(std::move(model_names)) {}
+
+Router::RoutingHelperLease::~RoutingHelperLease() {
+    reset();
+}
+
+Router::RoutingHelperLease::RoutingHelperLease(
+    RoutingHelperLease&& other) noexcept
+    : router_(other.router_), model_names_(std::move(other.model_names_)) {
+    other.router_ = nullptr;
+}
+
+Router::RoutingHelperLease& Router::RoutingHelperLease::operator=(
+    RoutingHelperLease&& other) noexcept {
+    if (this != &other) {
+        reset();
+        router_ = other.router_;
+        model_names_ = std::move(other.model_names_);
+        other.router_ = nullptr;
+    }
+    return *this;
+}
+
+void Router::RoutingHelperLease::reset() noexcept {
+    if (router_) {
+        router_->release_transient_routing_helpers(model_names_);
+        router_ = nullptr;
+        model_names_.clear();
+    }
+}
+
+Router::RoutingHelperLease Router::lease_transient_routing_helpers(
+    const std::vector<std::string>& model_names) {
+    std::set<std::string> canonical_models;
+    for (const auto& model : model_names) {
+        canonical_models.insert(resolve_model_name(model));
+    }
+
+    return lease_transient_routing_helpers_canonical(std::move(canonical_models));
+}
+
+Router::RoutingHelperLease Router::lease_transient_routing_helpers_canonical(
+    std::set<std::string> canonical_models) {
+    if (canonical_models.empty()) {
+        return {};
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(load_mutex_);
+        for (const auto& model : canonical_models) {
+            ++transient_helper_refcounts_[model];
+            WrappedServer* server = find_server_by_model_name(model);
+            if (server && server->get_residency_class() == ResidencyClass::RoutingHelper) {
+                server->clear_pending_stale();
+            }
+        }
+        rebuild_needed_helper_models_locked();
+    }
+
+    return RoutingHelperLease(this, std::move(canonical_models));
+}
+
+void Router::release_transient_routing_helpers(
+    const std::set<std::string>& model_names) noexcept {
+    try {
+        std::vector<std::string> no_longer_needed;
+        std::shared_ptr<RoutingHelperReclaimExecutor> executor;
+        {
+            std::unique_lock<std::mutex> lock(load_mutex_);
+            for (const auto& model : model_names) {
+                auto it = transient_helper_refcounts_.find(model);
+                if (it == transient_helper_refcounts_.end()) {
+                    continue;
+                }
+                if (--it->second == 0) {
+                    transient_helper_refcounts_.erase(it);
+                    if (active_policy_helper_models_.count(model) == 0) {
+                        no_longer_needed.push_back(model);
+                    }
+                }
+            }
+            rebuild_needed_helper_models_locked();
+
+            if (!is_loading_ &&
+                (!exclusive_active_ || exclusive_owner_ == std::this_thread::get_id())) {
+                prune_stale_routing_helpers_locked();
+            } else {
+                executor = reclaim_executor_;
+            }
+        }
+
+        if (executor) {
+            for (const auto& model : no_longer_needed) {
+                executor->post(model);
+            }
+        }
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Router") << "Failed to release transient routing helpers: "
+                              << e.what() << std::endl;
+    } catch (...) {
+        LOG(ERROR, "Router") << "Failed to release transient routing helpers"
+                              << std::endl;
+    }
+}
+
+void Router::rebuild_needed_helper_models_locked() {
+    // Reconciliation and active transient leases share one authoritative needed set.
+    needed_helper_models_ = active_policy_helper_models_;
+    for (const auto& [model, refcount] : transient_helper_refcounts_) {
+        if (refcount > 0) {
+            needed_helper_models_.insert(model);
+        }
+    }
 }
 
 void Router::apply_routing_helper_reconcile(std::set<std::string> needed, uint64_t generation) {
@@ -510,7 +617,8 @@ void Router::apply_routing_helper_reconcile(std::set<std::string> needed, uint64
     // (see load_model) — closing the load-versus-policy-change race without a
     // timer. Deferring the publish behind the wait below would let that load
     // commit an already-obsolete helper.
-    needed_helper_models_ = std::move(needed);
+    active_policy_helper_models_ = std::move(needed);
+    rebuild_needed_helper_models_locked();
 
     // Only the eviction pass must wait for a quiet slot: evict_server mutates
     // loaded_servers_ and blocks on request drain, neither of which is safe to
@@ -538,7 +646,8 @@ void Router::prune_stale_routing_helpers_locked() {
 
     for (auto* server : stale) {
         LOG(INFO, "Router") << "Routing helper " << server->get_model_name()
-                            << " referenced by no active policy, evicting" << std::endl;
+                            << " referenced by no policy or validation request, evicting"
+                            << std::endl;
         evict_server(server);
     }
 }
@@ -596,7 +705,7 @@ void Router::reclaim_stale_helper_if_idle(const std::string& model_name) {
         if (server->try_evict_if_idle()) {
             server->clear_pending_stale();
             LOG(INFO, "Router") << "Routing helper " << model_name
-                                << " released and referenced by no active policy, evicting"
+                                << " released and referenced by no policy or validation request, evicting"
                                 << std::endl;
             evict_server(server);
             return;
@@ -636,6 +745,18 @@ bool Router::routing_helper_no_longer_needed(const std::string& canonical_model_
         return false;
     }
     return !is_needed_helper_locked(canonical_model_name);
+}
+
+bool Router::should_skip_nuclear_retry_for_transient_helper_locked(
+    const std::string& canonical_model_name,
+    ResidencyClass requested_residency_class) const {
+    if (requested_residency_class != ResidencyClass::RoutingHelper) {
+        return false;
+    }
+
+    auto transient = transient_helper_refcounts_.find(canonical_model_name);
+    return active_policy_helper_models_.count(canonical_model_name) == 0 &&
+           transient != transient_helper_refcounts_.end() && transient->second > 0;
 }
 
 bool Router::has_npu_server() const {
@@ -939,15 +1060,16 @@ void Router::load_model(const std::string& model_name,
         // reconcile). Cheap and non-blocking; runs before every load path.
         prune_stale_routing_helpers_locked();
 
-        // If this load is itself for a routing helper the active policies no
-        // longer reference, abandon it now — before any destructive side effect
+        // If no policy or request lease needs this helper, abandon the load
+        // before any destructive side effect
         // (NPU/FLM eviction, capacity making room, or the nuclear retry below).
         // Committing it would only be undone at load-completion anyway.
         if (routing_helper_no_longer_needed(canonical_model_name,
                                             requested_residency_class, final_pinned)) {
             LOG(INFO, "Router") << "Skipping load of routing helper "
                                 << canonical_model_name
-                                << "; referenced by no active policy" << std::endl;
+                                << "; referenced by no policy or validation request"
+                                << std::endl;
             is_loading_ = false;
             load_cv_.notify_all();
             return;
@@ -1202,12 +1324,12 @@ void Router::load_model(const std::string& model_name,
             // A policy change may have dropped this helper while its backend was
             // starting (the load ran with load_mutex_ released). Now that we hold
             // the lock again, validate against the authoritative needed set so a
-            // helper no active policy references is never committed.
+            // helper no policy or request lease needs is never committed.
             if (routing_helper_no_longer_needed(canonical_model_name,
                                                 requested_residency_class,
                                                 new_server->is_pinned())) {
                 LOG(INFO, "Router") << "Routing helper " << canonical_model_name
-                          << " no longer referenced by any active policy; "
+                          << " no longer needed by any policy or request lease; "
                           << "discarding freshly loaded backend" << std::endl;
                 new_server->unload();
                 is_loading_ = false;
@@ -1265,10 +1387,19 @@ void Router::load_model(const std::string& model_name,
             if (routing_helper_no_longer_needed(canonical_model_name,
                                                 requested_residency_class, final_pinned)) {
                 LOG(INFO, "Router") << "Routing helper " << canonical_model_name
-                          << " no longer referenced by any active policy; "
+                          << " no longer needed by any policy or request lease; "
                           << "abandoning nuclear retry" << std::endl;
                 load_cv_.notify_all();
                 return;
+            }
+
+            if (should_skip_nuclear_retry_for_transient_helper_locked(
+                    canonical_model_name, requested_residency_class)) {
+                LOG(ERROR, "Router") << "Transient routing helper "
+                                      << canonical_model_name
+                                      << " failed to load; preserving resident models"
+                                      << std::endl;
+                throw std::runtime_error(error_message);
             }
 
             // Nuclear option: evict all models and retry
@@ -1320,7 +1451,7 @@ void Router::load_model(const std::string& model_name,
                                                     requested_residency_class,
                                                     retry_server->is_pinned())) {
                     LOG(INFO, "Router") << "Routing helper " << canonical_model_name
-                              << " no longer referenced by any active policy; "
+                              << " no longer needed by any policy or request lease; "
                               << "discarding freshly loaded backend" << std::endl;
                     retry_server->unload();
                     is_loading_ = false;

@@ -53,7 +53,7 @@ Follow these instructions if you want backends to be bundled into your app's ins
 At the time of this writing:
 
 - `llamacpp:rocm` with `rocm_channel` set to `nightly` selects a release asset for the packaging host's GPU family, so the host doing the packaging would need to share its GPU family with the deployment machine. The default `stable` channel has no such limitation.
-- `vllm:rocm` is not available for packaging-time bundling on any OS — the install flow constructs a per-GPU-target release tag at runtime, so the host doing the packaging would need to share its `gfx_target` with the deployment machine.
+- `vllm:rocm` is Linux only. One bundle covers every supported GPU, so the packaging host's GPU does not matter, but it adds ~25 GB to the package.
 
 ### Installing Backends at Install-Time or Runtime
 

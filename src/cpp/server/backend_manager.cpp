@@ -270,13 +270,17 @@ std::string latest_unavailable_on_modelscope(const std::string& repo) {
            "Set the backend's *_bin to 'builtin' or a pinned version tag.";
 }
 
-bool backend_download_service_reachable() {
+// `direct_url` is set for a backend published outside GitHub. The probe is a GET,
+// so it targets that host's root rather than the artifact itself.
+bool backend_download_service_reachable(const std::string& direct_url) {
     const std::string source = backends::BackendUtils::effective_backend_source();
     const char* endpoint = std::getenv("MODELSCOPE_ENDPOINT");
+    const std::string probe_url = direct_url.empty()
+        ? backend_source::reachability_probe_url(source, endpoint ? endpoint : "")
+        : backend_source::url_origin(direct_url);
     // The ModelScope site root answers with a redirect.
     return utils::HttpClient::is_reachable(
-        backend_source::reachability_probe_url(source, endpoint ? endpoint : ""), 2,
-        utils::HttpSecurityPolicy::ExternalHttpsOnly, /*accept_redirect=*/true);
+        probe_url, 2, utils::HttpSecurityPolicy::ExternalHttpsOnly, /*accept_redirect=*/true);
 }
 
 bool has_matching_system_rocm_runtime(const fs::path& rocm_root, bool resolved_explicitly,
@@ -622,6 +626,14 @@ std::string BackendManager::resolve_user_version(const std::string& recipe,
     // to the binary already installed rather than refusing to load a model that
     // is otherwise ready. Only when nothing is installed do we surface an error.
     if (raw == "latest") {
+        // The built-in pin of a backend published outside GitHub is already its
+        // newest validated build, so honor a "latest" left over from older configs.
+        if (repo.empty()) {
+            LOG(WARNING, "BackendManager") << recipe << ":" << resolved_backend
+                                           << " is not published on GitHub, so 'latest' uses the "
+                                           << "built-in version " << pinned_version << std::endl;
+            return pinned_version;
+        }
         if (backend_source::is_modelscope(backends::BackendUtils::effective_backend_source())) {
             const std::string installed = read_version_file(
                 fs::path(backends::BackendUtils::get_install_directory(recipe, resolved_backend)) /
@@ -679,6 +691,7 @@ std::string BackendManager::get_or_resolve_latest_tag(const std::string& recipe,
         // First call extracts the repo for this (recipe, backend); filename
         // templating is discarded.
         auto pinned_params = spec->install_params_fn(resolved_backend, pinned);
+        if (pinned_params.repo.empty()) return "";
         return fetch_latest_github_tag(pinned_params.repo, /*throw_on_failure=*/false);
     } catch (const std::exception& e) {
         LOG(WARNING, "BackendManager") << "get_or_resolve_latest_tag(" << recipe
@@ -710,7 +723,8 @@ BackendManager::InstallParams BackendManager::get_install_params(const std::stri
     std::string release_version = final_params.version_override.empty()
                                       ? resolved_version
                                       : final_params.version_override;
-    return {final_params.repo, final_params.filename, release_version, final_params.archive_subdir};
+    return {final_params.repo, final_params.filename, release_version, final_params.archive_subdir,
+            final_params.url};
 }
 
 void BackendManager::install_backend(const std::string& recipe, const std::string& backend,
@@ -782,7 +796,16 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
         }
     }
 
-    if (!force && has_existing_backend && !backend_download_service_reachable()) {
+    std::string direct_url;
+    if (!force && has_existing_backend && spec->install_params_fn) {
+        try {
+            direct_url = spec->install_params_fn(
+                resolved_backend, get_version_from_config(recipe, resolved_backend)).url;
+        } catch (const std::exception&) {
+            // get_install_params below reports the same failure.
+        }
+    }
+    if (!force && has_existing_backend && !backend_download_service_reachable(direct_url)) {
         // enter install_from_github() when GitHub is reachable, so available
         // backend updates are applied before the model starts. Only skip the
         // update path when the machine is effectively offline and a usable
@@ -931,7 +954,7 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
     try {
         backends::BackendUtils::install_from_github(
             *spec, params.version, params.repo, params.filename, resolved_backend, backend_progress_cb,
-            params.archive_subdir);
+            params.archive_subdir, params.url);
         // install_from_github only returns after atomically swapping the new
         // backend into place; from here on the working install is the new one.
         backend_committed = true;
@@ -1094,6 +1117,7 @@ std::string BackendManager::get_release_url(const std::string& recipe, const std
     try {
         std::string resolved_backend = normalize_backend_name(recipe, backend);
         auto params = get_install_params(recipe, resolved_backend);
+        if (!params.url.empty()) return params.url;
         return "https://github.com/" + params.repo + "/releases/tag/" + params.version;
     } catch (...) {
         return "";
@@ -1124,7 +1148,9 @@ BackendManager::BackendEnrichment BackendManager::get_backend_enrichment(const s
         }
         // All standard recipes (including ryzenai-llm): one get_install_params() call gives us everything
         auto params = get_install_params(recipe, resolved_backend);
-        result.release_url = "https://github.com/" + params.repo + "/releases/tag/" + params.version;
+        result.release_url = params.url.empty()
+            ? "https://github.com/" + params.repo + "/releases/tag/" + params.version
+            : params.url;
         result.download_filename = params.filename;
         result.version = params.version;
     } catch (...) {}
