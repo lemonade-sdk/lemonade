@@ -40,6 +40,13 @@ struct DeleteReport {
     bool cleaned_partial_download = false;
 };
 
+struct SupersededReport {
+    std::size_t removed = 0;
+    std::uint64_t bytes = 0;
+    std::size_t kept_in_use = 0;
+    std::size_t failed = 0;
+};
+
 struct OrphanedFile {
     std::string model;
     std::string type;
@@ -109,6 +116,12 @@ class ModelArtifactStore {
     bool adopt_extra_cache(ModelInfo& info,
                            std::set<std::filesystem::path>* owned_paths = nullptr) const;
 
+    // The repository directory holding this model's copy of `repo_id`: the one in
+    // the extra models root when the model was adopted from there, otherwise the
+    // managed cache. An update must land where the copy it replaces lives.
+    std::filesystem::path repo_cache_dir(const ModelInfo& info, const std::string& repo_id,
+                                         const std::string& cache_dir_name) const;
+
     // Every required checkpoint present, uninterrupted, and valid to the backend
     // that reads it.
     bool complete(const ModelInfo& info) const;
@@ -144,6 +157,11 @@ class ModelArtifactStore {
     void remove_unused_snapshot(const std::filesystem::path& repo_cache_dir,
                                 const std::string& snapshot_dir,
                                 const std::string& active_ref) const;
+
+    // After an update moved refs/main: deletes the previous version's copies of what
+    // the update replaced
+    SupersededReport remove_superseded_files(const std::vector<std::filesystem::path>& replaced,
+                                             const KnownModels& all_models) const;
 
     std::string processed_snapshot_id(const std::filesystem::path& repo_cache_dir,
                                       const ModelInfo& info) const;

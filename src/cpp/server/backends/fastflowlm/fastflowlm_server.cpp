@@ -185,41 +185,8 @@ void FastFlowLMServer::load(const std::string& model_name,
 
     port_ = choose_port();
 
-    // Bind to localhost only for security
-    std::vector<std::string> args;
-    if (model_type_ == ModelType::TRANSCRIPTION) {
-        args = {
-            "serve",
-            "--asr", "1",
-            "--port", std::to_string(port_),
-            "--host", "127.0.0.1"
-        };
-    } else if (model_type_ == ModelType::EMBEDDING) {
-        args = {
-            "serve",
-            "--embed", "1",
-            "--port", std::to_string(port_),
-            "--host", "127.0.0.1"
-        };
-    } else if (model_type_ == ModelType::CLASSIFICATION) {
-        args = {
-            "serve",
-            "--decision", model_info.checkpoint(),
-            "--port", std::to_string(port_),
-            "--host", "127.0.0.1"
-        };
-    } else {
-        args = {
-            "serve",
-            model_info.checkpoint(),
-            "--ctx-len", std::to_string(ctx_size),
-            "--port", std::to_string(port_),
-            "--host", "127.0.0.1"
-        };
-    }
-
-    args.insert(args.end(), flm_arg_resolution.args.begin(), flm_arg_resolution.args.end());
-    args.push_back("--quiet");
+    auto args = build_flm_serve_args(model_type_, model_info.checkpoint(),
+                                      ctx_size, port_, flm_arg_resolution);
 
     LOG(INFO, "FastFlowLM") << "Starting flm-server..." << std::endl;
     LOG(INFO, "ProcessManager") << "Starting process: \"" << flm_path << "\"";

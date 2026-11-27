@@ -196,36 +196,35 @@ int main() {
         check_map_empty("parse_vllm_metrics_text: empty body", res);
     }
     {
-        // 2. Valid gauges without labels
+        // 2. Gauges without labels
         std::string prometheus_data =
-            "# HELP vllm:gpu_cache_usage_factor GPU KV cache usage factor.\n"
-            "# TYPE vllm:gpu_cache_usage_factor gauge\n"
-            "vllm:gpu_cache_usage_factor 0.45\n"
-            "# HELP vllm:cpu_cache_usage_factor CPU KV cache usage factor.\n"
-            "vllm:cpu_cache_usage_factor 0.12\n"
+            "# HELP vllm:kv_cache_usage_perc KV-cache usage. 1 means 100 percent usage.\n"
+            "# TYPE vllm:kv_cache_usage_perc gauge\n"
+            "vllm:kv_cache_usage_perc 0.45\n"
             "vllm:num_requests_waiting 5\n"
-            "vllm:num_requests_running 2\n"
-            "vllm:num_requests_swapped 1\n";
+            "vllm:num_requests_running 2\n";
         auto res = lemon::backends::parse_vllm_metrics_text(prometheus_data);
-        check_double("parse_vllm_metrics_text: gpu_cache_usage_factor", res, "llm.vllm.gpu_cache_usage_factor", 0.45);
-        check_double("parse_vllm_metrics_text: cpu_cache_usage_factor", res, "llm.vllm.cpu_cache_usage_factor", 0.12);
+        check_double("parse_vllm_metrics_text: kv_cache_usage_perc", res, "llm.vllm.gpu_cache_usage_factor", 0.45);
         check_double("parse_vllm_metrics_text: num_requests_waiting", res, "llm.vllm.num_requests_waiting", 5.0);
         check_double("parse_vllm_metrics_text: num_requests_running", res, "llm.vllm.num_requests_running", 2.0);
-        check_double("parse_vllm_metrics_text: num_requests_swapped", res, "llm.vllm.num_requests_swapped", 1.0);
     }
     {
-        // 3. Gauges with labels
+        // 3. Labeled gauges in the order vLLM 0.20 exports them
         std::string prometheus_data =
-            "vllm:gpu_cache_usage_factor{model=\"some_model\"} 0.75\n"
-            "vllm:num_requests_waiting{model=\"some_model\"} 12\n";
+            "vllm:num_requests_running{engine=\"0\",model_name=\"some_model\"} 3.0\n"
+            "vllm:num_requests_waiting{engine=\"0\",model_name=\"some_model\"} 12.0\n"
+            "vllm:num_requests_waiting_by_reason{engine=\"0\",model_name=\"some_model\",reason=\"capacity\"} 12.0\n"
+            "vllm:num_requests_waiting_by_reason{engine=\"0\",model_name=\"some_model\",reason=\"deferred\"} 0.0\n"
+            "vllm:kv_cache_usage_perc{engine=\"0\",model_name=\"some_model\"} 0.75\n";
         auto res = lemon::backends::parse_vllm_metrics_text(prometheus_data);
-        check_double("parse_vllm_metrics_text labeled: gpu_cache_usage_factor", res, "llm.vllm.gpu_cache_usage_factor", 0.75);
-        check_double("parse_vllm_metrics_text labeled: num_requests_waiting", res, "llm.vllm.num_requests_waiting", 12.0);
+        check_double("parse_vllm_metrics_text labeled: num_requests_running", res, "llm.vllm.num_requests_running", 3.0);
+        check_double("parse_vllm_metrics_text labeled: num_requests_waiting ignores waiting_by_reason", res, "llm.vllm.num_requests_waiting", 12.0);
+        check_double("parse_vllm_metrics_text labeled: kv_cache_usage_perc", res, "llm.vllm.gpu_cache_usage_factor", 0.75);
     }
     {
         // 4. Malformed input
         std::string prometheus_data =
-            "vllm:gpu_cache_usage_factor\n"
+            "vllm:kv_cache_usage_perc\n"
             "vllm:num_requests_waiting abc\n"
             "vllm:num_requests_running 1.5 2.5\n";
         auto res = lemon::backends::parse_vllm_metrics_text(prometheus_data);
@@ -233,7 +232,7 @@ int main() {
 
         auto it_gpu = res.find("llm.vllm.gpu_cache_usage_factor");
         bool gpu_missing = (it_gpu == res.end());
-        std::printf("[%s] parse_vllm_metrics_text malformed: gpu_cache_usage_factor is skipped\n", gpu_missing ? "PASS" : "FAIL");
+        std::printf("[%s] parse_vllm_metrics_text malformed: kv_cache_usage_perc is skipped\n", gpu_missing ? "PASS" : "FAIL");
         if (!gpu_missing) ++g_failures;
 
         auto it_wait = res.find("llm.vllm.num_requests_waiting");

@@ -25,6 +25,10 @@ namespace lemon::backends {
         // If set, only this directory of the extracted archive is installed, as
         // the install root (e.g. a wheel's <name>.data/scripts).
         std::string archive_subdir;
+        // Set instead of `repo` for an artifact published outside GitHub. It is
+        // fetched from this URL for every backend_source and must have a pinned SHA-256.
+        // Kept last so positional initializers of the fields above stay valid.
+        std::string url;
     };
 
     struct BackendSpec {
@@ -124,7 +128,8 @@ namespace lemon::backends {
                                         const std::string& filename,
                                         const std::string& backend,
                                         DownloadProgressCallback progress_cb = nullptr,
-                                        const std::string& archive_subdir = "");
+                                        const std::string& archive_subdir = "",
+                                        const std::string& url = "");
 
         /** Replace `staging_dir` with its `subdir`, so only that part of an
          *  extracted archive is installed. Throws when `subdir` escapes the

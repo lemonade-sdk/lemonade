@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <filesystem>
 #include <string>
+#include <system_error>
 
 namespace lemon {
 namespace utils {
@@ -15,6 +16,11 @@ bool safe_is_directory(const std::filesystem::path& path);
 
 // Creates a directory tree, throwing on failure like fs::create_directories.
 void ensure_create_directories(const std::filesystem::path& path);
+
+// Creates and removes a file in `dir`, returning the error that stopped it.
+// Permission bits miss Windows ACLs and Controlled Folder Access, so only a
+// real write proves a directory accepts one.
+std::error_code probe_directory_writable(const std::filesystem::path& dir);
 
 // fs::recursive_directory_iterator throws on entries it cannot open; skipping
 // them keeps a cache scan going past one unreadable directory.

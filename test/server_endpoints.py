@@ -5269,6 +5269,125 @@ class EndpointTests(ServerTestBase):
             "[OK] /routing/validate ran an llm router live and failed open to the default model"
         )
 
+    def test_021zma_routing_validate_runs_transient_llm_router(self):
+        """An unregistered policy can load and run its LLM judge temporarily."""
+
+        suffix = uuid.uuid4().hex[:8]
+        provider = f"routervalidate{suffix}"
+        upstream_id = "mock/transient-judge"
+        helper_model = f"{provider}.{upstream_id}"
+        default_model = "validate-default"
+        routed_model = "validate-routed"
+        captured = {}
+
+        def chat_response(req):
+            captured["request"] = req
+            return {
+                "id": "cmpl-transient-router-judge",
+                "object": "chat.completion",
+                "created": 1,
+                "model": req.get("model", upstream_id),
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "content": json.dumps(
+                                {
+                                    "model": routed_model,
+                                    "rationale": "The mock judge selected the non-default candidate.",
+                                }
+                            ),
+                        },
+                        "finish_reason": "stop",
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 1,
+                    "completion_tokens": 1,
+                    "total_tokens": 2,
+                },
+            }
+
+        base_url, stop_provider = self._start_mock_cloud_provider(
+            [upstream_id], chat_handler=chat_response
+        )
+        try:
+            install = requests.post(
+                f"{self.base_url}/install",
+                json={"backend": "cloud", "provider": provider, "base_url": base_url},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(install.status_code, 200, install.text)
+            auth = requests.post(
+                f"{self.base_url}/cloud/auth",
+                json={
+                    "provider": provider,
+                    "api_key": "dummy-key",
+                    "allow_insecure_http": True,
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(auth.status_code, 200, auth.text)
+            self.assertEqual(auth.json()["models_discovered"], 1)
+
+            policy = {
+                "version": "1",
+                "recipe": "collection.router",
+                "components": [helper_model, default_model, routed_model],
+                "routing": {
+                    "candidates": [default_model, routed_model],
+                    "default_model": default_model,
+                    "router": {
+                        "type": "llm",
+                        "model": helper_model,
+                        "prompt": "Choose the best candidate for the prompt.",
+                    },
+                },
+            }
+            response = requests.post(
+                f"{self.base_url}/routing/validate",
+                json={"policy": policy, "prompt": "analyze this request"},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            decision = response.json()["decision"]
+            self.assertFalse(decision["default_used"], decision)
+            self.assertEqual(decision["route_to"], routed_model)
+            self.assertIsNotNone(captured.get("request"), "the judge was not called")
+
+            health_response = requests.get(
+                f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(health_response.status_code, 200, health_response.text)
+            health = health_response.json()
+            self.assertIn("all_models_loaded", health)
+            self.assertIsInstance(health["all_models_loaded"], list)
+            loaded = health["all_models_loaded"]
+            self.assertNotIn(
+                helper_model,
+                {model.get("model_name") for model in loaded},
+                "a transient validation helper must be released after evaluation",
+            )
+        finally:
+            try:
+                requests.post(
+                    f"{self.base_url}/unload",
+                    json={"model_name": helper_model},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except requests.RequestException:
+                pass
+            try:
+                requests.post(
+                    f"{self.base_url}/uninstall",
+                    json={"backend": "cloud", "provider": provider},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except requests.RequestException:
+                pass
+            stop_provider()
+
     def test_021zn_routing_validate_has_images_flag(self):
         """The has_images request flag flows through to a has_images match
         condition."""
@@ -8197,6 +8316,18 @@ class EndpointTests(ServerTestBase):
         "/api/v1/datasets/lemonade-sdk/backends/repo?Revision=master&FilePath="
     )
 
+    def _skip_if_unhashed(self, response):
+        # A pin bump can reach the mirror before its checksums merge; lemond
+        # rightly refuses the file until then.
+        if (
+            response.status_code != 200
+            and "so it will not be installed from the ModelScope mirror"
+            in response.text
+        ):
+            self.skipTest(
+                "this build has no ModelScope checksum for the pinned backend yet"
+            )
+
     def _dry_run(self, recipe, backend, source):
         response = requests.post(
             f"{self.base_url}/install/dry-run",
@@ -8275,6 +8406,7 @@ class EndpointTests(ServerTestBase):
                 },
                 timeout=TIMEOUT_MODEL_OPERATION,
             )
+            self._skip_if_unhashed(response)
             # Unpinned or mismatched files are refused, so success proves the hash.
             self.assertEqual(response.status_code, 200, response.text)
             self.assertEqual(response.json()["status"], "success")
@@ -8314,15 +8446,17 @@ class EndpointTests(ServerTestBase):
 
         load = requests.post(
             f"{self.base_url}/load",
-            json={"model_name": ENDPOINT_TEST_MODEL, "backend_source": "modelscope"},
+            json={
+                "model_name": ENDPOINT_TEST_MODEL,
+                "llamacpp_backend": backend,
+                "backend_source": "modelscope",
+            },
             timeout=TIMEOUT_MODEL_OPERATION,
         )
+        self._skip_if_unhashed(load)
         self.assertEqual(load.status_code, 200, load.text)
 
-        from openai import OpenAI
-
-        client = OpenAI(base_url=f"http://localhost:{PORT}/api/v1", api_key="x")
-        response = client.chat.completions.create(
+        response = self.get_openai_client().chat.completions.create(
             model=ENDPOINT_TEST_MODEL,
             messages=[{"role": "user", "content": "Say hello."}],
             max_tokens=16,

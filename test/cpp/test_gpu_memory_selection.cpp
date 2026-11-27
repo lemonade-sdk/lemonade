@@ -173,6 +173,16 @@ int main() {
     check(no_carveout_rocm0.unified && no_carveout_rocm0.total_gb == 16.0,
           "iGPU without a carve-out keeps ROCm0");
 
+    GPUInfo strix_halo = gpu(63.8, 18.4);
+    strix_halo.virtual_gb = 47.8;
+    strix_halo.virtual_used_gb = 0.2;
+    auto split_pool = select_gpu_memory_pool(GpuMemoryVendor::Any, strix_halo, {}, {}, unavailable);
+    check(split_pool.unified && split_pool.dedicated_gb == 63.8 &&
+          split_pool.dedicated_used_gb == 18.4 && split_pool.shared_used_gb == 0.2,
+          "iGPU pool carries its carve-out and shared usage separately");
+    check(rocm.dedicated_gb == 0.0 && rocm.dedicated_used_gb < 0.0,
+          "dGPU pool has no carve-out split");
+
     std::vector<GPUInfo> mixed_usage_nvidia{
         gpu(24.0, -1.0, 0), gpu(8.0, 1.0, 1)};
     auto unknown_constrained = select_gpu_memory_pool(
@@ -212,6 +222,31 @@ int main() {
     auto automatic = select_gpu_memory_pool(
         GpuMemoryVendor::Any, unavailable, amd, nvidia, unavailable);
     check(automatic.total_gb == 4.0, "ambiguous target preserves fallback order");
+
+    auto spans = [](const std::string& backend, const std::string& device) {
+        return gpu_memory_spans_amd_heaps(backend, device, {});
+    };
+    check(spans("vulkan", "") &&
+          spans("Vulkan", "Vulkan0") &&
+          spans("nathanw", ""),
+          "Vulkan builds use both AMD iGPU heaps");
+    check(!spans("rocm", "") &&
+          !spans("rocm-stable", "ROCm0") &&
+          !spans("halobox", "") &&
+          !spans("hrx", ""),
+          "ROCm and HRX runtimes do not combine the AMD iGPU heaps");
+    check(spans("system", "Vulkan0") &&
+          !spans("system", "ROCm0") &&
+          !spans("system", ""),
+          "system llama-server combines the heaps only for a named Vulkan device");
+    check(!spans("", "") &&
+          !spans("cuda", "CUDA0") &&
+          !spans("metal", ""),
+          "unknown and non-AMD targets do not combine the heaps");
+    check(!gpu_memory_spans_amd_heaps("vulkan", "", nvidia) &&
+          !gpu_memory_spans_amd_heaps("vulkan", "Vulkan0", nvidia) &&
+          gpu_memory_spans_amd_heaps("vulkan", "", {unavailable}),
+          "an NVIDIA GPU may be the Vulkan device, so the AMD heaps are not combined");
 
     return failures == 0 ? 0 : 1;
 }

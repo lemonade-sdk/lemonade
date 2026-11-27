@@ -5,6 +5,8 @@
 #include <string>
 #include <vector>
 
+#include "lemon/model_types.h"
+
 using lemon::backends::fastflowlm::add_flm_mode_labels;
 
 namespace {
@@ -45,6 +47,24 @@ int main() {
            "embed-gemma is an embedding model");
     expect(labelled("EMBED-Gemma:300m", {}) == std::vector<std::string>{"embeddings"},
            "the checkpoint name is matched without case");
+
+    const auto r2t2 = labelled("r2t2:1.7b", {"audio", "transcription"});
+    expect(r2t2 == std::vector<std::string>{"audio", "transcription"} &&
+           lemon::get_model_type_from_labels(r2t2) == lemon::ModelType::TRANSCRIPTION,
+           "R2T2 preserves its explicit ASR mode");
+    const auto whisper = labelled("whisper-v3:turbo", {"audio", "realtime-transcription", "transcription"});
+    expect(lemon::get_model_type_from_labels(whisper) == lemon::ModelType::TRANSCRIPTION &&
+           !has(whisper, "chat"), "Whisper still deploys as ASR");
+    const auto audio_chat = labelled("gemma4-it:e4b", {"audio", "vision", "chat-transcription"});
+    expect(has(audio_chat, "chat") &&
+           lemon::get_model_type_from_labels(audio_chat) == lemon::ModelType::LLM,
+           "chat-transcription is a chat input modality, not standalone ASR");
+    const auto omni = labelled("omni:1b", {"chat", "transcription"});
+    expect(lemon::get_model_type_from_labels(omni) == lemon::ModelType::LLM,
+           "an explicitly declared chat mode still takes priority");
+    const auto embed = labelled("semantic:300m", {"embeddings"});
+    expect(lemon::get_model_type_from_labels(embed) == lemon::ModelType::EMBEDDING &&
+           !has(embed, "chat"), "explicit embedding mode is preserved");
 
     const auto chat = labelled("qwen3.5:4b", {"reasoning", "vision"});
     expect(has(chat, "chat") && !has(chat, "classification"),

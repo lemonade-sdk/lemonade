@@ -61,10 +61,10 @@ public:
                 "recipe": {"type": "string", "description": "The requested recipe."},
                 "backend": {"type": "string", "description": "The requested backend."},
                 "arch": {"type": "string", "description": "The requested `arch`, or `\"\"` when it was omitted."},
-                "repo": {"type": "string", "description": "GitHub repository of the release."},
+                "repo": {"type": "string", "description": "GitHub repository of the release, or `\"\"` for a backend published outside GitHub."},
                 "version": {"type": "string", "description": "Release version: the pin in `backend_versions.json` unless runtime version policy overrides it."},
                 "filename": {"type": "string", "description": "Release asset name."},
-                "url": {"type": "string", "description": "Download URL built from `repo`, `version` and `filename`, from the configured `backend_source` (GitHub, or the ModelScope mirror)."},
+                "url": {"type": "string", "description": "Download URL built from `repo`, `version` and `filename`, from the configured `backend_source` (GitHub, or the ModelScope mirror). A backend published outside GitHub, such as `vllm`, always uses its publisher's URL."},
                 "supported": {"type": "boolean", "description": "Whether Lemonade's recipe/backend support matrix accepts the architecture. An unsupported `arch` still resolves, with `false`; without `arch`, a successful answer is always `true`."},
                 "supports_split_archive": {"type": "boolean", "description": "Whether the recipe supports assets published as multiple archive parts. When `true`, the real download path can consult a `.partcount` manifest."}
             }
@@ -104,12 +104,14 @@ public:
 
             const std::string source = backends::BackendUtils::effective_backend_source();
             const char* endpoint = std::getenv("MODELSCOPE_ENDPOINT");
-            const std::string url = backend_source::release_asset_url(
-                source, endpoint ? endpoint : "", params.repo, params.version, params.filename);
+            const std::string url = params.url.empty()
+                ? backend_source::release_asset_url(
+                      source, endpoint ? endpoint : "", params.repo, params.version, params.filename)
+                : params.url;
 
             bool supports_split_archive = false;
             if (auto* spec = backends::try_get_spec_for_recipe(recipe)) {
-                supports_split_archive = spec->supports_split_archive;
+                supports_split_archive = spec->supports_split_archive && params.url.empty();
             }
 
             bool supported = requested_arch.empty()

@@ -104,6 +104,50 @@ inline std::optional<double> auto_context_available_gpu_gib(
     return available;
 }
 
+// llama.cpp's Vulkan backend allocates in blocks of up to 1 GiB, and a block
+// cannot straddle the dedicated and shared heaps.
+inline constexpr double AUTO_CTX_HEAP_SPLIT_LOSS_GIB = 1.0;
+
+// Scaled by the total carve-out, not the free part, so that the reserve stays
+// when another model fills the carve-out. It adds to the RAM headroom on purpose.
+inline constexpr AutoContextReserveRange AUTO_CTX_CARVEOUT_GPU_HEADROOM{
+    1.0 / 32.0, 0.0, 2.0};
+
+struct AutoContextSplitGpuMemory {
+    double available_gib = 0.0;  // allocatable across both heaps, minus headroom
+    double carveout_gib = 0.0;   // the part of it that costs no OS-visible RAM
+};
+
+// UMA GPU with a firmware carve-out (AMD VGM): the carve-out is outside the
+// OS-visible RAM, so only the shared part competes with the CPU for free RAM.
+// Returns nullopt when a usage reading is unknown, or when the carve-out cannot
+// hold one heap block (the firmware default), so the plain UMA budget applies.
+inline std::optional<AutoContextSplitGpuMemory> auto_context_available_split_gpu_gib(
+    double dedicated_total_gib, double dedicated_used_gib,
+    double shared_total_gib, double shared_used_gib,
+    double physical_total_gib, double physical_used_gib) {
+    auto known = [](double value) { return std::isfinite(value) && value >= 0.0; };
+    if (!known(dedicated_total_gib) || dedicated_total_gib <= AUTO_CTX_HEAP_SPLIT_LOSS_GIB ||
+        !known(dedicated_used_gib) || !known(shared_total_gib) || !known(shared_used_gib))
+        return std::nullopt;
+    if (!std::isfinite(physical_total_gib) || physical_total_gib <= 0.0 ||
+        !std::isfinite(physical_used_gib) || physical_used_gib <= 0.0)
+        return std::nullopt;
+
+    const double dedicated_free = (std::max)(0.0, dedicated_total_gib - dedicated_used_gib);
+    const double shared_free = auto_context_cap_shared_memory_gib(
+        (std::max)(0.0, shared_total_gib - shared_used_gib),
+        physical_total_gib, physical_used_gib);
+    // A block that does not fit in the carve-out's tail lands in shared memory.
+    const double split_loss =
+        (std::min)({AUTO_CTX_HEAP_SPLIT_LOSS_GIB, dedicated_free, shared_free});
+    const double carveout = dedicated_free - split_loss;
+    const double gpu_headroom =
+        AUTO_CTX_CARVEOUT_GPU_HEADROOM.estimate(dedicated_total_gib);
+    return AutoContextSplitGpuMemory{
+        (std::max)(0.0, carveout + shared_free - gpu_headroom), carveout};
+}
+
 inline AutoContextBudget estimate_auto_context_budget(double free_gib,
                                                        double weights_gib,
                                                        double kv_bytes_per_token,
@@ -193,6 +237,45 @@ inline double auto_context_llamacpp_kv_bytes_ratio(
     // Equal formats, including Q8_0/Q8_0, keep their exact size ratio.
     return (std::max)(auto_context_llamacpp_kv_element_bytes(key_type),
                       auto_context_llamacpp_kv_element_bytes(value_type)) / 2.0;
+}
+
+// Whether llama-server keeps weights and KV on the GPU. Placement flags whose
+// host share cannot be sized here count as partial.
+inline bool auto_context_llamacpp_full_offload(
+    const std::string& recipe, const std::string& custom_args, int64_t block_count,
+    const char* gpu_layers_env = std::getenv("LLAMA_ARG_N_GPU_LAYERS")) {
+    if (recipe != "llamacpp") return true;
+    for (const char* name : {"LLAMA_ARG_CPU_MOE", "LLAMA_ARG_KV_OFFLOAD",
+                             "LLAMA_ARG_N_CPU_FFN", "LLAMA_ARG_N_CPU_MOE",
+                             "LLAMA_ARG_NO_KV_OFFLOAD", "LLAMA_ARG_OVERRIDE_TENSOR"}) {
+        if (std::getenv(name)) return false;
+    }
+
+    std::string gpu_layers = gpu_layers_env ? gpu_layers_env : "auto";
+    const auto args = utils::parse_custom_args(custom_args);
+    for (size_t i = 0; i < args.size(); ++i) {
+        const auto eq = args[i].find('=');
+        const std::string flag = args[i].substr(0, eq);
+        if (flag == "-cmoe" || flag == "--cpu-moe" ||
+            flag == "-ncmoe" || flag == "--n-cpu-moe" ||
+            flag == "-ncffn" || flag == "--n-cpu-ffn" ||
+            flag == "-ot" || flag == "--override-tensor" ||
+            flag == "-nkvo" || flag == "--no-kv-offload") return false;
+        if (flag == "-ngl" || flag == "--gpu-layers" || flag == "--n-gpu-layers") {
+            gpu_layers = eq != std::string::npos
+                ? args[i].substr(eq + 1) : (i + 1 < args.size() ? args[++i] : "");
+        }
+    }
+
+    if (gpu_layers == "auto" || gpu_layers == "all") return true;
+    try {
+        size_t consumed = 0;
+        const int64_t layers = std::stoll(gpu_layers, &consumed);
+        if (consumed != gpu_layers.size()) return false;
+        return layers < 0 || (block_count > 0 && layers >= block_count);
+    } catch (...) {
+        return false;
+    }
 }
 
 // Overflow-safe conversion for backend-specific resident-working-set budgets.

@@ -2495,7 +2495,7 @@ if(BUILD_TESTING AND EXISTS "${_FLM_ARG_RESOLVER_TEST_SRC}" AND EXISTS "${_FLM_A
         ${CMAKE_CURRENT_BINARY_DIR}/include
     )
 
-    add_cpp_ci_test(FlmArgResolverTest CI OFF COMMAND test_flm_arg_resolver)
+    add_cpp_ci_test(FlmArgResolverTest CI ON COMMAND test_flm_arg_resolver)
 endif()
 
 # Pure SystemInfo mapping/matching helpers. The production server calls the same
@@ -3350,6 +3350,19 @@ if(BUILD_TESTING AND EXISTS "${_PULL_REGISTRY_TEST_SRC}")
     add_cpp_ci_test(PullRegistryTest CI ON COMMAND test_pull_registry)
 endif()
 
+set(_EXTRA_DIR_UPDATES_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_extra_dir_updates.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_EXTRA_DIR_UPDATES_TEST_SRC}")
+    add_executable(test_extra_dir_updates
+        test/cpp/test_extra_dir_updates.cpp
+    )
+    target_link_libraries(test_extra_dir_updates PRIVATE lemonade-server-core)
+
+    include(CTest)
+    add_cpp_ci_test(ExtraDirUpdatesTest CI ON COMMAND test_extra_dir_updates)
+endif()
+
 set(_REGISTRY_PROVENANCE_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_registry_provenance.cpp"
 )
@@ -4021,7 +4034,12 @@ set(_VLLM_CDNA_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_vllm_cdna_gat
 if(BUILD_TESTING AND EXISTS "${_VLLM_CDNA_TEST_SRC}")
     add_executable(test_vllm_cdna_gating test/cpp/test_vllm_cdna_gating.cpp)
     target_link_libraries(test_vllm_cdna_gating PRIVATE lemonade-server-core)
-    add_cpp_ci_test(VllmCdnaGatingTest CI OFF COMMAND test_vllm_cdna_gating)
+    # vLLM is Linux-only, so only Linux CI runs it.
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        add_cpp_ci_test(VllmCdnaGatingTest CI ON COMMAND test_vllm_cdna_gating)
+    else()
+        add_cpp_ci_test(VllmCdnaGatingTest CI OFF COMMAND test_vllm_cdna_gating)
+    endif()
 endif()
 
 # llamacpp gfx950 (MI350) install gate: only the Linux + stable-channel asset is
@@ -4057,6 +4075,20 @@ if(BUILD_TESTING AND EXISTS "${_HTTP_CLIENT_TIMEOUT_TEST_SRC}")
     # kGiveUpCeilingSeconds (30 s per give-up), a constant the test is free to
     # retune; the bound must outlive it rather than pin it.
     add_cpp_ci_test(HttpClientTimeoutTest CI ON TIMEOUT 300 COMMAND test_http_client_timeout)
+endif()
+
+set(_HTTP_DOWNLOAD_RETRY_FORBIDDEN_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_http_download_retry_forbidden.cpp")
+if(BUILD_TESTING AND EXISTS "${_HTTP_DOWNLOAD_RETRY_FORBIDDEN_TEST_SRC}")
+    add_executable(test_http_download_retry_forbidden test/cpp/test_http_download_retry_forbidden.cpp)
+    target_link_libraries(test_http_download_retry_forbidden PRIVATE lemonade-server-core)
+    add_cpp_ci_test(HttpDownloadRetryForbiddenTest CI ON COMMAND test_http_download_retry_forbidden)
+endif()
+
+set(_HTTP_DOWNLOAD_PARTIAL_CLEANUP_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_http_download_partial_cleanup.cpp")
+if(BUILD_TESTING AND EXISTS "${_HTTP_DOWNLOAD_PARTIAL_CLEANUP_TEST_SRC}")
+    add_executable(test_http_download_partial_cleanup test/cpp/test_http_download_partial_cleanup.cpp)
+    target_link_libraries(test_http_download_partial_cleanup PRIVATE lemonade-server-core)
+    add_cpp_ci_test(HttpDownloadPartialCleanupTest CI ON COMMAND test_http_download_partial_cleanup)
 endif()
 
 set(_REQUEST_CANCELLATION_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_request_cancellation.cpp")
