@@ -723,16 +723,18 @@ std::map<std::string, nlohmann::json> parse_vllm_metrics_text(const std::string&
     std::map<std::string, nlohmann::json> telemetry_attrs;
     std::istringstream stream(body);
     std::string line;
+    // vllm:kv_cache_usage_perc is a fraction from 0 to 1 despite its name.
     std::vector<std::pair<std::string, std::string>> keys = {
-        {"vllm:gpu_cache_usage_factor", "llm.vllm.gpu_cache_usage_factor"},
-        {"vllm:cpu_cache_usage_factor", "llm.vllm.cpu_cache_usage_factor"},
+        {"vllm:kv_cache_usage_perc", "llm.vllm.gpu_cache_usage_factor"},
         {"vllm:num_requests_waiting", "llm.vllm.num_requests_waiting"},
-        {"vllm:num_requests_running", "llm.vllm.num_requests_running"},
-        {"vllm:num_requests_swapped", "llm.vllm.num_requests_swapped"}
+        {"vllm:num_requests_running", "llm.vllm.num_requests_running"}
     };
     while (std::getline(stream, line)) {
         for (const auto& [prom_key, span_key] : keys) {
-            if (line.rfind(prom_key, 0) == 0) {
+            // vllm:num_requests_waiting is also a prefix of vllm:num_requests_waiting_by_reason.
+            if (line.rfind(prom_key, 0) == 0 &&
+                (line.size() == prom_key.size() || line[prom_key.size()] == '{' ||
+                 line[prom_key.size()] == ' ' || line[prom_key.size()] == '\t')) {
                 size_t last_space = line.find_last_of(" \t");
                 if (last_space != std::string::npos) {
                     try {
