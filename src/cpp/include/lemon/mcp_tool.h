@@ -134,6 +134,18 @@ private:
             }
         }
 
+        const auto maximum_it = schema.find("maximum");
+        if (maximum_it != schema.end()) {
+            if (!maximum_it->is_number()) {
+                throw std::invalid_argument(path + ": schema maximum must be numeric");
+            }
+            if (value.is_number() &&
+                value.get<double>() > maximum_it->get<double>()) {
+                throw std::invalid_argument(
+                    path + ": value must be <= " + maximum_it->dump());
+            }
+        }
+
         if (value.is_object()) {
             const auto required_it = schema.find("required");
             if (required_it != schema.end()) {

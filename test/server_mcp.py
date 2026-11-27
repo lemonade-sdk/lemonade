@@ -279,6 +279,7 @@ class McpGatewayTests(ServerTestBase):
             "lemonade_chat",
             "lemonade_transcribe_audio",
             "lemonade_generate_image",
+            "lemonade_edit_image",
             "lemonade_omni",
             "lemonade_docs",
             "lemonade_web_search",
@@ -288,6 +289,15 @@ class McpGatewayTests(ServerTestBase):
             MCP_HUB_EXPECTED_TOOLS.issubset(names),
             f"missing MCP hub tools: {MCP_HUB_EXPECTED_TOOLS - names}",
         )
+        edit = next(tool for tool in tools if tool["name"] == "lemonade_edit_image")
+        self.assertEqual(
+            set(edit["inputSchema"].get("required", [])), {"prompt", "image"}
+        )
+        edit_props = edit["inputSchema"]["properties"]
+        self.assertIn("model", edit_props)
+        self.assertNotIn("image_base64", edit_props)
+        self.assertNotIn("allow_download", edit_props)
+
         for tool in tools:
             self.assertIn("description", tool)
             self.assertIsInstance(tool["description"], str)
@@ -580,6 +590,46 @@ class McpGatewayTests(ServerTestBase):
         self.assertIn("Unknown model", body["result"]["content"][0]["text"])
 
     # ---------------------------------------------------------------------
+    def test_024_edit_image_rejects_generation_only_model_before_decoding(self):
+        """A generation-only model must fail capability selection before decode/load."""
+        models_response = requests.get(
+            f"http://localhost:{PORT}/v1/models",
+            params={"show_all": "true", "capability": "image"},
+            headers=_auth_headers(),
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(models_response.status_code, 200, models_response.text)
+        generation_models = [
+            item["id"]
+            for item in models_response.json()["data"]
+            if item.get("capability") == "image"
+            and "image-edit" not in item.get("capabilities", [])
+        ]
+        if not generation_models:
+            self.skipTest("No generation-only image model supported on this host")
+
+        response = _post(
+            {
+                "jsonrpc": "2.0",
+                "id": 8,
+                "method": "tools/call",
+                "params": {
+                    "name": "lemonade_edit_image",
+                    "arguments": {
+                        "model": generation_models[0],
+                        "prompt": "make it blue",
+                        "image": "",
+                    },
+                },
+            }
+        )
+        body = response.json()
+        self.assertTrue(body["result"]["isError"], msg=str(body))
+        self.assertIn(
+            "does not advertise image-edit support",
+            body["result"]["content"][0]["text"],
+        )
+
     # Live tool invocations
     # ---------------------------------------------------------------------
 
