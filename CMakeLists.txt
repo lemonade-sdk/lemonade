@@ -2495,7 +2495,7 @@ if(BUILD_TESTING AND EXISTS "${_FLM_ARG_RESOLVER_TEST_SRC}" AND EXISTS "${_FLM_A
         ${CMAKE_CURRENT_BINARY_DIR}/include
     )
 
-    add_cpp_ci_test(FlmArgResolverTest CI OFF COMMAND test_flm_arg_resolver)
+    add_cpp_ci_test(FlmArgResolverTest CI ON COMMAND test_flm_arg_resolver)
 endif()
 
 # Pure SystemInfo mapping/matching helpers. The production server calls the same

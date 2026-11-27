@@ -172,5 +172,27 @@ FLMArgResolution resolve_flm_args(const std::string& flm_args, int ctx_size) {
     return resolution;
 }
 
+std::vector<std::string> build_flm_serve_args(ModelType model_type,
+                                              const std::string& checkpoint,
+                                              int ctx_size, int port,
+                                              const FLMArgResolution& resolution) {
+    std::vector<std::string> args = {"serve"};
+    if (model_type == ModelType::TRANSCRIPTION) {
+        args.insert(args.end(), {"--asr", checkpoint});
+    } else if (model_type == ModelType::EMBEDDING) {
+        args.insert(args.end(), {"--embed", "1"});
+    } else if (model_type == ModelType::CLASSIFICATION) {
+        args.insert(args.end(), {"--decision", checkpoint});
+    } else {
+        args.insert(args.end(), {checkpoint, "--ctx-len", std::to_string(ctx_size)});
+    }
+
+    // Bind to localhost only for security.
+    args.insert(args.end(), {"--port", std::to_string(port), "--host", "127.0.0.1"});
+    args.insert(args.end(), resolution.args.begin(), resolution.args.end());
+    args.push_back("--quiet");
+    return args;
+}
+
 } // namespace backends
 } // namespace lemon
