@@ -1664,6 +1664,10 @@ Requires `LEMONADE_API_KEY` when it is set.
 - `frame_count` - Frames in the clip, present once completed.
 - `fps` - The clip's frame rate, present once completed.
 - `duration` - The clip's length in seconds, `frame_count` over `fps`, present once completed.
+- `progress` - How far a running video has got, present when its backend reports it. On stable-diffusion.cpp each sampling pass counts from zero, so a two-stage model such as Wan2.2 A14B counts its steps twice.
+  - `stage` - The backend's name for the current stage, such as `sampling`.
+  - `completed` - Units done in the current stage, or `null` when the stage is not counted.
+  - `total` - Units in the current stage, or `null` when the stage is not counted.
 
 ### Errors
 
