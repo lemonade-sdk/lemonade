@@ -37,6 +37,16 @@ std::map<std::string, std::string>& reserved() {
     static std::map<std::string, std::string> names;
     return names;
 }
+
+std::mutex& progress_mutex() {
+    static std::mutex m;
+    return m;
+}
+
+std::map<std::string, nlohmann::json>& running_progress() {
+    static std::map<std::string, nlohmann::json> jobs;
+    return jobs;
+}
 } // namespace
 
 fs::path dir() {
@@ -196,6 +206,23 @@ std::string video_status(const nlohmann::json& job) {
     }
     if (status != "interrupted") return status;
     return job.value("error", std::string()).empty() ? "canceled" : "failed";
+}
+
+void set_progress(const std::string& job_id, const nlohmann::json& progress) {
+    if (job_id.empty()) return;
+    std::lock_guard<std::mutex> lock(progress_mutex());
+    running_progress()[job_id] = progress;
+}
+
+void clear_progress(const std::string& job_id) {
+    std::lock_guard<std::mutex> lock(progress_mutex());
+    running_progress().erase(job_id);
+}
+
+nlohmann::json progress(const std::string& job_id) {
+    std::lock_guard<std::mutex> lock(progress_mutex());
+    const auto it = running_progress().find(job_id);
+    return it == running_progress().end() ? nlohmann::json(nullptr) : it->second;
 }
 
 } // namespace video_store

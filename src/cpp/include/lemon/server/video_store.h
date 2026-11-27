@@ -71,5 +71,12 @@ bool is_video_job(const nlohmann::json& job);
 // is held paused with the clip already made: that video is completed.
 std::string video_status(const nlohmann::json& job);
 
+// The latest progress of each running video, held in memory rather than in the job
+// record: backends report it twice a second, and the job store is rewritten on every
+// change. progress() returns null for a job with none.
+void set_progress(const std::string& job_id, const nlohmann::json& progress);
+void clear_progress(const std::string& job_id);
+nlohmann::json progress(const std::string& job_id);
+
 } // namespace video_store
 } // namespace lemon
