@@ -20,10 +20,13 @@ import json
 import os
 import platform
 import re
+import secrets
 import shutil
 import subprocess
 import sys
 import tarfile
+import tempfile
+import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -35,6 +38,10 @@ IS_WINDOWS = platform.system() == "Windows"
 BACKEND_VERSIONS_PATH = Path("src/cpp/resources/backend_versions.json")
 LEMOND_BACKEND_VERSIONS_PATH = Path("build/resources/backend_versions.json")
 SCENARIO_FILE = Path("src/cpp/resources/bench_scenarios.json")
+ACCURACY_FILE = Path(__file__).with_name("accuracy_questions.json")
+# Each chat request may wait 600 s, so a hung server could otherwise eat the whole group job.
+# Stop asking after this many requests in a row get no reply.
+MAX_TRANSPORT_FAILURES = 3
 # ctx window -> scenarios run at it. Forks override via "scenario_ctx".
 SCENARIO_CTX = {
     4096: ["context-4k"],
@@ -80,30 +87,34 @@ def resolve_latest_version(
     tag_prefix: str = "",
     pinned: str = "",
     fallback: str = "",
+    asset_for=None,
 ) -> str:
     if pinned:
         return pinned
+
+    def usable(r: dict) -> bool:
+        if r.get("draft") or not r.get("assets"):
+            return False
+        name = asset_for(r["tag_name"]) if asset_for else None
+        return not name or name in {a["name"] for a in r["assets"]}
+
     if tag_prefix:
         releases = gh_api(f"repos/{repo}/releases?per_page=10", token)
         for r in releases:
-            if r["tag_name"].startswith(tag_prefix):
+            if r["tag_name"].startswith(tag_prefix) and usable(r):
                 return r["tag_name"]
         raise RuntimeError(f"No release with prefix {tag_prefix!r} in {repo}")
     try:
-        # /releases/latest can be a binary-less semver tag; require assets so a
-        # binary-less tag is never picked. Prefer a stable release, else newest bNNNN.
+        # A repo's "latest" release can be a binary-less tag (ggml-org's v0.8.0),
+        # so only accept releases that ship this fork's asset. Prefer stable, else
+        # the newest bNNNN build.
         releases = gh_api(f"repos/{repo}/releases?per_page=20", token)
         for r in releases:
-            if not r.get("draft") and not r.get("prerelease") and r.get("assets"):
+            if not r.get("prerelease") and usable(r):
                 return r["tag_name"]
         for r in releases:
             tag = r.get("tag_name", "")
-            if (
-                not r.get("draft")
-                and r.get("assets")
-                and tag.startswith("b")
-                and tag[1:].isdigit()
-            ):
+            if tag.startswith("b") and tag[1:].isdigit() and usable(r):
                 return tag
     except Exception as e:
         if fallback:
@@ -202,9 +213,6 @@ def find_lemonade_bin() -> str:
 def get_models_from_registry(
     base_url: str, recipe: str = "llamacpp", require_hot: bool = True
 ) -> list[str]:
-    """Live-registry models for `recipe`. Production forks want the curated hot
-    set; experimental forks (require_hot=False) take every model on their recipe,
-    so a new hrx model needs only a server_models.json entry."""
     try:
         req = urllib.request.Request(f"{base_url}/api/v1/models?show_all=true")
         with urllib.request.urlopen(req, timeout=30) as r:
@@ -397,15 +405,28 @@ def merge_bench_outputs(base: dict | None, incoming: dict) -> dict:
     return base
 
 
+def runnable_models(fork: dict, models: list[str], all_forks: list[dict]) -> list[str]:
+    aliases = fork.get("model_aliases")
+    if aliases:
+        to_alias = {gguf: m for m, gguf in aliases.items()}
+        return [
+            m if m in aliases else to_alias[m]
+            for m in models
+            if m in aliases or m in to_alias
+        ]
+    alias_only = {m for f in all_forks for m in f.get("model_aliases", {})}
+    return [m for m in models if m not in alias_only]
+
+
 def run_bench(
     fork: dict,
     version: str,
     binary_path: Path,
     model: str,
     output_file: Path,
-    compare_file: Path | None,
     dry_run: bool,
     lemonade_bin: str,
+    port: str = "",
     rocm_version: str | None = None,
 ) -> dict | None:
     backend = fork["backend"]
@@ -435,8 +456,10 @@ def run_bench(
     merged = None
     for ctx_size, group_scenarios in sorted(ctx_groups.items()):
         group_out = output_file.with_suffix(f".ctx{ctx_size}.json")
+        target = ["--host", "127.0.0.1", "--port", port] if port else []
         cmd = [
             lemonade_bin,
+            *target,
             "bench",
             model,
             "--backend",
@@ -456,8 +479,6 @@ def run_bench(
             "--ctx-size",
             str(ctx_size),
         ]
-        if compare_file and compare_file.exists():
-            cmd += ["--compare", str(compare_file)]
 
         print(f"    cmd (ctx={ctx_size}): {' '.join(cmd)}")
         if dry_run:
@@ -532,6 +553,8 @@ def run_bench(
         data["commit"] = os.environ["GITHUB_SHA"]
     if os.environ.get("LEMONADE_VERSION"):
         data["lemonade_version"] = os.environ["LEMONADE_VERSION"]
+    if os.environ.get("RUNNER_NAME"):
+        data["runner"] = os.environ["RUNNER_NAME"]
     with open(output_file, "w") as f:
         json.dump(data, f, indent=2)
     return data
@@ -572,13 +595,380 @@ def backend_results(data: dict, model: str | None = None) -> list[dict]:
 
 
 def annotate_pp(data: dict) -> None:
-    """Derive pp_tps (input_tokens / fastest TTFT) for each scenario."""
     for br in backend_results(data):
         for sc in br.get("scenarios", []):
-            in_tok = sc.get("input_tokens")
-            best_ttft = sc.get("ttft_ms", {}).get("min", 0)
-            if in_tok and best_ttft > 0:
-                sc["pp_tps"] = round(in_tok * 1000.0 / best_ttft, 2)
+            native = sc.get("pp_tps")
+            if isinstance(native, dict):
+                sc["pp_tps"] = native.get("mean")
+
+
+def _lemond_post(base_url: str, path: str, body: dict, timeout: int) -> dict:
+    req = urllib.request.Request(
+        f"{base_url}{path}",
+        data=json.dumps(body).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read())
+
+
+def _clean(text: str) -> str:
+    text = unicodedata.normalize("NFKC", text or "")
+    return re.sub(r"<think>.*?</think>", "", text, flags=re.S).strip()
+
+
+def _final_answer(text: str) -> str:
+    text = _clean(text)
+    # Graded text is whatever follows the last "Answer:"; models that skip the
+    # convention are graded on their whole reply.
+    marks = list(re.finditer(r"answer\s*[:：]", text, re.I))
+    if marks:
+        tail = text[marks[-1].end() :].strip()
+        text = tail.splitlines()[0] if tail else ""
+    text = re.sub(r"^```[a-zA-Z]*\s*|\s*```$", "", text.strip())
+    return text.strip().strip("*_`\"' ").rstrip(".").strip()
+
+
+def _norm(s: str) -> str:
+    return re.sub(r"[^a-z0-9 ]", "", s.lower()).strip()
+
+
+def _first_json(text: str):
+    text = re.sub(r"```[a-zA-Z]*", "", _clean(text))
+    dec = json.JSONDecoder()
+    for i, ch in enumerate(text):
+        if ch in "[{":
+            try:
+                return dec.raw_decode(text[i:])[0]
+            except ValueError:
+                continue
+    raise ValueError("no JSON value found")
+
+
+def _python_block(text: str) -> str:
+    blocks = re.findall(r"```(?:python|py)?\s*\n(.*?)```", _clean(text), re.S)
+    return blocks[-1] if blocks else _clean(text)
+
+
+_CODE_ENV_KEEP = ("PATH", "LANG", "LC_ALL", "SYSTEMROOT")
+
+
+def _limit_resources() -> None:
+    import resource
+
+    for limit, value in (
+        (resource.RLIMIT_CPU, 10),
+        (resource.RLIMIT_AS, 1 << 30),
+        (resource.RLIMIT_FSIZE, 10 << 20),
+    ):
+        resource.setrlimit(limit, (value, value))
+
+
+def _run_python_tests(code: str, tests: list[str]) -> bool:
+    # Exit code 0 alone is not enough: generated code that calls sys.exit(0) or
+    # unittest.main() ends before the tests run. Only a marker the code cannot
+    # predict, written after the last test, proves every test ran.
+    marker = f"tests-done-{secrets.token_hex(16)}"
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "solution.py"
+        footer = f"__import__('os').write(1, b'\\n{marker}\\n')"
+        path.write_text(
+            "\n".join([code, "", *tests, footer, ""]),
+            encoding="utf-8",
+            errors="replace",
+        )
+        env = {k: os.environ[k] for k in _CODE_ENV_KEEP if k in os.environ}
+        env.update(HOME=tmp, TMPDIR=tmp)
+        try:
+            r = subprocess.run(
+                [sys.executable, "-I", str(path)],
+                cwd=tmp,
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                timeout=10,
+                env=env,
+                preexec_fn=None if IS_WINDOWS else _limit_resources,
+            )
+        except subprocess.TimeoutExpired:
+            return False
+        return r.returncode == 0 and marker.encode() in r.stdout
+
+
+def _arg_matches(expected, actual) -> bool:
+    if isinstance(expected, dict) and "contains" in expected:
+        return (
+            isinstance(actual, str) and expected["contains"].lower() in actual.lower()
+        )
+    if isinstance(expected, bool) or isinstance(actual, bool):
+        return expected is actual
+    if isinstance(expected, (int, float)):
+        try:
+            return abs(float(actual) - expected) < 1e-9
+        except (TypeError, ValueError):
+            return False
+    if isinstance(expected, list):
+        return isinstance(actual, list) and sorted(
+            str(x).strip().lower() for x in expected
+        ) == sorted(str(x).strip().lower() for x in actual)
+    return (
+        isinstance(actual, str)
+        and actual.strip().lower() == str(expected).strip().lower()
+    )
+
+
+def grade_answer(text: str, grade: dict, tool_calls: list | None = None) -> bool:
+    kind = grade["type"]
+    if kind == "tool_call":
+        if not tool_calls or len(tool_calls) != 1:
+            return False
+        fn = tool_calls[0].get("function", {})
+        try:
+            args = fn.get("arguments") or {}
+            args = json.loads(args) if isinstance(args, str) else args
+            if not isinstance(args, dict):
+                return False
+        except ValueError:
+            return False
+        return fn.get("name") == grade["name"] and all(
+            _arg_matches(v, args.get(k)) for k, v in grade["args"].items()
+        )
+    if kind == "no_tool_call":
+        return not tool_calls and grade_answer(text, grade["answer"])
+    if kind == "python_tests":
+        raise ValueError("python_tests are graded only by --grade-code")
+    if kind == "json":
+        try:
+            return _first_json(text) == grade["value"]
+        except ValueError:
+            return False
+    ans = _final_answer(text)
+    if kind == "number":
+        nums = re.findall(r"-?\d+(?:\.\d+)?", ans.replace(",", ""))
+        return bool(nums) and abs(float(nums[-1]) - grade["value"]) <= grade.get(
+            "tolerance", 1e-9
+        )
+    if kind == "one_of":
+        a = _norm(ans)
+        short = len(a.split()) <= 12
+        return any(
+            a == _norm(v) or (short and re.search(rf"\b{re.escape(_norm(v))}\b", a))
+            for v in grade["values"]
+        )
+    if kind == "regex":
+        return re.fullmatch(grade["pattern"], ans) is not None
+    raise ValueError(f"unknown grade type {kind}")
+
+
+def _needle_document(needle: dict) -> str:
+    # Sized at ~22 tokens per line (digit-heavy text tokenizes densely) so the
+    # prompt stays well inside the load ctx; lines differ so retrieval is real.
+    lines = [
+        f"Entry {i:05d}: section {i % 97} checked at "
+        f"{(i * 7) % 24:02d}:{(i * 13) % 60:02d}, all nominal."
+        for i in range(max(1, needle["target_tokens"] // 22))
+    ]
+    lines.insert(int(len(lines) * needle["depth"]), needle["sentence"])
+    return "\n".join(lines)
+
+
+def _accuracy_messages(q: dict, suite: dict) -> list[dict]:
+    msgs = [{"role": "system", "content": q.get("system", suite["system_prompt"])}]
+    if "messages" in q:
+        return msgs + q["messages"]
+    prompt = q["prompt"]
+    if "needle" in q:
+        prompt = f"{_needle_document(q['needle'])}\n\n{prompt}"
+    return msgs + [{"role": "user", "content": prompt}]
+
+
+def _load_suite() -> tuple[dict, str]:
+    raw = ACCURACY_FILE.read_bytes()
+    return json.loads(raw), hashlib.sha256(raw).hexdigest()[:12]
+
+
+def run_accuracy(base_url: str, fork: dict, model: str) -> dict | None:
+    """Ask the fixed accuracy suite on this fork's backend; deterministic, thinking off."""
+    suite, version = _load_suite()
+    defaults = suite.get("defaults", {})
+    by_ctx: dict[int, list[dict]] = {}
+    for q in suite["questions"]:
+        by_ctx.setdefault(q.get("ctx", defaults.get("ctx", 4096)), []).append(q)
+    repeat = set(suite.get("health_checks", {}).get("repeat", []))
+
+    passed, failures, errors, pending_code = 0, [], [], []
+    replies, nondeterministic, repeat_errors, empty, cut = {}, [], [], 0, 0
+    transport_failures = 0
+
+    def stalled() -> bool:
+        return transport_failures >= MAX_TRANSPORT_FAILURES
+
+    def skip(items: list[dict]) -> None:
+        errors.extend(
+            {"id": q["id"], "error": "skipped: server stopped responding"}
+            for q in items
+        )
+
+    def ask(q: dict) -> dict:
+        body = {
+            "model": model,
+            "messages": _accuracy_messages(q, suite),
+            "temperature": 0,
+            "seed": 42,
+            "max_tokens": q.get("max_tokens", defaults.get("max_tokens", 1024)),
+            "enable_thinking": False,
+        }
+        if "tools" in q:
+            body["tools"] = suite["tool_sets"][q["tools"]]
+        return _lemond_post(base_url, "/api/v1/chat/completions", body, 600)
+
+    for ctx, items in sorted(by_ctx.items()):
+        if stalled():
+            skip(items)
+            continue
+        load = {"model_name": model, "save_options": False, "ctx_size": ctx}
+        if fork.get("recipe", "llamacpp") == "llamacpp":
+            load["llamacpp_backend"] = fork.get("install_as", fork["backend"])
+        try:
+            _lemond_post(base_url, "/api/v1/load", load, 3600)
+        except Exception as e:
+            print(f"    [accuracy] load at ctx {ctx} failed for {model}: {e}")
+            errors.extend(
+                {"id": q["id"], "error": f"load failed: {e}"[:200]} for q in items
+            )
+            continue
+        for i, q in enumerate(items):
+            if stalled():
+                print(
+                    f"    [accuracy] {model}: {transport_failures} requests in a row "
+                    f"got no response; skipping the remaining questions"
+                )
+                skip(items[i:])
+                break
+            try:
+                r = ask(q)
+                transport_failures = 0
+            except urllib.error.HTTPError as e:
+                transport_failures = 0
+                if e.code >= 500:
+                    errors.append({"id": q["id"], "error": f"HTTP {e.code}"})
+                    continue
+                r = {"choices": [{"message": {"content": f"<HTTP {e.code} rejected>"}}]}
+            except Exception as e:
+                transport_failures += 1
+                errors.append({"id": q["id"], "error": str(e)[:200]})
+                continue
+            choice = (r.get("choices") or [{}])[0]
+            msg = choice.get("message", {})
+            # Reasoning models (e.g. gpt-oss) can ignore enable_thinking and leave
+            # content empty; their final answer is then in the reasoning field.
+            text = msg.get("content") or msg.get("reasoning_content") or ""
+            calls = msg.get("tool_calls") or []
+            is_cut = choice.get("finish_reason") == "length"
+            empty += not text.strip() and not calls
+            cut += is_cut
+            if q["id"] in repeat:
+                replies[q["id"]] = (text, json.dumps(calls, sort_keys=True))
+            if q["grade"]["type"] == "python_tests":
+                pending_code.append(
+                    {
+                        "id": q["id"],
+                        "code": _python_block(text),
+                        "response": text[-300:],
+                        "cut_off": is_cut,
+                    }
+                )
+            elif grade_answer(text, q["grade"], calls):
+                passed += 1
+            else:
+                shown = text or json.dumps([c.get("function") for c in calls])
+                failures.append(
+                    {"id": q["id"], "response": shown[-300:], "cut_off": is_cut}
+                )
+            if q["id"] in repeat:
+                try:
+                    again = ask(q)["choices"][0].get("message", {})
+                    second = (
+                        again.get("content") or again.get("reasoning_content") or "",
+                        json.dumps(again.get("tool_calls") or [], sort_keys=True),
+                    )
+                    if second != replies[q["id"]]:
+                        nondeterministic.append(q["id"])
+                except Exception as e:
+                    repeat_errors.append(q["id"])
+                    if not isinstance(e, urllib.error.HTTPError):
+                        transport_failures += 1
+
+    total = len(suite["questions"])
+    note = f" ({len(errors)} request errors, counted as not passed)" if errors else ""
+    print(
+        f"    [{model}] accuracy = {passed}/{total}{note}, "
+        f"{len(pending_code)} code tests graded separately",
+        flush=True,
+    )
+    return {
+        "passed": passed,
+        "total": total,
+        "score": round(passed / total, 4) if total else None,
+        "questions_version": version,
+        "failures": failures,
+        "errors": errors,
+        "pending_code": pending_code,
+        "health": {
+            "nondeterministic": nondeterministic,
+            "repeat_errors": repeat_errors,
+            "empty_replies": empty,
+            "cut_off": cut,
+        },
+    }
+
+
+def grade_pending_code(root: Path) -> None:
+    suite, version = _load_suite()
+    tests = {
+        q["id"]: q["grade"]["tests"]
+        for q in suite["questions"]
+        if q["grade"]["type"] == "python_tests"
+    }
+    for f in sorted(root.rglob("run-*.json")):
+        try:
+            data = json.loads(f.read_text())
+        except ValueError:
+            continue
+        changed = False
+        for me in data.get("models") or []:
+            acc = me.get("accuracy")
+            if not acc or not acc.get("pending_code"):
+                continue
+            if acc.get("questions_version") != version:
+                # Answers from an older suite stay pending (shown as unavailable)
+                # rather than being graded against tests they were never asked.
+                print(
+                    f"{f}: {me.get('model')} left ungraded: suite "
+                    f"{acc.get('questions_version')} != current {version}"
+                )
+                continue
+            for item in acc.pop("pending_code"):
+                try:
+                    ok = item["id"] in tests and _run_python_tests(
+                        item["code"], tests[item["id"]]
+                    )
+                except Exception as e:
+                    print(f"{f}: grading {item['id']} crashed ({e}); counted as failed")
+                    ok = False
+                if ok:
+                    acc["passed"] += 1
+                else:
+                    acc["failures"].append(
+                        {k: item[k] for k in ("id", "response", "cut_off")}
+                    )
+            acc["score"] = (
+                round(acc["passed"] / acc["total"], 4) if acc["total"] else None
+            )
+            print(f"{f}: {me.get('model')} accuracy = {acc['passed']}/{acc['total']}")
+            changed = True
+        if changed:
+            f.write_text(json.dumps(data, indent=2))
 
 
 def check_regression(
@@ -696,16 +1086,34 @@ def main() -> int:
     parser.add_argument("--fork-filter", default="")
     parser.add_argument("--model-filter", default="")
     parser.add_argument(
-        "--port", default="", help="lemond port (informational; bench uses UDP beacon)"
+        "--port", default="", help="lemond port; pins lemonade bench to this server"
     )
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--use-installed",
+        action="store_true",
+        help="bench the binary already installed by --download-only; never re-resolve",
+    )
+    parser.add_argument(
+        "--skip-accuracy",
+        action="store_true",
+        help="skip the answer-key accuracy check",
+    )
     parser.add_argument(
         "--download-only",
         action="store_true",
         help="Only download fork binaries, do not run bench (use before lemond starts)",
     )
     parser.add_argument("--token", default=os.environ.get("GH_TOKEN"))
+    parser.add_argument(
+        "--grade-code",
+        metavar="DIR",
+        help="grade pending code-test answers in run files under DIR, then exit",
+    )
     args = parser.parse_args()
+    if args.grade_code:
+        grade_pending_code(Path(args.grade_code))
+        return 0
 
     forks_path = Path(args.forks)
     output_dir = Path(args.output)
@@ -721,7 +1129,7 @@ def main() -> int:
     print(f"Lemonade : {lemonade_bin}")
     print(f"Dry run  : {args.dry_run}")
     if args.port:
-        print(f"Port     : {args.port} (informational)")
+        print(f"Port     : {args.port}")
     print()
 
     with open(forks_path) as f:
@@ -752,6 +1160,7 @@ def main() -> int:
 
     # --download-only: just fetch binaries, exit before bench (used before lemond starts)
     if args.download_only:
+        failed = []
         for fork in forks:
             fork_id = fork["fork_id"]
             print(f"Downloading binary for {fork_id}...")
@@ -764,15 +1173,28 @@ def main() -> int:
                 )
                 fallback = fork.get("version_fallback", "")
                 version = resolve_latest_version(
-                    fork["repo"], args.token, tag_prefix, pinned, fallback
+                    fork["repo"],
+                    args.token,
+                    tag_prefix,
+                    pinned,
+                    fallback,
+                    asset_for=lambda tag, f=fork: resolve_binary_url(f, tag).rsplit(
+                        "/", 1
+                    )[-1]
+                    or None,
                 )
                 install_fork_binary(
                     fork, version, binaries_dir, args.token, args.dry_run
                 )
             except Exception as e:
-                print(f"  [ERROR] {e}")
-                return 1
-        print("All fork binaries ready.")
+                print(f"  [ERROR] {fork_id}: {e} (skipping this fork)")
+                failed.append(fork_id)
+                # A binary left from an earlier job would otherwise be benched
+                # by --use-installed as if this download had succeeded.
+                shutil.rmtree(binaries_dir / fork_id, ignore_errors=True)
+        if len(failed) == len(forks):
+            return 1
+        print(f"Fork binaries ready; failed: {failed or 'none'}")
         return 0
 
     for fork in forks:
@@ -788,16 +1210,32 @@ def main() -> int:
         print(f"Repo: {fork['repo']}")
 
         try:
-            tag_prefix = fork.get("version_tag_prefix", "")
-            pinned = (
-                fork.get("version", "")
-                if fork.get("version_source") == "pinned"
-                else ""
-            )
-            fallback = fork.get("version_fallback", "")
-            version = resolve_latest_version(
-                fork["repo"], args.token, tag_prefix, pinned, fallback
-            )
+            if args.use_installed:
+                version_file = binaries_dir / fork_id / "version.txt"
+                if not version_file.exists():
+                    raise RuntimeError(
+                        f"no installed binary under {version_file.parent}"
+                    )
+                version = version_file.read_text().strip()
+            else:
+                tag_prefix = fork.get("version_tag_prefix", "")
+                pinned = (
+                    fork.get("version", "")
+                    if fork.get("version_source") == "pinned"
+                    else ""
+                )
+                fallback = fork.get("version_fallback", "")
+                version = resolve_latest_version(
+                    fork["repo"],
+                    args.token,
+                    tag_prefix,
+                    pinned,
+                    fallback,
+                    asset_for=lambda tag, f=fork: resolve_binary_url(f, tag).rsplit(
+                        "/", 1
+                    )[-1]
+                    or None,
+                )
             print(f"Version: {version}")
         except Exception as e:
             print(f"  [ERROR] Could not resolve version: {e}")
@@ -845,20 +1283,34 @@ def main() -> int:
         # Precedence: --model-filter, then the fork's model_filter, then registry
         # discovery by the fork's recipe.
         run_models = models
+        if run_models:
+            run_models = runnable_models(fork, run_models, forks_config["forks"])
+            if not run_models:
+                print(f"  [skip] no {fork_id} model in --model-filter {models}")
+                continue
         if not run_models:
             run_models = fork.get("model_filter", [])
             if run_models:
                 print(f"  Models (from fork model_filter): {run_models}")
         if not run_models and not args.dry_run:
             fork_recipe = fork.get("recipe", "llamacpp")
-            require_hot = not fork.get("experimental", False)
-            run_models = get_models_from_registry(
-                base_url, recipe=fork_recipe, require_hot=require_hot
-            )
+            aliases = fork.get("model_aliases", {})
+            if aliases:
+                hot = set(get_models_from_registry(base_url, recipe="llamacpp"))
+                available = set(
+                    get_models_from_registry(
+                        base_url, recipe=fork_recipe, require_hot=False
+                    )
+                )
+                run_models = sorted(
+                    m for m, gguf in aliases.items() if gguf in hot and m in available
+                )
+            else:
+                run_models = get_models_from_registry(base_url, recipe=fork_recipe)
             if run_models:
                 print(
-                    f"  Models from registry ({len(run_models)}, "
-                    f"recipe={fork_recipe}, require_hot={require_hot}): {run_models}"
+                    f"  Models from registry ({len(run_models)} hot, "
+                    f"recipe={fork_recipe}): {run_models}"
                 )
             else:
                 print(
@@ -879,9 +1331,9 @@ def main() -> int:
                 binary_path,
                 model,
                 run_file,
-                prev_result,
                 args.dry_run,
                 lemonade_bin,
+                args.port,
                 rocm_version,
             )
 
@@ -890,6 +1342,19 @@ def main() -> int:
                     {"fork_id": fork_id, "model": model, "status": "FAILED"}
                 )
                 continue
+
+            if not args.skip_accuracy:
+                try:
+                    acc = run_accuracy(base_url, fork, model)
+                except Exception as e:
+                    print(f"    [accuracy] {model} aborted: {e}")
+                    acc = None
+                if acc:
+                    for me in result.get("models", []):
+                        if me.get("model") == model:
+                            me["accuracy"] = acc
+                    with open(run_file, "w") as f:
+                        json.dump(result, f, indent=2)
 
             alerts = []
             if prev_result and prev_result.exists():
