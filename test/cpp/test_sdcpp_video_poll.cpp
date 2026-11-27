@@ -4,6 +4,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include <httplib.h>
 
@@ -26,6 +27,40 @@ public:
     }
 
     bool is_backend_alive() const override { return true; }
+};
+
+// Answers each poll with the next of `reports` while generating, then the finished clip.
+struct ProgressBackend {
+    httplib::Server server;
+    std::thread thread;
+    std::atomic<int> polls{0};
+    std::vector<std::string> reports;
+    int port = 0;
+
+    explicit ProgressBackend(std::vector<std::string> generating) : reports(std::move(generating)) {
+        server.Post("/sdcpp/v1/vid_gen", [](const httplib::Request&, httplib::Response& res) {
+            res.status = 202;
+            res.set_content(R"({"id":"j1","poll_url":"/sdcpp/v1/jobs/j1"})", "application/json");
+        });
+        server.Get("/sdcpp/v1/jobs/j1", [this](const httplib::Request&, httplib::Response& res) {
+            const int poll = polls++;
+            if (poll < static_cast<int>(reports.size())) {
+                res.set_content(reports[poll], "application/json");
+                return;
+            }
+            res.set_content(
+                R"({"id":"j1","status":"completed","error":null,"result":{"b64_json":"AAAA"}})",
+                "application/json");
+        });
+        port = server.bind_to_any_port("127.0.0.1");
+        thread = std::thread([this] { server.listen_after_bind(); });
+        server.wait_until_ready();
+    }
+
+    ~ProgressBackend() {
+        server.stop();
+        thread.join();
+    }
 };
 
 // Answers the first failing_polls polls with a 500, then reports the clip done.
@@ -149,6 +184,27 @@ void test_a_few_failed_polls_are_tolerated() {
     check("failed polls: the clip still comes back", result.value("b64_json", "") == "AAAA");
 }
 
+void test_progress_is_reported() {
+    ProgressBackend backend({
+        R"({"id":"j1","status":"generating","error":null,"progress":{"stage":"conditioning","detail":"positive_prompt","pass":0,"completed":null,"total":null,"unit":null}})",
+        R"({"id":"j1","status":"generating","error":null,"progress":{"stage":"sampling","detail":"","pass":1,"completed":3,"total":8,"unit":"steps"}})",
+        R"({"id":"j1","status":"generating","error":null,"progress":{"stage":7,"completed":"many"}})",
+        R"({"id":"j1","status":"generating","error":null})",
+    });
+    FakeSdServer sd(backend.port);
+    std::vector<lemon::json> seen;
+    const lemon::json result = sd.video_generations(request(), nullptr,
+                                                    [&](const lemon::json& p) { seen.push_back(p); });
+    check("progress: the clip still comes back", result.value("b64_json", "") == "AAAA");
+    check("progress: one report per poll that carries one", seen.size() == 3);
+    check("progress: an uncounted stage has null counts",
+          seen.size() > 0 && seen[0] == lemon::json({{"stage", "conditioning"}, {"completed", nullptr}, {"total", nullptr}}));
+    check("progress: sampling steps are passed on",
+          seen.size() > 1 && seen[1] == lemon::json({{"stage", "sampling"}, {"completed", 3}, {"total", 8}}));
+    check("progress: malformed fields become empty, not an error",
+          seen.size() > 2 && seen[2] == lemon::json({{"stage", ""}, {"completed", nullptr}, {"total", nullptr}}));
+}
+
 void test_persistent_failed_polls_give_up() {
     FakeBackend backend(1000);
     FakeSdServer sd(backend.port);
@@ -227,6 +283,7 @@ void test_negative_seed_becomes_random() {
 
 int main() {
     test_a_few_failed_polls_are_tolerated();
+    test_progress_is_reported();
     test_persistent_failed_polls_give_up();
     test_cancel_before_submit_skips_the_backend();
     test_cancel_is_not_held_by_a_stalled_backend();
