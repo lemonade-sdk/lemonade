@@ -520,6 +520,25 @@ Without `output_path` or `output_dir`, success returns one native MCP `image` co
 | `size` | no | `{"type":"string"}` | Requested image size as WIDTHxHEIGHT, for example 512x512. |
 | `steps` | no | `{"type":"integer"}` | Number of diffusion sampling steps. |
 
+### `lemonade_generate_3d`
+
+Reconstruct a GLB from exactly one of image (base64 PNG/JPEG/BMP/GIF or data URL) or prompt (generate one 1024x1024 reference image first). The prompt path reuses Lemonade image generation internally, without requiring the MCP client to transfer intermediate image data. Neither model is downloaded implicitly.
+
+**Returns**
+
+Returns a text confirmation and a GLB in structuredContent.data_base64 (mime_type: model/gltf-binary). Prompt mode additionally returns the reference image as an MCP image block and reference_generated, image_model, and model metadata. Errors return isError=true.
+
+| Argument | Required | Schema | Description |
+|---|:---:|---|---|
+| `bg_removal` | no | `{"enum":["threshold","birefnet"],"type":"string"}` | Background removal mode for reconstruction. |
+| `image` | no | `{"type":"string"}` | Base64 image or data URL; use exactly one of image or prompt. |
+| `image_model` | no | `{"type":"string"}` | Optional loaded/downloaded image model for prompt mode. |
+| `model` | no | `{"type":"string"}` | Optional registered 3D model; otherwise reuse a loaded/downloaded mesh model. |
+| `prompt` | no | `{"type":"string"}` | Text for a 1024x1024 reconstruction reference; exclusive with image. |
+| `resolution` | no | `{"enum":[512,1024,1536],"type":"integer"}` | Reconstruction resolution (512, 1024 or 1536). |
+| `seed` | no | `{"type":"integer"}` | Optional reconstruction seed. |
+| `uv` | no | `{"enum":["box","xatlas"],"type":"string"}` | UV atlas method for reconstruction. |
+
 ### `lemonade_omni`
 
 Multimodal turn against a Lemonade Omni collection (one tool call -&gt; text + images + speech in the same response). The server runs an internal tool-calling loop against the collection's planner LLM and executes its image / image-edit / TTS tools by routing to the bundled component models; the result comes back as a text block plus native MCP `image` / `audio` content blocks (one per artifact). `model` is OPTIONAL: when omitted, the server reuses an already-downloaded Omni collection; if none is downloaded it asks you to pass a `model` or `allow_download: true` (which downloads the default, `LMX-Omni-5.5B-Lite`). Pass `model='LMX-Omni-52B-Halo'` (or any other recipe='collection.omni' model from `lemonade_list_models`) to opt into a larger collection; that model may be multi-GB. Same-machine deployment: PREFER `output_dir` to write artifacts to disk and avoid expensive inline base64 blobs. For plain text chat against a regular LLM, use `lemonade_chat` instead.

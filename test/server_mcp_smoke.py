@@ -231,6 +231,23 @@ def smoke_generate_image_dispatch(mcp_url, _cfg):
     detail(f"structured error: {truncate(text, 120)}")
 
 
+def smoke_generate_3d_dispatch(mcp_url, _cfg):
+    """Reject invalid input combinations before starting a GPU workload."""
+    invalid = (
+        ({}, "exactly one"),
+        ({"image": "AA==", "prompt": "chair"}, "exactly one"),
+        ({"image": "AA==", "image_model": "SD-Turbo"}, "image_model"),
+        ({"prompt": ""}, "non-empty"),
+        ({"prompt": "chair", "image_model": ""}, "image_model"),
+    )
+    for arguments, expected in invalid:
+        result = tools_call(mcp_url, "lemonade_generate_3d", arguments)
+        assert result.get("isError") is True, f"expected isError: {result}"
+        text = assert_text_content(result)
+        assert expected in text.lower(), f"unexpected text: {text}"
+        detail(f"structured error: {truncate(text, 120)}")
+
+
 def smoke_omni_dispatch(mcp_url, _cfg):
     """A non-collection model must short-circuit with a structured isError."""
     result = tools_call(
@@ -395,6 +412,7 @@ def build_plan(args):
             smoke_generate_image_live if live_image else smoke_generate_image_dispatch,
         )
     )
+    smokes.append(("lemonade_generate_3d", smoke_generate_3d_dispatch))
     smokes.append(
         (
             "lemonade_omni (live)" if live_omni else "lemonade_omni",
