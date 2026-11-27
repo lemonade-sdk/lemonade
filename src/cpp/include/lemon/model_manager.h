@@ -89,6 +89,23 @@ struct ModelManagerConfig {
     std::function<std::string()> default_pull_source;
 };
 
+// Canonical server-owned discovery over the supported model registry.
+// A missing limit means unbounded; MCP and bounded consumers choose their own
+// page size. Cursors are opaque to clients.
+struct ModelQueryOptions {
+    std::string query;
+    std::string capability;
+    std::optional<bool> downloaded;
+    std::optional<size_t> limit;
+    std::string cursor;
+};
+
+struct ModelQueryResult {
+    std::vector<std::pair<std::string, ModelInfo>> models;
+    size_t matching_total = 0;
+    std::string next_cursor;
+};
+
 class ModelManager {
 public:
 
@@ -170,6 +187,12 @@ public:
     // An owned map keyed by the names clients use, for the wire sites that serialize
     // it; the rename across canonical ids is what forces the copy.
     std::map<std::string, ModelInfo> get_supported_models();
+
+    // Canonical discovery; searches public IDs, checkpoints, recipe and labels.
+    ModelQueryResult query_models(const ModelQueryOptions& options);
+    // The primary deployment mode, plus recognized per-model capabilities.
+    static std::string model_capability(const ModelInfo& info);
+    static std::vector<std::string> model_capabilities(const ModelInfo& info);
 
     // Get downloaded models
     std::map<std::string, ModelInfo> get_downloaded_models();

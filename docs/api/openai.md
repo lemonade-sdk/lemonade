@@ -1761,6 +1761,11 @@ Requires `LEMONADE_API_KEY` when it is set.
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `show_all` (query) | No | `true` also lists catalog models that are not downloaded. Defaults to `false`, which lists downloaded models only. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `query` (query) | No | Case-insensitive AND-token search across id, checkpoints, recipe and labels. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `capability` (query) | No | Server-owned capability, e.g. chat, image-edit, router or embedding. Unknown capabilities return 400. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `downloaded` (query) | No | Filter by downloaded state; overrides the legacy show_all default. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `limit` (query) | No | Positive page size. Without it, results are unbounded. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `cursor` (query) | No | Opaque continuation cursor from next_cursor. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `include_paths` (query) | No | `true` adds each present checkpoint's absolute `path` to its `checkpoint_status` entry, which can reveal local usernames and the cache layout. Defaults to `false`. The files a model is made of have their own list, at [`GET /v1/models/{id}/files`](./openai.md#get-v1modelsidfiles). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 A model alias whose target is listed appears too, as a copy of the target with the alias as its `id`.
@@ -1768,6 +1773,8 @@ A model alias whose target is listed appears too, as a copy of the target with t
 With cloud providers configured, their models are listed too, with `recipe: "cloud"`, a `cloud_provider` field and a provider-prefixed id such as `fireworks.kimi-k2p5`. Models of `openai`-wire providers accept chat completions and completions requests; `anthropic`-wire providers are served through [`POST /v1/messages`](./anthropic.md#post-v1messages). See [Cloud Offload](../guide/configuration/cloud.md).
 
 `HEAD` returns `200 OK` with an empty body.
+
+Canonical discovery uses query, capability, downloaded, limit and cursor. It excludes aliases, reports matching_total and next_cursor, and searches only models supported by the running server.
 
 ### Example
 
@@ -1796,6 +1803,8 @@ With cloud providers configured, their models are listed too, with `recipe: "clo
       "owned_by": "lemonade",
       "checkpoint": "lemonade-sdk/phishing-email-detection-distilbert-ONNX",
       "recipe": "onnxruntime",
+      "capability": "classification",
+      "capabilities": ["classification"],
       "size": 0.25,
       "downloaded": true,
       "update_available": false,
@@ -1825,6 +1834,8 @@ With cloud providers configured, their models are listed too, with `recipe: "clo
   - `owned_by` - Always `"lemonade"`.
   - `checkpoint` - The main checkpoint in the model's registry; see `registry_source`.
   - `recipe` - Recipe used to load the model, e.g. `llamacpp` or `flm`.
+  - `capability` - Primary server-owned deployment capability, e.g. chat, image or router.
+  - `capabilities` - Canonical server-owned capabilities including recognized labels such as image-edit.
   - `size` - Size in GB; omitted when unknown.
   - `max_context_window` - Largest text context the model supports, read from local metadata: downloaded GGUF models and installed FLM text models.
   - `context_length` - Tokens the model handles in one request: the loaded `ctx_size` while it runs, else the configured `ctx_size`, else `max_context_window`; omitted when none is known.
@@ -1855,6 +1866,15 @@ With cloud providers configured, their models are listed too, with `recipe: "clo
   - `system_prompt` - Omni collections only: the collection's system prompt override.
   - `version` - Router collections only: the policy document's version.
   - `routing` - Router collections only: the routing policy.
+- `matching_total` - Count of matching real model records; present for canonical discovery only.
+- `next_cursor` - Next page cursor, or null; present for canonical discovery only.
+
+### Errors
+
+| Status | Code | When |
+|--------|------|------|
+| `400` | `invalid_model_query` | The capability, limit or cursor is invalid |
+| `400` | `invalid_argument` | An argument or a value nested in it has the wrong JSON type, or a value its schema does not list |
 <!-- END GENERATED: openai.models -->
 
 ### Model Labels
@@ -1986,6 +2006,8 @@ Requires `LEMONADE_API_KEY` when it is set.
   "owned_by": "lemonade",
   "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Q4_0",
   "recipe": "llamacpp",
+  "capability": "chat",
+  "capabilities": ["chat"],
   "size": 0.356,
   "max_context_window": 40960,
   "context_length": 40960,
@@ -2012,6 +2034,8 @@ Requires `LEMONADE_API_KEY` when it is set.
 - `owned_by` - Always `"lemonade"`.
 - `checkpoint` - The main checkpoint in the model's registry; see `registry_source`.
 - `recipe` - Recipe used to load the model, e.g. `llamacpp` or `flm`.
+- `capability` - Primary server-owned deployment capability, e.g. chat, image or router.
+- `capabilities` - Canonical server-owned capabilities including recognized labels such as image-edit.
 - `size` - Size in GB; omitted when unknown.
 - `max_context_window` - Largest text context the model supports, read from local metadata: downloaded GGUF models and installed FLM text models.
 - `context_length` - Tokens the model handles in one request: the loaded `ctx_size` while it runs, else the configured `ctx_size`, else `max_context_window`; omitted when none is known.

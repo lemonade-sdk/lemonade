@@ -415,7 +415,7 @@ def lint_spec(spec: dict) -> list[str]:
             problems.append(
                 f"leaves out the {code} error, which ApiRoute writes for it"
             )
-        elif not written and code in codes:
+        elif written is False and code in codes:
             problems.append(
                 f"lists the {code} error, which ApiRoute never writes for it"
             )
@@ -429,10 +429,15 @@ def lint_spec(spec: dict) -> list[str]:
 def base_error_codes(spec: dict) -> dict:
     """Whether the base classes can write each of the argument errors for this route."""
     if spec["request_format"] not in ("Json", "OptionalJson", "Form"):
+        # Raw routes still validate query values and can emit invalid_argument.
+        # Existing Raw routes are not required to document it retroactively.
+        has_checked_query = any(
+            arg["in"] == "Query" and not arg["forwarded"] for arg in spec["args"]
+        )
         return {
             "invalid_json": False,
             "missing_argument": False,
-            "invalid_argument": False,
+            "invalid_argument": None if has_checked_query else False,
         }
     checked = [
         arg

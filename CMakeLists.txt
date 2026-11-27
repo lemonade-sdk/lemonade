@@ -1095,6 +1095,7 @@ set(SOURCES_CORE
     src/cpp/server/models/catalog_locator.cpp
     src/cpp/server/models/configured_catalog.cpp
     src/cpp/server/models/registry_documents.cpp
+    src/cpp/server/model_query.cpp
     src/cpp/server/models/model_index.cpp
     src/cpp/server/gguf_shard_utils.cpp
     src/cpp/server/models/cloud_rows.cpp
@@ -4296,4 +4297,14 @@ if(BUILD_TESTING AND EXISTS "${_MODEL_SYNC_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(ModelSyncServiceTest CI ON COMMAND test_model_sync_service)
+endif()
+
+# Model discovery capabilities (server-owned, not frontend heuristics).
+set(_MODEL_DISCOVERY_CAPS_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_discovery_capabilities.cpp")
+if(BUILD_TESTING AND EXISTS "${_MODEL_DISCOVERY_CAPS_TEST_SRC}")
+    add_executable(test_model_discovery_capabilities ${_MODEL_DISCOVERY_CAPS_TEST_SRC})
+    target_link_libraries(test_model_discovery_capabilities PRIVATE lemonade-server-core)
+    add_cpp_ci_test(ModelDiscoveryCapabilitiesTest CI ON
+                    COMMAND test_model_discovery_capabilities)
 endif()

@@ -177,8 +177,16 @@ bool matches_schema(const json& value, const json& schema, bool from_query) {
         return false;
     }
     if (value.is_number() || (from_query && (schema.contains("minimum") || schema.contains("maximum")))) {
-        const double number = value.is_number() ? value.get<double>()
-                                                : std::stod(value.get<std::string>());
+        double number;
+        if (value.is_number()) {
+            number = value.get<double>();
+        } else {
+            try {
+                number = std::stod(value.get<std::string>());
+            } catch (const std::exception&) {
+                return false;
+            }
+        }
         if (schema.contains("minimum") && number < schema["minimum"].get<double>()) return false;
         if (schema.contains("maximum") && number > schema["maximum"].get<double>()) return false;
     }
