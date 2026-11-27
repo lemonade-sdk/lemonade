@@ -444,18 +444,17 @@ json WhisperServer::forward_multipart_audio_request(const std::string& file_path
     const std::string url = "http://127.0.0.1:" + std::to_string(get_backend_port()) + "/inference";
     LOG(DEBUG, "WhisperServer") << "Sending multipart request to " << url << std::endl;
 
-    // Pass 0 so HttpClient falls back to its default timeout, which is kept in
-    // sync with `global_timeout` in config.json (see core/config_effects.cpp). Hard-coding 300
-    // caused long-form audio (~35+ min on slower backends) to fail regardless of
-    // the user's configuration.
+    // Long transcriptions have no total duration cap. Cancellation on client
+    // disconnect continues to interrupt the HTTP transfer.
     utils::HttpResponse res;
     {
         std::lock_guard<std::mutex> lock(inference_mutex_);
         res = utils::HttpClient::post_multipart(
             url,
             fields,
-            0,
-            utils::HttpSecurityPolicy::TrustedLoopback);
+            utils::HttpClient::kNoTimeout,
+            utils::HttpSecurityPolicy::TrustedLoopback,
+            current_request_cancel_context());
     }
 
     LOG(DEBUG, "WhisperServer") << "Response status: " << res.status_code << std::endl;
@@ -503,16 +502,16 @@ json WhisperServer::forward_multipart_audio_data(const std::string& audio_data,
     const std::string url = "http://127.0.0.1:" + std::to_string(get_backend_port()) + "/inference";
     LOG(DEBUG, "WhisperServer") << "Sending multipart request to " << url << " (direct data)" << std::endl;
 
-    // See the note on the file-path variant above: 0 inherits the configured
-    // global timeout so long transcriptions aren't artificially capped at 300s.
+    // Same uncapped inference policy as the file-path variant.
     utils::HttpResponse res;
     {
         std::lock_guard<std::mutex> lock(inference_mutex_);
         res = utils::HttpClient::post_multipart(
             url,
             fields,
-            0,
-            utils::HttpSecurityPolicy::TrustedLoopback);
+            utils::HttpClient::kNoTimeout,
+            utils::HttpSecurityPolicy::TrustedLoopback,
+            current_request_cancel_context());
     }
 
     LOG(DEBUG, "WhisperServer") << "Response status: " << res.status_code << std::endl;

@@ -217,7 +217,7 @@ void GufoServer::load(const std::string& model_name, const ModelInfo& model_info
     } else {
         process = std::make_unique<NativeProcess>(output);
     }
-    start_server(std::move(process), command, utils::HttpClient::get_default_timeout());
+    start_server(std::move(process), command);
     LOG(DEBUG, "Gufo") << "Model loaded on port " << get_backend_port() << std::endl;
 }
 
