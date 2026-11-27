@@ -37,6 +37,7 @@
 #include <comdef.h>
 #include <Wbemidl.h>
 #include <intrin.h>
+#include "platform/amd_metrics_windows.h"
 #include "utils/wmi_helper.h"
 #include <dxgi1_4.h>
 #include <wrl/client.h>
@@ -2940,19 +2941,25 @@ NPUInfo WindowsSystemInfo::get_npu_device() {
 }
 
 // WMI reports no capacity for an AMD iGPU, so read its carve-out and shared
-// window from DXGI. Matches by adapter name, or takes the only AMD adapter.
+// window from DXGI, and their live usage from the PDH GPU counters. Matches by
+// adapter name, or takes the only AMD adapter. Usage stays -1 when unreadable.
 static bool query_dxgi_amd_memory(const std::string& name,
-                                  double& dedicated_gb, double& shared_gb) {
+                                  double& dedicated_gb, double& shared_gb,
+                                  double& dedicated_used_gb, double& shared_used_gb) {
+    dedicated_used_gb = -1.0;
+    shared_used_gb = -1.0;
     using Microsoft::WRL::ComPtr;
     ComPtr<IDXGIFactory1> factory;
     if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&factory)))) return false;
 
+    const amd_metrics_detail::D3dkmtLibrary d3dkmt;
     std::vector<DXGI_ADAPTER_DESC1> amd_adapters;
     ComPtr<IDXGIAdapter1> adapter;
     for (UINT i = 0; factory->EnumAdapters1(i, &adapter) != DXGI_ERROR_NOT_FOUND; ++i) {
         DXGI_ADAPTER_DESC1 desc{};
         if (SUCCEEDED(adapter->GetDesc1(&desc)) && desc.VendorId == 0x1002 &&
-            (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) == 0) {
+            (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) == 0 &&
+            d3dkmt.runs_gpu_work(desc.AdapterLuid)) {
             amd_adapters.push_back(desc);
         }
     }
@@ -2969,6 +2976,13 @@ static bool query_dxgi_amd_memory(const std::string& name,
 
     dedicated_gb = static_cast<double>(match->DedicatedVideoMemory) / BYTES_PER_GIB;
     shared_gb = static_cast<double>(match->SharedSystemMemory) / BYTES_PER_GIB;
+
+    const auto live = amd_metrics_detail::sample_live_metrics();
+    const std::string luid = amd_metrics_detail::luid_token(match->AdapterLuid);
+    if (const auto it = live.dedicated_used.find(luid); it != live.dedicated_used.end())
+        dedicated_used_gb = it->second / BYTES_PER_GIB;
+    if (const auto it = live.shared_used.find(luid); it != live.shared_used.end())
+        shared_used_gb = it->second / BYTES_PER_GIB;
     return true;
 }
 
@@ -3040,9 +3054,14 @@ std::vector<GPUInfo> WindowsSystemInfo::detect_amd_gpus(const std::string& gpu_t
                 } else {
                     double dedicated_gb = 0.0;
                     double shared_gb = 0.0;
-                    if (query_dxgi_amd_memory(name, dedicated_gb, shared_gb)) {
+                    double dedicated_used_gb = -1.0;
+                    double shared_used_gb = -1.0;
+                    if (query_dxgi_amd_memory(name, dedicated_gb, shared_gb,
+                                              dedicated_used_gb, shared_used_gb)) {
                         gpu.vram_gb = dedicated_gb;
                         gpu.virtual_gb = shared_gb;
+                        gpu.vram_used_gb = dedicated_used_gb;
+                        gpu.virtual_used_gb = shared_used_gb;
                     }
                 }
 

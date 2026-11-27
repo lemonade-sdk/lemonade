@@ -20,6 +20,10 @@ struct GpuMemoryPool {
     GpuMemoryVendor vendor = GpuMemoryVendor::Any;
     bool unified = false;
     double physical_total_gb = 0.0;
+    // Unified AMD only: the carve-out part of total_gb, and per-part usage.
+    double dedicated_gb = 0.0;
+    double dedicated_used_gb = -1.0;
+    double shared_used_gb = -1.0;
 };
 
 struct GpuTargetIndices {
@@ -84,6 +88,19 @@ inline GpuMemoryVendor gpu_memory_vendor_for_target(const std::string& backend,
     return GpuMemoryVendor::Any;
 }
 
+inline bool gpu_memory_spans_amd_heaps(const std::string& backend,
+                                       const std::string& device,
+                                       const std::vector<GPUInfo>& nvidia_gpus) {
+    // llama.cpp prefers a discrete GPU, and GPUInfo has no Vulkan ordinal to match.
+    for (const auto& gpu : nvidia_gpus) {
+        if (gpu.available) return false;
+    }
+    const std::string lower_backend = gpu_memory_ascii_lower(backend);
+    if (lower_backend == "vulkan" || lower_backend == "nathanw") return true;
+    return lower_backend == "system" &&
+        gpu_memory_ascii_lower(device).rfind("vulkan", 0) == 0;
+}
+
 inline GpuMemoryPool select_gpu_memory_pool(GpuMemoryVendor vendor,
                                              const GPUInfo& amd_igpu,
                                              const std::vector<GPUInfo>& amd_dgpus,
@@ -102,7 +119,13 @@ inline GpuMemoryPool select_gpu_memory_pool(GpuMemoryVendor vendor,
         }
         const double total_gb = gpu.vram_gb + (unified ? gpu.virtual_gb : 0.0);
         // AMD VRAM + GTT is a GPU allocation limit, not total physical RAM.
-        return GpuMemoryPool{total_gb, used_gb, label, vendor, unified, 0.0};
+        GpuMemoryPool pool{total_gb, used_gb, label, vendor, unified, 0.0};
+        if (unified) {
+            pool.dedicated_gb = gpu.vram_gb;
+            pool.dedicated_used_gb = gpu.vram_used_gb;
+            pool.shared_used_gb = gpu.virtual_used_gb;
+        }
+        return pool;
     };
     auto most_constrained = [](const std::vector<GpuMemoryPool>& pools) {
         GpuMemoryPool result;

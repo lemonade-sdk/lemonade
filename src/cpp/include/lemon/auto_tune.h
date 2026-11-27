@@ -97,12 +97,15 @@ static double get_used_memory_gb(DeviceType device_type) {
 inline double get_available_memory_gb(DeviceType device_type,
                                       GpuMemoryVendor gpu_vendor = GpuMemoryVendor::Any,
                                       const std::string& gpu_device = "",
+                                      const std::string& gpu_backend = "",
                                       bool* unified_gpu_out = nullptr,
                                       bool* memory_known_out = nullptr,
-                                      double* physical_free_gb_out = nullptr) {
+                                      double* physical_free_gb_out = nullptr,
+                                      double* carveout_free_gb_out = nullptr) {
     if (unified_gpu_out) *unified_gpu_out = false;
     if (memory_known_out) *memory_known_out = false;
     if (physical_free_gb_out) *physical_free_gb_out = -1.0;
+    if (carveout_free_gb_out) *carveout_free_gb_out = 0.0;
     auto si = create_system_info();
 
     // GPU recipes: use VRAM
@@ -138,9 +141,31 @@ inline double get_available_memory_gb(DeviceType device_type,
                 auto metrics = create_metrics_platform();
                 physical_total_gb = metrics ? metrics->get_memory_total_gb() : 0.0;
             }
-            const auto available_gpu_gb = auto_context_available_gpu_gib(
-                pool.total_gb, gpu_used_gb, pool.unified,
-                physical_total_gb, ram_used_gb);
+            std::optional<double> available_gpu_gb;
+            if (pool.unified && pool.vendor == GpuMemoryVendor::Amd &&
+                gpu_memory_spans_amd_heaps(gpu_backend, gpu_device, nvidia_gpus)) {
+                const auto split = auto_context_available_split_gpu_gib(
+                    pool.dedicated_gb, pool.dedicated_used_gb,
+                    pool.total_gb - pool.dedicated_gb, pool.shared_used_gb,
+                    physical_total_gb, ram_used_gb);
+                if (split) {
+                    available_gpu_gb = split->available_gib;
+                    if (carveout_free_gb_out) *carveout_free_gb_out = split->carveout_gib;
+                    LOG(DEBUG, "AutoTune") << "get_available_memory_gb: AMD iGPU dedicated="
+                                           << std::fixed << std::setprecision(2)
+                                           << pool.dedicated_gb << " GB (used="
+                                           << pool.dedicated_used_gb << "), shared="
+                                           << (pool.total_gb - pool.dedicated_gb)
+                                           << " GB (used=" << pool.shared_used_gb
+                                           << "), RAM total=" << physical_total_gb
+                                           << " GB used=" << ram_used_gb << " GB ";
+                }
+            }
+            if (!available_gpu_gb) {
+                available_gpu_gb = auto_context_available_gpu_gib(
+                    pool.total_gb, gpu_used_gb, pool.unified,
+                    physical_total_gb, ram_used_gb);
+            }
             if (!available_gpu_gb) {
                 LOG(DEBUG, "AutoTune")
                     << "get_available_memory_gb: no reliable GPU/RAM usage; using context fallback";
@@ -466,6 +491,27 @@ inline bool is_rule_head_router_model(const ModelInfo& model_info) {
     return !model_info.checkpoint("rulehead").empty();
 }
 
+/// llama-server reads LLAMA_ARG_DEVICE when it is started without --device.
+inline std::string auto_context_llamacpp_device(
+    const std::string& recipe, const std::string& device,
+    const char* device_env = std::getenv("LLAMA_ARG_DEVICE")) {
+    const bool unset = device.empty() || device == "auto";
+    return recipe == "llamacpp" && unset && device_env ? device_env : device;
+}
+
+/// The registry device is per recipe, so it stays GPU when llama.cpp runs on
+/// the CPU. Context must then be sized from system RAM.
+inline DeviceType auto_context_device(const ModelInfo& model_info,
+                                      const std::string& recipe,
+                                      const std::string& backend,
+                                      const std::string& device) {
+    if (recipe == "llamacpp" && (gpu_memory_ascii_lower(backend) == "cpu" ||
+                                 gpu_memory_ascii_lower(device) == "none")) {
+        return DEVICE_CPU;
+    }
+    return model_info.device;
+}
+
 /// Auto-resolve ctx_size if it is -1 in the effective options.
 /// Returns the resolved context size, or -2 if no auto-resolution is needed
 /// (i.e. ctx_size was already set to an explicit non-negative value).
@@ -502,15 +548,25 @@ inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
     const json device_json = effective_options.get_option(recipe + "_device");
     if (backend_json.is_string()) backend = backend_json.get<std::string>();
     if (device_json.is_string()) device = device_json.get<std::string>();
+    device = auto_context_llamacpp_device(recipe, device);
     const json llama_args = effective_options.get_option("llamacpp_args");
     const std::string llama_args_str = llama_args.is_string()
         ? llama_args.get<std::string>() : "";
     bool ctx_unified_gpu = false;
     bool memory_known = false;
     double physical_free_gb = -1.0;
+    double carveout_free_gb = 0.0;
+    ModelInfo sized_info = model_info;
+    sized_info.device = auto_context_device(model_info, recipe, backend, device);
     double available_gb = get_available_memory_gb(
-        model_info.device, gpu_memory_vendor_for_target(backend, device), device,
-        &ctx_unified_gpu, &memory_known, &physical_free_gb);
+        sized_info.device, gpu_memory_vendor_for_target(backend, device), device,
+        backend, &ctx_unified_gpu, &memory_known, &physical_free_gb, &carveout_free_gb);
+    // The OS-visible RAM excludes the carve-out, but a full offload can use it.
+    if (physical_free_gb >= 0.0 &&
+        auto_context_llamacpp_full_offload(recipe, llama_args_str,
+                                           model_info.gguf.block_count)) {
+        physical_free_gb += carveout_free_gb;
+    }
 
     if (available_gb <= 0) {
         const int64_t fallback = is_embedding ? EMBEDDING_CTX_SIZE :
@@ -530,7 +586,7 @@ inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
         hrx_args.is_string() ? hrx_args.get<std::string>() : "", backend);
     const double kv_bytes_ratio = auto_context_llamacpp_kv_bytes_ratio(
         recipe, llama_args_str);
-    int64_t result = compute_auto_context_size(model_info, available_gb,
+    int64_t result = compute_auto_context_size(sized_info, available_gb,
                                                is_embedding, ctx_unified_gpu,
                                                physical_free_gb, bounded_swa, kv_bytes_ratio);
     LOG(DEBUG, "AutoTune") << "resolve_auto_ctx_size: " << model_info.model_name
