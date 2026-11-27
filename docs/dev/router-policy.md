@@ -462,7 +462,9 @@ LLM-chosen `route_to` — cost reporting and cost selection compose.
 
 A candidate that's neither `cost_tier: "free"` nor resolves both per-million
 prices (any local model registered without them), or reports a negative/non-finite/overflowing price,
-is excluded from ranking. If **no** candidate in the list has usable cost
+is excluded from ranking. Each candidate is one price lookup per request,
+so the cost classifiers of a policy list at most 64 labels together, and
+`cost_select` takes at most 64 candidates. If **no** candidate in the list has usable cost
 data, the router falls open to `default_model` — the same fail-open contract
 as the `"llm"` router when it can't use a reply.
 `routing.router.type` must be `"llm"` or `"cost_select"`, and the block

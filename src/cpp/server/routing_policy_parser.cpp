@@ -160,10 +160,10 @@ void require_declared(const std::string& resolved,
     }
 }
 
-// Cap on a cost classifier's labels, which cost_select fills from
-// routing.candidates. Each label costs one cost_of() lookup per evaluate(), and
-// /v1/routing/validate accepts any name, so the list is bounded here as well as
-// in the schema. Other policies keep any number of candidates.
+// Cap on the cost labels of a whole policy, summed over its cost classifiers;
+// cost_select fills its labels from routing.candidates. Each label costs one
+// cost_of() lookup per evaluate(), and /v1/routing/validate accepts any name, so
+// the total is bounded here. Other policies keep any number of candidates.
 constexpr std::size_t kMaxCostLabels = 64;
 
 std::vector<std::string> parse_candidates(const json& routing,
@@ -401,6 +401,7 @@ json parse_classifier_configs(const json& routing,
     }
 
     json resolved = json::array();
+    std::size_t cost_labels = 0;
     for (std::size_t i = 0; i < classifiers.size(); ++i) {
         const std::string path = path_index("routing.classifiers", i);
         const json& classifier = classifiers[i];
@@ -413,9 +414,10 @@ json parse_classifier_configs(const json& routing,
             if (!labels.is_array()) {
                 throw std::invalid_argument(path + ".labels must be an array");
             }
-            if (labels.size() > kMaxCostLabels) {
-                throw std::invalid_argument(path + ".labels must not exceed " +
-                                            std::to_string(kMaxCostLabels) + " entries");
+            cost_labels += labels.size();
+            if (cost_labels > kMaxCostLabels) {
+                throw std::invalid_argument(path + ".labels brings the policy's cost labels over " +
+                                            std::to_string(kMaxCostLabels));
             }
             std::set<std::string> resolved_labels;
             for (std::size_t label_index = 0; label_index < labels.size(); ++label_index) {

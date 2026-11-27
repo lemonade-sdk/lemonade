@@ -503,6 +503,41 @@ static void test_candidates_cap_spares_other_policies() {
     check("llm router: 65 candidates are accepted", !threw);
 }
 
+// The cap counts lookups per request, so it sums the labels of every cost
+// classifier rather than bounding each one.
+static void test_cost_label_cap_is_per_policy() {
+    std::vector<std::string> many;
+    for (int i = 0; i < 64; ++i) {
+        many.push_back("Candidate-" + std::to_string(i));
+    }
+    const auto with_classifiers = [&](int extra_labels) {
+        json collection = explicit_cost_collection();
+        collection["components"] = many;
+        collection["routing"]["candidates"] = many;
+        collection["routing"]["default_model"] = many[0];
+        json classifiers = json::array();
+        classifiers.push_back(json{{"id", "cost"}, {"type", "cost"},
+                                   {"labels", std::vector<std::string>(many.begin(), many.begin() + 32)}});
+        classifiers.push_back(json{{"id", "cost-b"}, {"type", "cost"},
+                                   {"labels", std::vector<std::string>(many.begin() + 32, many.end())}});
+        if (extra_labels > 0) {
+            classifiers.push_back(json{{"id", "cost-c"}, {"type", "cost"},
+                                       {"labels", std::vector<std::string>(many.begin(), many.begin() + extra_labels)}});
+        }
+        collection["routing"]["classifiers"] = classifiers;
+        collection["routing"]["rules"][0]["match"]["label"] = many[0];
+        collection["routing"]["rules"][0]["route_to"] = many[0];
+        return collection;
+    };
+    bool threw_at_64 = false;
+    try { parse_l0b(with_classifiers(0)); } catch (const std::invalid_argument&) { threw_at_64 = true; }
+    check("cost: 64 labels across two cost classifiers are accepted", !threw_at_64);
+
+    bool threw_at_65 = false;
+    try { parse_l0b(with_classifiers(1)); } catch (const std::invalid_argument&) { threw_at_65 = true; }
+    check("cost: a third classifier bringing the total to 65 is rejected", threw_at_65);
+}
+
 static void test_explicit_cost_labels_must_be_unique_candidates() {
     json outside_candidates = explicit_cost_collection();
     outside_candidates["components"].push_back("Not-A-Candidate");
@@ -600,6 +635,7 @@ int main() {
     test_desugar_rejects_unknown_router_type();
     test_candidates_cap_enforced();
     test_candidates_cap_spares_other_policies();
+    test_cost_label_cap_is_per_policy();
     test_explicit_cost_labels_must_be_unique_candidates();
     test_e2e_routes_to_cheapest_and_reports_its_own_cost();
     test_e2e_no_data_falls_open_to_default_model();
