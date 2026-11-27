@@ -123,6 +123,10 @@ function withTimeout(signal: AbortSignal | undefined, ms: number): AbortSignal |
   return AbortSignal.any([signal, timeout]);
 }
 
+function failedError(record: VideoJobRecord): Error {
+  return new Error(record.error ? `Video generation failed: ${record.error}` : 'Video generation failed.');
+}
+
 function isGone(err: unknown): boolean {
   return (err as { status?: number } | null)?.status === 404;
 }
@@ -231,6 +235,7 @@ export async function resumeVideoJob(
         record = latest;
         return download();
       }
+      if (latest?.status === 'failed') throw failedError(latest);
       if (latest && TERMINAL.has(latest.status)) throw new VideoJobCanceledError();
       if (!cancelAnswered) await sendCancel();
     }
@@ -260,8 +265,6 @@ export async function resumeVideoJob(
   }
 
   if (record.status === 'canceled') throw new VideoJobCanceledError();
-  if (record.status === 'failed') {
-    throw new Error(record.error ? `Video generation failed: ${record.error}` : 'Video generation failed.');
-  }
+  if (record.status === 'failed') throw failedError(record);
   return download();
 }

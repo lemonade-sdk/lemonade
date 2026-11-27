@@ -105,6 +105,22 @@ const noSleep = async () => {};
   }
 
   {
+    const server = fakeServer(['running']);
+    const get = server.transport.get;
+    server.transport.get = async id => (
+      server.calls.cancel.length ? { id, status: 'failed', error: 'out of memory' } : get(id)
+    );
+    const controller = new AbortController();
+    const job = runVideoJob(server.transport, {}, {
+      signal: controller.signal,
+      onStatus: record => { if (record.status === 'running') controller.abort(); },
+      sleep: noSleep,
+    });
+    await assert.rejects(job, err => !isVideoJobCanceled(err) && /failed: out of memory/.test(err.message));
+    assert.equal(server.calls.content, 0);
+  }
+
+  {
     // Stop only settles once the server reports the job ended, so the model
     // is not reloaded while its backend is still shutting down.
     const statuses = ['running', 'running', 'running', 'canceled'];
