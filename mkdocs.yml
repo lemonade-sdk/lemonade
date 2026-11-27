@@ -103,6 +103,7 @@ nav:
     - Testing: dev/testing.md
     - C++: dev/getting-started.md
     - Adding a Backend: dev/adding-a-backend.md
+    - Adapter Plane: dev/adapter-plane.md
     - Backends Reference: dev/backends-reference.md
     - Desktop App: dev/app.md
     - Web UI: dev/web-ui.md

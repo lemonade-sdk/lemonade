@@ -1,0 +1,407 @@
+{
+ "about": "Upstream hooks the adapter plane depends on; status compares v2026.45.3 -> candidate-v2026.46.2 by the declaration head text matched by pattern. Re-check with tools/adapter_hook_check.py.",
+ "from": "v2026.45.3",
+ "to": "candidate-v2026.46.2",
+ "hooks": [
+  {
+   "file": "src/cpp/include/lemon/backends/backend_descriptor.h",
+   "symbol": "BackendDescriptor",
+   "pattern": "^struct BackendDescriptor\\b",
+   "signature": "struct BackendDescriptor {",
+   "role": "adapter.h fills it positionally; new fields (streams_model_from_storage, containers, mode_capability_requirements) are appended and default",
+   "status": "changed-body",
+   "matches_old": 1,
+   "matches_new": 1
+  },
+  {
+   "file": "src/cpp/include/lemon/backends/backend_descriptor.h",
+   "symbol": "BackendOption",
+   "pattern": "^struct BackendOption\\b",
+   "signature": "struct BackendOption {",
+   "role": "adapter.h option rows {name,cli_flag,default,type_name,help,group}; 7th member user_configurable added, defaults true",
+   "status": "changed-body",
+   "matches_old": 1,
+   "matches_new": 1
+  },
+  {
+   "file": "src/cpp/include/lemon/backends/backend_descriptor.h",
+   "symbol": "BackendOption::user_configurable",
+   "pattern": "bool user_configurable",
+   "signature": "bool user_configurable = true;",
+   "role": "new flag: false hides the control; adapter leaves the default (true)",
+   "status": "new",
+   "matches_old": 0,
+   "matches_new": 1
+  },
+  {
+   "file": "src/cpp/include/lemon/backends/backend_descriptor.h",
+   "symbol": "SlotPolicy",
+   "pattern": "^enum class SlotPolicy\\b",
+   "signature": "enum class SlotPolicy {",
+   "role": "adapter uses SlotPolicy::Standard; ExclusiveHost added",
+   "status": "changed-body",
+   "matches_old": 1,
+   "matches_new": 1
+  },
+  {
+   "file": "src/cpp/include/lemon/backends/backend_descriptor.h",
+   "symbol": "VersionPolicy",
+   "pattern": "^enum class VersionPolicy\\b",
+   "signature": "enum class VersionPolicy {",
+   "role": "adapter uses AtLeast",
+   "status": "unchanged",
+   "matches_old": 1,
+   "matches_new": 1
+  },
+  {
+   "file": "src/cpp/include/lemon/backends/backend_ops.h",
+   "symbol": "BackendOps::resolve_checkpoint_path",
+   "pattern": "virtual std::string resolve_checkpoint_path\\(",
+   "signature": "virtual std::string resolve_checkpoint_path(const ModelInfo& info, const CheckpointResolveContext& ctx) const;",
+   "role": "AdapterOps overrides",
+   "status": "unchanged",
+   "matches_old": 1,
+   "matches_new": 1
+  },
+  {
+   "file": "src/cpp/include/lemon/backends/backend_ops.h",
+   "symbol": "BackendOps::is_downloaded",
+   "pattern": "virtual bool is_downloaded\\(",
+   "signature": "virtual bool is_downloaded(const ModelInfo& info, const BackendOpsContext& ctx) const;",
+   "role": "AdapterOps overrides",
+   "status": "unchanged",
+   "matches_old": 1,
+   "matches_new": 1
+  },
+  {
+   "file": "src/cpp/include/lemon/backends/backend_ops.h",
+   "symbol": "BackendOps::download_model",
+   "pattern": "virtual void download_model\\(",
+   "signature": "virtual void download_model(const ModelInfo& info, bool do_not_upgrade, DownloadProgressCallback progress, const BackendOpsContext& ctx) const;",
+   "role": "AdapterOps overrides",
+   "status": "unchanged",
+   "matches_old": 1,
+   "matches_new": 1
+  },
+  {
+   "file": "src/cpp/include/lemon/backends/backend_registry.h",
+   "symbol": "make_server",
+   "pattern": "make_server\\(const BackendContext& ctx\\)",
+   "signature": "make_server(const BackendContext& ctx) {",
+   "role": "adapter_server.cpp make_server<AdapterServer>(ctx)",
+   "status": "unchanged",
+   "matches_old": 1,
+   "matches_new": 1
+  },
+  {
+   "file": "src/cpp/include/lemon/backends/backend_utils.h",
+   "symbol": "BackendUtils make_spec",
+   "pattern": "const BackendSpec\\* make_spec\\(",
+   "signature": "const BackendSpec* make_spec(const BackendDescriptor& d, bool split = false) {",
+   "role": "backend spec lookup",
+   "status": "unchanged",
+   "matches_old": 1,
+   "matches_new": 1
+  },
+  {
+   "file": "CMakeLists.txt",
+   "symbol": "LEMON_BACKENDS",
+   "pattern": "^set\\(LEMON_BACKENDS",
+   "signature": "set(LEMON_BACKENDS # \"<recipe>|<stem>\" \"llamacpp|llamacpp\" \"llamacpp-hrx|hrx\" \"whispercpp|whispercpp\" \"moonshine|moonshine\" \"kokoro|kokoro\" \"sd-cpp|sdcpp\" \"flm|fastflow",
+   "role": "registration point: the \"adapter|adapter\" row",
+   "status": "unchanged",
+   "matches_old": 1,
+   "matches_new": 1
+  },
+  {
+   "file": "CMakeLists.txt",
+   "symbol": "foreach _backend_entry",
+   "pattern": "^foreach\\(_backend_entry \\$\\{LEMON_BACKENDS\\}\\)",
+   "signature": "foreach(_backend_entry ${",
+   "role": "expands each row into sources",
+   "status": "unchanged",
+   "matches_old": 1,
+   "matches_new": 1
+  },
+  {
+   "file": "src/cpp/include/lemon/wrapped_server.h",
+   "symbol": "WrappedServer ctor",
+   "pattern": "^\\s*WrappedServer\\(const std::string& server_name",
+   "signature": "WrappedServer(const std::string& server_name, const std::string& log_level, ModelManager* model_manager = nullptr, BackendManager* backend_manager = nullptr) : server_nam",
+   "role": "AdapterServer base ctor",
+   "status": "unchanged",
+   "matches_old": 1,
+   "matches_new": 1
+  },
+  {
+   "file": "src/cpp/include/lemon/wrapped_server.h",
+   "symbol": "WrappedServer::load",
+   "pattern": "^\\s*virtual void load\\(",
+   "signature": "virtual void load(const std::string& model_name, const ModelInfo& model_info, const RecipeOptions& options, bool do_not_upgrade = false) = 0;",
+   "role": "overridden",
+   "status": "unchanged",
+   "matches_old": 1,
+   "matches_new": 1
+  },
+  {
+   "file": "src/cpp/include/lemon/wrapped_server.h",
+   "symbol": "WrappedServer::unload",
+   "pattern": "^\\s*virtual void unload\\(",
+   "signature": "virtual void unload() {",
+   "role": "overridden",
+   "status": "unchanged",
+   "matches_old": 1,
+   "matches_new": 1
+  },
+  {
+   "file": "src/cpp/include/lemon/wrapped_server.h",
+   "symbol": "WrappedServer::chat_completion",
+   "pattern": "^\\s*virtual json chat_completion\\(",
+   "signature": "virtual json chat_completion(const json& request) override {",
+   "role": "overridden",
+   "status": "unchanged",
+   "matches_old": 1,
+   "matches_new": 1
+  },
+  {
+   "file": "src/cpp/include/lemon/wrapped_server.h",
+   "symbol": "WrappedServer::completion",
+   "pattern": "^\\s*virtual json completion\\(",
+   "signature": "virtual json completion(const json& request) override {",
+   "role": "overridden",
+   "status": "unchanged",
+   "matches_old": 1,
+   "matches_new": 1
+  },
+  {
+   "file": "src/cpp/include/lemon/wrapped_server.h",
+   "symbol": "WrappedServer::get_additional_telemetry",
+   "pattern": "^\\s*virtual std::map<std::string, nlohmann::json> get_additional_telemetry\\(\\)",
+   "signature": "virtual std::map<std::string, nlohmann::json> get_additional_telemetry() {",
+   "role": "overridden; R9 memory report; still not called by the router",
+   "status": "unchanged",
+   "matches_old": 1,
+   "matches_new": 1
+  },
+  {
+   "file": "src/cpp/include/lemon/wrapped_server.h",
+   "symbol": "WrappedServer::get_additional_telemetry_url",
+   "pattern": "^\\s*virtual std::string get_additional_telemetry_url\\(",
+   "signature": "virtual std::string get_additional_telemetry_url() const {",
+   "role": "overridden",
+   "status": "unchanged",
+   "matches_old": 1,
+   "matches_new": 1
+  },
+  {
+   "file": "src/cpp/include/lemon/wrapped_server.h",
+   "symbol": "WrappedServer::get_additional_telemetry_parser",
+   "pattern": "^\\s*virtual std::function<std::map<std::string, nlohmann::json>\\(const std::string&\\)> get_additional_telemetry_parser\\(",
+   "signature": "virtual std::function<std::map<std::string, nlohmann::json>(const std::string&)> get_additional_telemetry_parser() const {",
+   "role": "not overridden; the router reads it",
+   "status": "unchanged",
+   "matches_old": 1,
+   "matches_new": 1
+  },
+  {
+   "file": "src/cpp/include/lemon/wrapped_server.h",
+   "symbol": "WrappedServer::start_server",
+   "pattern": "^\\s*void start_server\\(",
+   "signature": "void start_server(std::unique_ptr<ServerProcess> process, const ServerCommand& command, long timeout_seconds = 600);",
+   "role": "used by load()",
+   "status": "unchanged",
+   "matches_old": 1,
+   "matches_new": 1
+  },
+  {
+   "file": "src/cpp/include/lemon/wrapped_server.h",
+   "symbol": "WrappedServer::stop_server",
+   "pattern": "^\\s*void stop_server\\(",
+   "signature": "void stop_server();",
+   "role": "used by unload()",
+   "status": "unchanged",
+   "matches_old": 1,
+   "matches_new": 1
+  },
+  {
+   "file": "src/cpp/include/lemon/wrapped_server.h",
+   "symbol": "WrappedServer::choose_port",
+   "pattern": "^\\s*int choose_port\\(",
+   "signature": "int choose_port();",
+   "role": "used by load()",
+   "status": "unchanged",
+   "matches_old": 1,
+   "matches_new": 1
+  },
+  {
+   "file": "src/cpp/include/lemon/wrapped_server.h",
+   "symbol": "WrappedServer::forward_request",
+   "pattern": "^\\s*json forward_request\\(",
+   "signature": "json forward_request(const std::string& endpoint, const json& request, long timeout_seconds = 0);",
+   "role": "used by chat_completion/completion",
+   "status": "unchanged",
+   "matches_old": 1,
+   "matches_new": 1
+  },
+  {
+   "file": "src/cpp/include/lemon/wrapped_server.h",
+   "symbol": "WrappedServer::forward_get_request",
+   "pattern": "^\\s*json forward_get_request\\(",
+   "signature": "json forward_get_request(const std::string& endpoint, long timeout_seconds = 0);",
+   "role": "memory report fetch",
+   "status": "unchanged",
+   "matches_old": 1,
+   "matches_new": 1
+  },
+  {
+   "file": "src/cpp/include/lemon/wrapped_server.h",
+   "symbol": "WrappedServer::get_base_url",
+   "pattern": "^\\s*std::string get_base_url\\(",
+   "signature": "std::string get_base_url() const;",
+   "role": "telemetry url",
+   "status": "unchanged",
+   "matches_old": 1,
+   "matches_new": 1
+  },
+  {
+   "file": "src/cpp/include/lemon/wrapped_server.h",
+   "symbol": "WrappedServer::get_backend_port",
+   "pattern": "^\\s*int get_backend_port\\(",
+   "signature": "int get_backend_port() const;",
+   "role": "used by load()",
+   "status": "unchanged",
+   "matches_old": 1,
+   "matches_new": 1
+  },
+  {
+   "file": "src/cpp/include/lemon/wrapped_server.h",
+   "symbol": "WrappedServer::get_process_id",
+   "pattern": "^\\s*int get_process_id\\(",
+   "signature": "int get_process_id() const;",
+   "role": "used by unload()",
+   "status": "unchanged",
+   "matches_old": 1,
+   "matches_new": 1
+  },
+  {
+   "file": "src/cpp/include/lemon/server_process.h",
+   "symbol": "ServerCommand",
+   "pattern": "^struct ServerCommand\\b",
+   "signature": "struct ServerCommand {",
+   "role": "load() fills program/args/env/port/ready_endpoint; model_files added (adapter leaves empty)",
+   "status": "changed-body",
+   "matches_old": 1,
+   "matches_new": 1
+  },
+  {
+   "file": "src/cpp/include/lemon/server_process.h",
+   "symbol": "ProcessOutput",
+   "pattern": "^struct ProcessOutput\\b",
+   "signature": "struct ProcessOutput {",
+   "role": "used by start",
+   "status": "unchanged",
+   "matches_old": 1,
+   "matches_new": 1
+  },
+  {
+   "file": "src/cpp/include/lemon/server_process.h",
+   "symbol": "NativeProcess ctor",
+   "pattern": "explicit NativeProcess\\(",
+   "signature": "explicit NativeProcess(ProcessOutput output, std::string working_dir = \"\") : ServerProcess(output), working_dir_(std::move(working_dir)) {",
+   "role": "used by start",
+   "status": "unchanged",
+   "matches_old": 1,
+   "matches_new": 1
+  },
+  {
+   "file": "src/cpp/include/lemon/server_capabilities.h",
+   "symbol": "capability_mask_of",
+   "pattern": "constexpr uint32_t capability_mask_of\\(",
+   "signature": "constexpr uint32_t capability_mask_of() {",
+   "role": "server capability mask",
+   "status": "unchanged",
+   "matches_old": 1,
+   "matches_new": 1
+  },
+  {
+   "file": "src/cpp/include/lemon/recipe_options.h",
+   "symbol": "RecipeOptions::get_option",
+   "pattern": "json get_option\\(",
+   "signature": "json get_option(const std::string& opt) const;",
+   "role": "adapter_args/adapter_device/adapter_telemetry reads",
+   "status": "unchanged",
+   "matches_old": 1,
+   "matches_new": 1
+  },
+  {
+   "file": "src/cpp/include/lemon/models/model_info.h",
+   "symbol": "ModelInfo::checkpoint",
+   "pattern": "std::string checkpoint\\(const std::string& type",
+   "signature": "std::string checkpoint(const std::string& type = \"main\") const {",
+   "role": "checkpoint \"<spec>::<path>\"",
+   "status": "unchanged",
+   "matches_old": 1,
+   "matches_new": 1
+  },
+  {
+   "file": "src/cpp/include/lemon/utils/path_utils.h",
+   "symbol": "get_config_dir",
+   "pattern": "^std::string get_config_dir\\(",
+   "signature": "std::string get_config_dir();",
+   "role": "adapters dir",
+   "status": "unchanged",
+   "matches_old": 1,
+   "matches_new": 1
+  },
+  {
+   "file": "src/cpp/include/lemon/utils/path_utils.h",
+   "symbol": "find_executable_in_path",
+   "pattern": "^std::string find_executable_in_path\\(",
+   "signature": "std::string find_executable_in_path(const std::string& executable_name);",
+   "role": "binary lookup",
+   "status": "unchanged",
+   "matches_old": 1,
+   "matches_new": 1
+  },
+  {
+   "file": "src/cpp/server/router.cpp",
+   "symbol": "Router::find_lru_server_in_pool",
+   "pattern": "^WrappedServer\\* Router::find_lru_server_in_pool\\(",
+   "signature": "WrappedServer* Router::find_lru_server_in_pool( ModelType type, ResidencyClass residency_class, const std::string& model_name) const {",
+   "role": "slot-pool eviction the adapter relies on",
+   "status": "unchanged",
+   "matches_old": 1,
+   "matches_new": 1
+  },
+  {
+   "file": "src/cpp/server/router.cpp",
+   "symbol": "router telemetry url call",
+   "pattern": "->get_additional_telemetry_url\\(\\)",
+   "signature": "->get_additional_telemetry_url();",
+   "role": "per-request telemetry span; adapter url hook consumed here",
+   "status": "unchanged",
+   "matches_old": 5,
+   "matches_new": 5
+  },
+  {
+   "file": "src/cpp/server/router.cpp",
+   "symbol": "router telemetry parser call",
+   "pattern": "->get_additional_telemetry_parser\\(\\)",
+   "signature": "->get_additional_telemetry_parser();",
+   "role": "per-request telemetry span",
+   "status": "unchanged",
+   "matches_old": 5,
+   "matches_new": 5
+  },
+  {
+   "file": "src/cpp/server/system_info.cpp",
+   "symbol": "SystemInfo::check_recipe_supported",
+   "pattern": "^std::string SystemInfo::check_recipe_supported\\(",
+   "signature": "std::string SystemInfo::check_recipe_supported(const std::string& recipe) {",
+   "role": "availability gate",
+   "status": "unchanged",
+   "matches_old": 1,
+   "matches_new": 1
+  }
+ ]
+}
