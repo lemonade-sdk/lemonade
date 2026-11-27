@@ -5,6 +5,8 @@
 #include <string>
 #include <vector>
 
+using lemon::ModelType;
+using lemon::backends::build_flm_serve_args;
 using lemon::backends::FLMArgResolution;
 using lemon::backends::resolve_flm_args;
 
@@ -53,10 +55,36 @@ bool expect_error(const char* name, const std::string& input, int ctx_size,
     return false;
 }
 
+bool expect_serve_args(const char* name, ModelType type, const std::string& checkpoint,
+                       const std::vector<std::string>& expected) {
+    const auto resolution = resolve_flm_args("--pmode balanced", 8192);
+    const auto actual = build_flm_serve_args(type, checkpoint, 8192, 8001, resolution);
+    const bool ok = actual == expected;
+    std::printf("[%s] %s\n  got:  %s\n  want: %s\n",
+                ok ? "PASS" : "FAIL", name, join(actual).c_str(), join(expected).c_str());
+    return ok;
+}
+
 } // namespace
 
 int main() {
     int failures = 0;
+
+    failures += !expect_serve_args("R2T2 ASR", ModelType::TRANSCRIPTION, "r2t2:1.7b",
+        {"serve", "--asr", "r2t2:1.7b", "--port", "8001", "--host", "127.0.0.1",
+         "--pmode", "balanced", "--quiet"});
+    failures += !expect_serve_args("Whisper ASR", ModelType::TRANSCRIPTION, "whisper-v3:turbo",
+        {"serve", "--asr", "whisper-v3:turbo", "--port", "8001", "--host", "127.0.0.1",
+         "--pmode", "balanced", "--quiet"});
+    failures += !expect_serve_args("embedding", ModelType::EMBEDDING, "embed-gemma:300m",
+        {"serve", "--embed", "1", "--port", "8001", "--host", "127.0.0.1",
+         "--pmode", "balanced", "--quiet"});
+    failures += !expect_serve_args("decision", ModelType::CLASSIFICATION, "d3:lite",
+        {"serve", "--decision", "d3:lite", "--port", "8001", "--host", "127.0.0.1",
+         "--pmode", "balanced", "--quiet"});
+    failures += !expect_serve_args("chat", ModelType::LLM, "inkling-2:mini",
+        {"serve", "inkling-2:mini", "--ctx-len", "8192", "--port", "8001", "--host", "127.0.0.1",
+         "--pmode", "balanced", "--quiet"});
 
     failures += !expect_args("empty args", "", 8192, "");
     failures += !expect_args(
