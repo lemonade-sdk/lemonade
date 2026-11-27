@@ -456,7 +456,8 @@ json TheNoiseServer::image_variations(const json& /* request */) {
     );
 }
 
-json TheNoiseServer::video_generations(const json& request, std::atomic<bool>* cancel) {
+json TheNoiseServer::video_generations(const json& request, std::atomic<bool>* cancel,
+                                       const ProgressFn& progress) {
     constexpr long control_timeout = 5;
     constexpr int max_control_failures = 3;
     constexpr auto cancel_grace = std::chrono::minutes(5);

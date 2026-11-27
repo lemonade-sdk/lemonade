@@ -668,7 +668,8 @@ json SDServer::image_generations(const json& request) {
     return forward_request("/v1/images/generations", sd_request, 0);
 }
 
-json SDServer::video_generations(const json& request, std::atomic<bool>* cancel) {
+json SDServer::video_generations(const json& request, std::atomic<bool>* cancel,
+                                 const ProgressFn& progress) {
     if (request.contains("output_format") && request["output_format"] == "mp4") {
         return ErrorResponse::from_exception(
             InvalidRequestException("stable-diffusion.cpp video supports output_format webm, webp or avi"));

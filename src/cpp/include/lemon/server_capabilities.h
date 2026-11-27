@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <string>
 #include <type_traits>
@@ -107,9 +108,14 @@ public:
 // in runtime.
 class IVideoServer : public virtual ICapability {
 public:
+    // Called with {"stage", "completed", "total"} each time the backend reports how far
+    // the clip has got; a count the backend cannot give is null.
+    using ProgressFn = std::function<void(const json& progress)>;
+
     virtual ~IVideoServer() = default;
     virtual json video_generations(const json& request,
-                                   std::atomic<bool>* cancel = nullptr) = 0;
+                                   std::atomic<bool>* cancel = nullptr,
+                                   const ProgressFn& progress = {}) = 0;
 };
 
 class IUpscaleServer : public virtual ICapability {

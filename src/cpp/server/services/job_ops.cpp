@@ -272,7 +272,14 @@ lemon::jobs::OpProviders JobOps::build(ServerContext& ctx) {
                 throw lemon::jobs::JobError(499, "interrupted");
             }
         }
-        nlohmann::json response = router->video_generations(request, &cancel);
+        struct ClearProgress {
+            const std::string& job_id;
+            ~ClearProgress() { video_store::clear_progress(job_id); }
+        } clear_progress{job_id};
+        nlohmann::json response = router->video_generations(
+            request, &cancel, [&job_id](const nlohmann::json& progress) {
+                video_store::set_progress(job_id, progress);
+            });
         if (response.contains("error")) {
             const auto& err = response["error"];
             const bool settled = err.is_object() && err.contains("details") &&
