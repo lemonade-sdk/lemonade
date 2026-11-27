@@ -91,6 +91,7 @@ import type { VideoGenerationControl, VideoGenerationResult, VideoJobRef } from 
 import {
   isVideoJobCanceled,
   isVideoJobStopUnconfirmed,
+  parseVideoJobRef,
   recoverableVideoJobId,
   VideoJobDownloadError,
 } from '../features/videoGeneration/videoJob';
@@ -333,6 +334,7 @@ function normalizeConversation(raw: unknown, stableId?: string): Conversation | 
       stats: m.stats as ChatCompletionStats | undefined,
       toolCalls: Array.isArray(m.toolCalls) ? m.toolCalls as ToolCallEntry[] : undefined,
       model: normalizeSnapshot(m.model),
+      videoJob: parseVideoJobRef(m.videoJob),
       isError: m.isError === true || (typeof m.content === 'string' && /^Error:/i.test(m.content)),
       fromBrowserPrompt: m.fromBrowserPrompt === true || undefined,
     }));

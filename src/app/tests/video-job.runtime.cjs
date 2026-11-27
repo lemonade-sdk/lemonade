@@ -16,6 +16,7 @@ const {
   runVideoJob,
   resumeVideoJob,
   recoverableVideoJobId,
+  parseVideoJobRef,
   isVideoJobCanceled,
   isVideoJobStopUnconfirmed,
   videoFileExtension,
@@ -79,6 +80,14 @@ const noSleep = async () => {};
       /Video generation failed: out of memory/,
     );
     assert.equal(server.calls.content, 0);
+  }
+
+  {
+    const ref = { id: 'job-1', baseUrl: 'http://localhost:13305', model: 'Wan2.1-T2V-1.3B' };
+    assert.deepEqual(parseVideoJobRef(JSON.parse(JSON.stringify({ ...ref, extra: 1 }))), ref);
+    assert.equal(parseVideoJobRef(undefined), undefined);
+    assert.equal(parseVideoJobRef({ ...ref, id: '' }), undefined);
+    assert.equal(parseVideoJobRef({ ...ref, model: 7 }), undefined);
   }
 
   {

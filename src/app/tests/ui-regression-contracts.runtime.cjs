@@ -171,6 +171,11 @@ assert.match(
 assert.match(sources.chat, /api\.resumeVideoGeneration\(job, control\)/);
 assert.match(
   sources.chat,
+  /videoJob: parseVideoJobRef\(m\.videoJob\),/,
+  'a video job saved on a message must survive a reload so Resume stays available',
+);
+assert.match(
+  sources.chat,
   /const stillHere = \(\) => activeIdRef\.current === convoId\s*&& modelSelectionEpochRef\.current === selectionEpoch\s*&& \(!job \|\| api\.baseUrl === job\.baseUrl\);/,
   'the reload after a stop must skip a newer model selection and another server',
 );

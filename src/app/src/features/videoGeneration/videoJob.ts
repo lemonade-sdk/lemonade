@@ -94,6 +94,20 @@ export function recoverableVideoJobId(err: unknown): string | null {
   return null;
 }
 
+export interface StoredVideoJobRef {
+  id: string;
+  baseUrl: string;
+  model: string;
+}
+
+/** A job reference read back from saved chat history, or undefined if it is malformed. */
+export function parseVideoJobRef(raw: unknown): StoredVideoJobRef | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const { id, baseUrl, model } = raw as Record<string, unknown>;
+  if (typeof id !== 'string' || !id || typeof baseUrl !== 'string' || typeof model !== 'string') return undefined;
+  return { id, baseUrl, model };
+}
+
 const TERMINAL = new Set(['completed', 'failed', 'canceled']);
 
 function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
