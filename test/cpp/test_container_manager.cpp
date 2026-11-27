@@ -27,6 +27,10 @@
 #include <string>
 #include <vector>
 
+#ifndef _WIN32
+#include <sys/stat.h>
+#endif
+
 using lemon::utils::ContainerHost;
 using lemon::utils::ContainerManager;
 using lemon::utils::ContainerRunSpec;
@@ -619,6 +623,18 @@ void test_model_mounts() {
         threw = true;
     }
     check("a missing model file is refused", threw);
+
+    ::mkfifo((repo / "fifo").c_str(), 0600);
+    fs::create_symlink("fifo", repo / "model.gguf");
+    for (const char* name : {"fifo", "model.gguf"}) {
+        bool refused = false;
+        try {
+            ContainerManager::model_mounts((repo / name).string(), "/mnt/models/x");
+        } catch (const std::exception&) {
+            refused = true;
+        }
+        check(std::string("a model file that is not a regular file is refused: ") + name, refused);
+    }
     fs::remove_all(repo);
 }
 #endif
