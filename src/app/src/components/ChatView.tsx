@@ -320,6 +320,12 @@ function normalizeSnapshot(raw: unknown): ModelSnapshot | null {
   };
 }
 
+// Retry and Edit & Resend drop every message from `from` on, which would lose
+// a job that can still be resumed.
+function holdsVideoJob(messages: Message[], from: number): boolean {
+  return messages.slice(from).some(m => m.videoJob);
+}
+
 function normalizeConversation(raw: unknown, stableId?: string): Conversation | null {
   if (!raw || typeof raw !== 'object') return null;
   const obj = raw as Record<string, unknown>;
@@ -2341,6 +2347,7 @@ const ChatView: React.FC<ChatViewProps> = ({
 
   const activeConvo = conversations.find(c => c.id === activeId) || null;
   const messages = activeConvo?.messages || [];
+  const lastVideoJobIndex = messages.reduce((last, m, i) => (m.videoJob ? i : last), -1);
   const contextUsage = useMemo(() => {
     const thread = activeConvo?.messages || [];
     for (let i = thread.length - 1; i >= 0; i--) {
@@ -3690,6 +3697,8 @@ ${index}`;
     while (userIndex >= 0 && convo.messages[userIndex].role !== 'user') userIndex--;
     if (userIndex < 0) return;
 
+    if (holdsVideoJob(convo.messages, userIndex + 1)) return;
+
     const originalUserMessage = convo.messages[userIndex];
     if (originalUserMessage.audioName) {
       appendAssistantMessage(activeId, {
@@ -3734,6 +3743,7 @@ ${index}`;
     if (connectionStatus !== 'connected' || !currentModel || !currentModelSnapshot) return;
     const convo = conversations.find(c => c.id === activeId);
     if (!convo || convo.messages[messageIndex]?.role !== 'user') return;
+    if (holdsVideoJob(convo.messages, messageIndex)) return;
 
     threadFollowBottomRef.current = true;
     const originalMessage = convo.messages[messageIndex];
@@ -4322,9 +4332,9 @@ ${index}`;
                   userLabel="You"
                   defaultThinkingOpen={!globalModelSettings.collapseThinkingByDefault}
                   onOptionSelect={handleOptionSelect}
-                  onRetry={msg.role === 'assistant' && !msg.videoJob ? () => handleRetryAssistant(i) : undefined}
+                  onRetry={msg.role === 'assistant' && i > lastVideoJobIndex ? () => handleRetryAssistant(i) : undefined}
                   onSpeak={canReadAssistantMessages && msg.role === 'assistant' && !msg.isError && msg.content ? () => handleSpeakAssistantMessage(msg.content) : undefined}
-                  onEditUser={msg.role === 'user' ? (text) => handleEditUserMessage(i, text) : undefined}
+                  onEditUser={msg.role === 'user' && i > lastVideoJobIndex ? (text) => handleEditUserMessage(i, text) : undefined}
                   onResumeVideo={msg.videoJob && msg.model && activeId && !isBusy
                     ? () => { void handleResumeVideoJob(activeId, msg.videoJob!, msg.model!); }
                     : undefined}

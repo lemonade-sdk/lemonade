@@ -186,8 +186,18 @@ assert.match(
 );
 assert.match(
   sources.chat,
-  /onRetry=\{msg\.role === 'assistant' && !msg\.videoJob \?/,
+  /onRetry=\{msg\.role === 'assistant' && i > lastVideoJobIndex \?/,
   'Retry must not drop a video job that can still be resumed',
+);
+assert.match(
+  sources.chat,
+  /onEditUser=\{msg\.role === 'user' && i > lastVideoJobIndex \?/,
+  'Edit & Resend must not drop a video job that can still be resumed',
+);
+assert.equal(
+  (sources.chat.match(/if \(holdsVideoJob\(convo\.messages, (?:userIndex \+ 1|messageIndex)\)\) return;/g) || []).length,
+  2,
+  'Retry and Edit & Resend refuse to drop a resumable video job',
 );
 assert.match(sources.chat, /api\.cancelVideoJob\(job\)/, 'deleting a conversation cancels its retained video jobs');
 
