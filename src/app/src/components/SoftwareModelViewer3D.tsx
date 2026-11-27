@@ -57,7 +57,9 @@ const SoftwareModelViewer3D: React.FC<{ src: string; alt: string }> = ({ src, al
       if (!response.ok) throw new Error(`GLB download failed (${response.status})`);
       return response.arrayBuffer();
     }).then(data => {
-      if (!controller.signal.aborted) renderer.postMessage({ type: 'load', data } satisfies PreviewRequest, [data]);
+      if (controller.signal.aborted) return;
+      const request: PreviewRequest = { type: 'load', data };
+      renderer.postMessage(request, [data]);
     }).catch(fail);
     return () => { controller.abort(); renderer.terminate(); worker.current = null; };
   }, [src, sendLatest]);

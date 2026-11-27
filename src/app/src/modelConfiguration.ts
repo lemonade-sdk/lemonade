@@ -20,6 +20,8 @@ export interface RecipeOptions {
   height?: number;
   sampling_method?: string;
   flow_shift?: number;
+  octree_resolution?: number;
+  triangles?: number;
   'sd-cpp_backend'?: string;
   'sd-cpp_device'?: string;
   sdcpp_args?: string;
@@ -190,7 +192,7 @@ function optionalStringValue(value: unknown): string | undefined {
 }
 
 const RECIPE_OPTION_NUMBER_KEYS = new Set<keyof RecipeOptions>([
-  'ctx_size', 'steps', 'cfg_scale', 'width', 'height', 'flow_shift', 'speed',
+  'ctx_size', 'steps', 'cfg_scale', 'width', 'height', 'flow_shift', 'speed', 'octree_resolution', 'triangles',
 ]);
 
 export function sanitizeRecipeOptions(options: Partial<RecipeOptions> | null | undefined): RecipeOptions {

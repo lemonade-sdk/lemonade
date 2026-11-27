@@ -1,7 +1,7 @@
 """
 3D generation tests for Lemonade Server.
 
-Tests the /3d/generations endpoint (image -> GLB mesh) with TRELLIS and TheNoise.
+Tests the /3d/generations endpoint (image -> mesh) with TRELLIS and TheNoise.
 
 Usage:
     python server_3d.py --wrapped-server trellis --backend vulkan
@@ -165,11 +165,21 @@ class Model3DTests(ServerTestBase):
         )
 
     def test_004_unsupported_response_format(self):
-        """A response_format other than glb is rejected without loading anything."""
+        """Unknown formats are rejected without loading anything."""
         self._assert_rejected(
-            self._generation_payload(response_format="obj"),
+            self._generation_payload(response_format="ply"),
             "Unsupported response_format",
         )
+        self._assert_rejected(
+            self._generation_payload(output_format="ply"),
+            "Unsupported output_format alias",
+        )
+        if get_current_config()[0] == "trellis":
+            for fmt in ("stl", "obj"):
+                self._assert_rejected(
+                    self._generation_payload(response_format=fmt),
+                    "Unsupported TRELLIS response_format",
+                )
 
     def test_005_invalid_resolution_error(self):
         """A resolution outside 512/1024/1536 is rejected without loading anything."""
@@ -227,7 +237,7 @@ class Model3DTests(ServerTestBase):
             **(
                 {"trellis_args": FAST_GENERATION_ARGS, "merge_args": False}
                 if is_trellis
-                else {}
+                else {"octree_resolution": 192, "triangles": 0.1}
             ),
         )
         self.assertEqual(
@@ -258,6 +268,11 @@ class Model3DTests(ServerTestBase):
             )
             print("[INFO] Using the 512 cascade with guidance disabled for CI speed")
         else:
+            applied = loaded.get("recipe_options", {})
+            self.assertEqual(applied.get("octree_resolution"), 192)
+            self.assertEqual(applied.get("triangles"), 0.1)
+            # Exercise the stored octree resolution rather than overriding it.
+            payload.pop("octree_resolution", None)
             # A recipe can expose both capabilities; the loaded mesh must not
             # be sent to TheNoise's image controller.
             image_response = requests.post(
@@ -302,14 +317,23 @@ class Model3DTests(ServerTestBase):
             # Compare actual triangle counts, not just the binary file size.
             raw = requests.post(
                 f"{self.base_url}/3d/generations",
-                json={**payload, "triangles": 1.0},
+                json={
+                    **payload,
+                    "triangles": 1.0,
+                    "output_format": "stl",
+                    "smooth": 0.0,
+                    "floaters": 0.0,
+                },
                 timeout=TIMEOUT_3D_GENERATION,
             )
             self.assertEqual(
                 raw.status_code, 200, raw.text[:1000] if not raw.ok else ""
             )
             reduced_count = self._glb_triangle_count(response.content)
-            raw_count = self._glb_triangle_count(raw.content)
+            self.assertIn("model/stl", raw.headers.get("Content-Type", ""))
+            self.assertGreaterEqual(len(raw.content), 84)
+            raw_count = struct.unpack_from("<I", raw.content, 80)[0]
+            self.assertEqual(len(raw.content), 84 + 50 * raw_count)
             self.assertGreater(reduced_count, 0)
             self.assertLess(reduced_count, raw_count / 2)
             self.assertLess(len(response.content), len(raw.content))

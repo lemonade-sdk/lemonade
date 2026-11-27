@@ -1,5 +1,6 @@
 #include <lemon/utils/aixlog.hpp>
 
+#include "lemon/models/model_info.h"
 #include "lemon/router.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/model_loader.h"
@@ -24,10 +25,12 @@ const RouteArg kResolution{"resolution", ArgIn::JsonBody,
                            "TRELLIS cascade resolution: `512`, `1024` or `1536`. Defaults to `512`."};
 const RouteArg kOctreeResolution{"octree_resolution", ArgIn::JsonBody,
                                  {{"type", "integer"}, {"minimum", 8}, {"maximum", 768}}, false, Support::Available,
-                                 "TheNoise mesh extraction grid resolution (8-768). Hunyuan3D defaults to 384."};
+                                 "TheNoise mesh extraction grid resolution (8-768). Defaults to the model's "
+                                 "`octree_resolution` recipe option, else the backend default."};
 const RouteArg kTriangles{"triangles", ArgIn::JsonBody,
                           {{"type", "number"}, {"minimum", 0.001}, {"maximum", 1.0}}, false, Support::Available,
-                          "TheNoise fraction of triangles to retain (0.001-1.0). Defaults to 0.05; use 1.0 for the raw detail level."};
+                          "TheNoise fraction of triangles to retain (0.001-1.0). Defaults to the model's "
+                          "`triangles` recipe option, else 0.05; use 1.0 for the raw detail level."};
 const RouteArg kMeshSteps{"steps", ArgIn::JsonBody, {{"type", "integer"}, {"minimum", 1}}, false, Support::Available,
                          "TheNoise mesh denoising steps. Defaults to the model setting."};
 const RouteArg kBgRemoval{"bg_removal", ArgIn::JsonBody, {{"enum", json::array({"threshold", "birefnet"})}},
@@ -38,9 +41,9 @@ const RouteArg kUv{"uv", ArgIn::JsonBody, {{"enum", json::array({"xatlas", "box"
                    "TRELLIS UV atlas method. `xatlas` unwraps every face into its own atlas space for the best "
                    "texture quality, but slows down on large meshes. `box` is a faster six-plane "
                    "projection that can leave small artifacts in concave regions. Defaults to `xatlas`."};
-const RouteArg kResponseFormat{"response_format", ArgIn::JsonBody, {{"const", "glb"}}, false, Support::Available,
-                               "Output encoding. Only `glb`, the format the backend produces, is accepted. "
-                               "Defaults to `glb`."};
+const RouteArg kResponseFormat{"response_format", ArgIn::JsonBody, {{"enum", json::array({"glb", "stl", "obj"})}},
+                               false, Support::Available,
+                               "Output encoding: `glb` (default), or `stl` or `obj` (TheNoise only).", {"output_format"}};
 
 class Generations3dRoute : public ModelRoute {
 public:
@@ -54,12 +57,14 @@ public:
         s.summary = "Generate a 3D mesh from an image";
         s.experimental = true;
         s.description =
-            "Generates a glTF-binary (`.glb`) mesh from an image. TRELLIS produces textured meshes; "
+            "Generates a mesh from an image. TRELLIS produces textured GLB meshes; "
             "TheNoise Hunyuan3D 2.1 produces geometry without textures. This is a Lemonade extension.";
         s.notes = {
             "Reconstruction runs on the GPU (Vulkan, ROCm or CUDA) and takes minutes; higher "
             "`resolution` (TRELLIS) or `octree_resolution` (TheNoise) values take longer.",
             "Backend-specific parameters are only used by the corresponding backend.",
+            "TheNoise forwards additional JSON fields to its native mesh API, such as "
+            "`smooth` and `floaters` (0.0-1.0).",
             "Errors carry a JSON `error` object.",
         };
         s.args = {
@@ -126,6 +131,11 @@ protected:
             return reject(kUnsupportedImage,
                           "'image' is not a supported format (expected PNG, JPEG, BMP, or GIF)");
         }
+        if (req.value(kResponseFormat, "glb") != "glb") {
+            if (auto info = ctx_.router->try_get_model_info(req.model); info && info->recipe != "thenoise") {
+                return reject(kArgInvalid, "STL and OBJ output are only supported by TheNoise");
+            }
+        }
         return true;
     }
 
@@ -133,7 +143,9 @@ protected:
         LOG(INFO, "Server") << "POST /api/v1/3d/generations" << std::endl;
 
         Router* router = ctx_.router;
-        serve_media_or_error(res, "model/gltf-binary", [router, &req](httplib::DataSink& sink) {
+        const auto format = req.value(kResponseFormat, "glb");
+        const char* mime = format == "stl" ? "model/stl" : format == "obj" ? "model/obj" : "model/gltf-binary";
+        serve_media_or_error(res, mime, [router, &req](httplib::DataSink& sink) {
             router->model_3d_generations(req.body, sink);
         });
     }

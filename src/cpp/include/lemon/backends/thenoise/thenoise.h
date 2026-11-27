@@ -33,6 +33,9 @@ inline const BackendDescriptor descriptor = {
         {"width", "", 512, "SIZE", "Output image width", "TheNoise Options"},
         {"height", "", 512, "SIZE", "Output image height", "TheNoise Options"},
         {"sampler", "", "", "ARGS", "Denoising solver (e.g. euler, er_sde, unipc)", "TheNoise Options"},
+        // Mesh generation defaults; 0 leaves octree resolution to the model.
+        {"octree_resolution", "", 0, "SIZE", "Mesh extraction grid resolution (8-768; 0 = model default)", "TheNoise Options"},
+        {"triangles", "", 0.05, "SIZE", "Fraction of mesh triangles to retain (0.001-1.0)", "TheNoise Options"},
         // Shared defaults must match sd-cpp: RecipeOptions keys are global.
         // TheNoise forwards only stored overrides; otherwise use native defaults.
         {"video_frames", "", 33, "SIZE", "Number of video frames", "TheNoise Options"},

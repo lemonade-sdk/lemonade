@@ -2365,7 +2365,9 @@
         "recipe_options": {
             "steps": 30,
             "cfg_scale": 5.0,
-            "sampler": "euler"
+            "sampler": "euler",
+            "octree_resolution": 384,
+            "triangles": 0.05
         }
     },
     "TRELLIS-3D": {

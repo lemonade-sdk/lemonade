@@ -689,8 +689,14 @@ void TheNoiseServer::model_3d_generations(const json& request, httplib::DataSink
         return;
     }
 
+    const auto format = request.value("response_format", std::string("glb"));
+    if (format != "glb" && format != "stl" && format != "obj") {
+        fail("TheNoise mesh output format must be glb, stl or obj", 400);
+        return;
+    }
+
     // Lemonade accepts data URLs and line-wrapped base64; TheNoise's mesh
-    // endpoint expects strict base64 and rejects unknown request fields.
+    // endpoint expects strict base64. Only forward backend request fields.
     std::string image = request.at("image").get<std::string>();
     if (image.rfind("data:", 0) == 0) {
         image = image.substr(image.find(',') + 1);
@@ -698,10 +704,23 @@ void TheNoiseServer::model_3d_generations(const json& request, httplib::DataSink
     image.erase(std::remove(image.begin(), image.end(), '\r'), image.end());
     image.erase(std::remove(image.begin(), image.end(), '\n'), image.end());
 
-    json body = {{"image", std::move(image)}, {"output_format", "glb"}, {"triangles", 0.05}};
-    for (const char* key : {"seed", "octree_resolution", "steps", "triangles"}) {
-        if (request.contains(key)) {
-            body[key] = request.at(key);
+    json body = {{"image", std::move(image)}, {"output_format", format}};
+    // Pass through native mesh knobs, including future options, without
+    // forwarding Lemonade routing fields or TRELLIS-only controls.
+    for (const auto& [key, value] : request.items()) {
+        if (key == "model" || key == "image" || key == "ctx_size" ||
+            key == "response_format" || key == "output_format" || key == "cfg_scale" ||
+            key == "resolution" || key == "bg_removal" || key == "uv") {
+            continue;
+        }
+        if (!value.is_null()) body[key] = value;
+    }
+    if (!body.contains("triangles")) {
+        body["triangles"] = recipe_options_.number_option("triangles").value_or(0.05);
+    }
+    if (!body.contains("octree_resolution")) {
+        if (auto octree = recipe_options_.stored_int_option("octree_resolution"); octree && *octree != 0) {
+            body["octree_resolution"] = *octree;
         }
     }
     // Do not inherit the image recipe's default steps/CFG for a mesh model.
@@ -710,18 +729,38 @@ void TheNoiseServer::model_3d_generations(const json& request, httplib::DataSink
             body["steps"] = *steps;
         }
     }
-    if (auto cfg = recipe_options_.stored_number_option("cfg_scale"); cfg && *cfg >= 0.0) {
-        body["guidance_scale"] = *cfg;
+    if (!body.contains("guidance_scale")) {
+        if (request.contains("cfg_scale") && !request["cfg_scale"].is_null()) {
+            body["guidance_scale"] = request["cfg_scale"];
+        } else if (auto cfg = recipe_options_.stored_number_option("cfg_scale"); cfg && *cfg >= 0.0) {
+            body["guidance_scale"] = *cfg;
+        }
     }
-    if (auto sampler = recipe_options_.string_option("sampler"); sampler && !sampler->empty()) {
-        body["sampler"] = *sampler;
+    if (!body.contains("sampler")) {
+        if (auto sampler = recipe_options_.string_option("sampler"); sampler && !sampler->empty()) {
+            body["sampler"] = *sampler;
+        }
+    }
+
+    // TheNoise serializes inference internally. Keep other mesh requests out
+    // of the synchronous endpoint until this one has settled or been stopped.
+    // Otherwise an abandoned queued request could stop another active render.
+    const auto cancel = current_request_cancel_context();
+    std::lock_guard<std::mutex> mesh_lock(mesh_request_mutex_);
+    if (cancel.cancelled()) {
+        fail("Mesh generation canceled", 499);
+        return;
+    }
+    if (!is_backend_alive()) {
+        fail("TheNoise mesh backend is not running");
+        return;
     }
 
     BackendRequestScope request_scope(*this, BackendRequestKind::NonStreaming);
     try {
         const auto response = utils::HttpClient::post(
             get_base_url() + "/mesh", body.dump(), {{"Content-Type", "application/json"}},
-            1800, utils::HttpSecurityPolicy::TrustedLoopback, current_request_cancel_context());
+            1800, utils::HttpSecurityPolicy::TrustedLoopback, cancel);
         if (response.status_code < 200 || response.status_code >= 300) {
             std::string message = "TheNoise mesh generation failed (HTTP " + std::to_string(response.status_code) + ")";
             const auto content_type = response.headers.find("content-type");
@@ -733,10 +772,6 @@ void TheNoiseServer::model_3d_generations(const json& request, httplib::DataSink
             fail(message, response.status_code >= 400 && response.status_code < 600 ? response.status_code : 502);
             return;
         }
-        if (response.body.size() < 12 || response.body.compare(0, 4, "glTF") != 0) {
-            fail("TheNoise mesh generation did not return a GLB file");
-            return;
-        }
         const auto read_u32 = [&response](size_t offset) {
             uint32_t value = 0;
             for (size_t i = 0; i < 4; ++i) {
@@ -744,11 +779,34 @@ void TheNoiseServer::model_3d_generations(const json& request, httplib::DataSink
             }
             return value;
         };
-        if (read_u32(4) != 2 || read_u32(8) != response.body.size()) {
-            fail("TheNoise returned an invalid or truncated GLB file");
+        const auto size = response.body.size();
+        if (format == "glb") {
+            if (size < 12 || response.body.compare(0, 4, "glTF") != 0 ||
+                read_u32(4) != 2 || read_u32(8) != size) {
+                fail("TheNoise returned an invalid or truncated GLB file");
+                return;
+            }
+        } else if (format == "stl") {
+            // TheNoise writes binary STL: 80-byte header, uint32 triangle count,
+            // then 50 bytes per triangle. Use division to avoid overflow.
+            if (size < 84 || read_u32(80) == 0 || (size - 84) % 50 != 0 ||
+                read_u32(80) != (size - 84) / 50) {
+                fail("TheNoise returned an invalid or truncated STL file");
+                return;
+            }
+        } else if (response.body.rfind("v ", 0) != 0 || response.body.find("\nf ") == std::string::npos) {
+            // TheNoise's OBJ writer starts with vertices and emits faces last.
+            fail("TheNoise did not return an OBJ mesh");
             return;
         }
         sink.write(response.body.data(), response.body.size());
+    } catch (const utils::HttpClientException& e) {
+        // /mesh is synchronous and uncancellable inside TheNoise. A lost
+        // response does not imply the GPU work has finished. Stop this backend
+        // before releasing the inference slot; the next request can reload it.
+        LOG(WARNING, "TheNoise") << "Mesh transport failed; stopping backend: " << e.what() << std::endl;
+        stop_server();
+        fail(e.what());
     } catch (const std::exception& e) {
         LOG(ERROR, "TheNoise") << "Mesh generation failed: " << e.what() << std::endl;
         fail(e.what());

@@ -7,6 +7,7 @@
 #include "lemon/model_manager_types.h"
 #include "lemon/recipe_options.h"
 #include "lemon/backends/backend_utils.h"
+#include <mutex>
 #include <string>
 
 namespace lemon {
@@ -46,6 +47,8 @@ public:
         double upscale_factor) override;
 
 private:
+    std::mutex mesh_request_mutex_;
+
     nlohmann::json build_request(const nlohmann::json& request) const;
 
     // Returns "" when no size is named anywhere.

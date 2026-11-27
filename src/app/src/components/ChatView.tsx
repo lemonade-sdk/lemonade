@@ -658,8 +658,8 @@ type Model3DSourceMode = 'image' | 'text';
 interface Model3DSettings {
   sourceMode: Model3DSourceMode;
   resolution: 512 | 1024 | 1536;
-  octreeResolution: 96 | 192 | 384 | 768;
-  triangles: number;
+  octreeResolution: 96 | 192 | 384 | 768 | '';
+  triangles: number | '';
   backgroundRemoval: 'birefnet' | 'threshold';
   seed: number | '';
   imageModel: string;
@@ -668,8 +668,8 @@ interface Model3DSettings {
 const DEFAULT_MODEL3D_SETTINGS: Model3DSettings = {
   sourceMode: 'image',
   resolution: 512,
-  octreeResolution: 384,
-  triangles: 0.05,
+  octreeResolution: '',
+  triangles: '',
   backgroundRemoval: 'birefnet',
   seed: -1,
   imageModel: '',
@@ -1290,6 +1290,9 @@ const ChatView: React.FC<ChatViewProps> = ({
     || selectedModel
     || modelInfoName(lastReadyModelInfo)
     || preferredDefaultModelName;
+  useEffect(() => {
+    setModel3dSettings(prev => ({ ...prev, octreeResolution: '', triangles: '' }));
+  }, [currentModel]);
   const currentLoadedModel = useMemo(
     () => loadedModels.find(m => m.model_name.toLowerCase() === currentModel.toLowerCase()) || null,
     [loadedModels, currentModel],
@@ -3003,7 +3006,10 @@ ${finalText}`
         const isTheNoiseMesh = String(model.recipe || findModelInfoByName(knownModelInfos, model.name)?.recipe || '').toLowerCase() === 'thenoise';
         const result = await api.model3dGeneration(model.name, referenceImage, {
           ...(isTheNoiseMesh
-            ? { octree_resolution: model3dSettings.octreeResolution, triangles: model3dSettings.triangles }
+            ? {
+                ...(model3dSettings.octreeResolution === '' ? {} : { octree_resolution: model3dSettings.octreeResolution }),
+                ...(model3dSettings.triangles === '' ? {} : { triangles: model3dSettings.triangles }),
+              }
             : { resolution: model3dSettings.resolution, bg_removal: model3dSettings.backgroundRemoval }),
           seed: model3dSettings.seed === '' ? -1 : model3dSettings.seed,
         });
@@ -4743,9 +4749,10 @@ ${index}`;
                   <span>{t('Octree resolution')}</span>
                   <select
                     value={model3dSettings.octreeResolution}
-                    onChange={e => setModel3dSettings(prev => ({ ...prev, octreeResolution: Number(e.target.value) as Model3DSettings['octreeResolution'] }))}
+                    onChange={e => setModel3dSettings(prev => ({ ...prev, octreeResolution: e.target.value === '' ? '' : Number(e.target.value) as Model3DSettings['octreeResolution'] }))}
                     disabled={isBusy}
                   >
+                    <option value="">{t('Default')}</option>
                     {[96, 192, 384, 768].map(value => <option key={value} value={value}>{value}</option>)}
                   </select>
                 </label>
@@ -4753,9 +4760,10 @@ ${index}`;
                   <span>{t('Triangles to retain')}</span>
                   <select
                     value={model3dSettings.triangles}
-                    onChange={e => setModel3dSettings(prev => ({ ...prev, triangles: Number(e.target.value) }))}
+                    onChange={e => setModel3dSettings(prev => ({ ...prev, triangles: e.target.value === '' ? '' : Number(e.target.value) }))}
                     disabled={isBusy}
                   >
+                    <option value="">{t('Default')}</option>
                     {[1, 5, 10, 25, 50, 100].map(percent => (
                       <option key={percent} value={percent / 100}>{percent}%</option>
                     ))}

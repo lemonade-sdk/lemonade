@@ -38,9 +38,10 @@ The 3D composer supports:
 - **Image -> 3D:** upload one reference image and reconstruct it directly.
 - **Text -> image -> 3D:** select a downloaded image model; Lemonade App renders a reconstruction-friendly reference image, reloads the selected 3D model, then reconstructs the mesh.
 - TRELLIS: cascade resolution `512`, `1024`, or `1536`, background removal, and seed controls; generates textured meshes.
-- TheNoise (`Hunyuan3D-2.1`): octree resolution `96`, `192`, `384`, or `768`, triangle retention and seed controls; generates geometry-only meshes. The default is octree `384` with `5%` triangle retention. Choose `100%` to disable simplification. TheNoise 0.17.0 or later is required.
+- TheNoise (`Hunyuan3D-2.1`): octree resolution `96`, `192`, `384`, or `768`, triangle retention and seed controls; generates geometry-only meshes. Choose **Default** to use the model's recipe options (Hunyuan3D: octree `384`, `5%` triangle retention). Choose `100%` to disable simplification. TheNoise 0.17.0 or later is required.
 - Interactive GLB preview and direct GLB download.
 - Local binary STL export for printing-oriented geometry workflows. STL intentionally contains geometry only; materials and textures remain in GLB.
+- API clients using TheNoise can also request native binary STL or OBJ via `response_format` (or `output_format`); the app continues to request GLB for previews.
 
 
 The STL converter supports embedded glTF 2.0 triangle, triangle-strip, and triangle-fan primitives, node transforms, indexed/non-indexed geometry, and sparse accessors. Compressed geometry is left as GLB and reports a clear export error rather than producing a damaged STL.
