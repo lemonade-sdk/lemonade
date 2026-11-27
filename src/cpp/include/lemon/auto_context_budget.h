@@ -108,6 +108,8 @@ inline std::optional<double> auto_context_available_gpu_gib(
 // cannot straddle the dedicated and shared heaps.
 inline constexpr double AUTO_CTX_HEAP_SPLIT_LOSS_GIB = 1.0;
 
+// Scaled by the total carve-out, not the free part, so that the reserve stays
+// when another model fills the carve-out. It adds to the RAM headroom on purpose.
 inline constexpr AutoContextReserveRange AUTO_CTX_CARVEOUT_GPU_HEADROOM{
     1.0 / 32.0, 0.0, 2.0};
 
@@ -118,23 +120,23 @@ struct AutoContextSplitGpuMemory {
 
 // UMA GPU with a firmware carve-out (AMD VGM): the carve-out is outside the
 // OS-visible RAM, so only the shared part competes with the CPU for free RAM.
-// Returns nullopt when the carve-out usage or RAM usage is unknown.
+// Returns nullopt when a usage reading is unknown, or when the carve-out cannot
+// hold one heap block (the firmware default), so the plain UMA budget applies.
 inline std::optional<AutoContextSplitGpuMemory> auto_context_available_split_gpu_gib(
     double dedicated_total_gib, double dedicated_used_gib,
     double shared_total_gib, double shared_used_gib,
     double physical_total_gib, double physical_used_gib) {
     auto known = [](double value) { return std::isfinite(value) && value >= 0.0; };
-    if (!known(dedicated_total_gib) || dedicated_total_gib <= 0.0 ||
-        !known(dedicated_used_gib) || !known(shared_total_gib))
+    if (!known(dedicated_total_gib) || dedicated_total_gib <= AUTO_CTX_HEAP_SPLIT_LOSS_GIB ||
+        !known(dedicated_used_gib) || !known(shared_total_gib) || !known(shared_used_gib))
         return std::nullopt;
     if (!std::isfinite(physical_total_gib) || physical_total_gib <= 0.0 ||
         !std::isfinite(physical_used_gib) || physical_used_gib <= 0.0)
         return std::nullopt;
 
     const double dedicated_free = (std::max)(0.0, dedicated_total_gib - dedicated_used_gib);
-    const double shared_used = known(shared_used_gib) ? shared_used_gib : 0.0;
     const double shared_free = auto_context_cap_shared_memory_gib(
-        (std::max)(0.0, shared_total_gib - shared_used),
+        (std::max)(0.0, shared_total_gib - shared_used_gib),
         physical_total_gib, physical_used_gib);
     // A block that does not fit in the carve-out's tail lands in shared memory.
     const double split_loss =

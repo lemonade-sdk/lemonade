@@ -589,12 +589,14 @@ static void test_auto_context_budget() {
     auto carveout_full = auto_context_available_split_gpu_gib(63.8, 63.8, 47.8, 0.2, 63.8, 10.7);
     check("auto ctx split: full carve-out leaves shared only, no split loss",
           carveout_full && approx_eq(carveout_full->available_gib, 47.6 - 63.8 / 32.0));
-    auto small_carveout = auto_context_available_split_gpu_gib(0.5, 0.3, 62.0, 2.0, 124.0, 20.0);
-    check("auto ctx split: small carve-out loses at most its own free space",
-          small_carveout && approx_eq(small_carveout->available_gib, 0.2 + 60.0 - 0.2 - 0.5 / 32.0));
-    auto shared_usage_unknown = auto_context_available_split_gpu_gib(63.8, 18.4, 47.8, -1.0, 63.8, 10.7);
-    check("auto ctx split: unknown shared usage is still capped by free RAM",
-          shared_usage_unknown && approx_eq(shared_usage_unknown->available_gib, 45.4 + 47.8 - 1.0 - 63.8 / 32.0));
+    auto small_carveout = auto_context_available_split_gpu_gib(2.0, 0.3, 62.0, 2.0, 124.0, 20.0);
+    check("auto ctx split: small carve-out loses at most one heap block",
+          small_carveout && approx_eq(small_carveout->available_gib, 1.7 + 60.0 - 1.0 - 2.0 / 32.0));
+    check("auto ctx split: unknown shared usage falls back",
+          !auto_context_available_split_gpu_gib(63.8, 18.4, 47.8, -1.0, 63.8, 10.7));
+    check("auto ctx split: a carve-out below one heap block falls back",
+          !auto_context_available_split_gpu_gib(1.0, 0.3, 62.0, 2.0, 124.0, 20.0) &&
+          !auto_context_available_split_gpu_gib(0.5, 0.3, 62.0, 2.0, 124.0, 20.0));
     check("auto ctx split: unknown carve-out usage falls back",
           !auto_context_available_split_gpu_gib(63.8, -1.0, 47.8, 0.2, 63.8, 10.7));
     check("auto ctx split: unknown RAM usage falls back",
@@ -604,7 +606,7 @@ static void test_auto_context_budget() {
     check("auto ctx split: carve-out credit excludes the heap-split loss",
           approx_eq(vgm64->carveout_gib, 45.4 - 1.0) &&
           approx_eq(carveout_full->carveout_gib, 0.0) &&
-          approx_eq(small_carveout->carveout_gib, 0.0));
+          approx_eq(small_carveout->carveout_gib, 0.7));
 
     constexpr double halo_kv = 24576.0;
     auto halo64 = estimate_auto_context_budget(vgm64->available_gib, 44.73, halo_kv, true, false,
@@ -632,13 +634,9 @@ static void test_auto_context_budget() {
     auto heaps_exhausted = auto_context_available_split_gpu_gib(63.8, 63.8, 47.8, 47.0, 63.8, 60.0);
     check("auto ctx split: headroom never makes the available memory negative",
           heaps_exhausted && heaps_exhausted->available_gib == 0.0);
-    // Default firmware carve-out on a 128 GiB machine: weights nearly fill GTT.
-    auto default_gtt = auto_context_available_split_gpu_gib(0.5, 0.4, 62.5, 0.8, 124.9, 10.0);
-    auto default_gtt_budget = estimate_auto_context_budget(
-        default_gtt->available_gib, 59.03, 36864.0, true, false, true,
-        114.9 + default_gtt->carveout_gib);
-    check("auto ctx split: headroom does not push a default carve-out to the fallback",
-          default_gtt_budget.max_tokens > 8192);
+    // Default firmware carve-out on a 128 GiB machine keeps the plain UMA budget.
+    check("auto ctx split: a default carve-out keeps the plain UMA budget",
+          !auto_context_available_split_gpu_gib(0.5, 0.4, 62.5, 0.8, 124.9, 10.0));
 
     using lemon::auto_context_llamacpp_full_offload;
     auto full = [](const std::string& args, const char* env = nullptr) {
