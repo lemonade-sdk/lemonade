@@ -2524,6 +2524,19 @@ if(BUILD_TESTING AND EXISTS "${_BENCH_CONTEXT_TEST_SRC}")
     add_cpp_ci_test(BenchContextTest CI ON COMMAND test_bench_context)
 endif()
 
+# Chat REPL per-turn performance stats (pure logic; no server or model required).
+set(_CHAT_STATS_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_chat_stats.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_CHAT_STATS_TEST_SRC}")
+    add_executable(test_chat_stats ${_CHAT_STATS_TEST_SRC})
+    target_include_directories(test_chat_stats PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+    )
+    target_link_libraries(test_chat_stats PRIVATE nlohmann_json::nlohmann_json)
+    add_cpp_ci_test(ChatStatsTest CI ON COMMAND test_chat_stats)
+endif()
+
 # Custom arg parsing helpers (header-only utility shared by all arg resolvers).
 set(_CUSTOM_ARGS_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_custom_args.cpp"
