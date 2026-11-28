@@ -172,7 +172,7 @@ std::string find_executable_in_path(const std::string& executable_name) {
             if (fs::is_regular_file(candidate, ec) &&
                 (access(candidate.c_str(), X_OK) == 0)) {
                 std::string full = candidate.string();
-                return is_safe_executable_path(full) ? executable_name : "";
+                return is_safe_executable_path(full) ? full : "";
             }
         }
         if (end == std::string::npos) break;

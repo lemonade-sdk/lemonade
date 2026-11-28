@@ -2,19 +2,28 @@
 // directories and its own failure count; the only shared state is the process-wide
 // models directory, which every suite sets on entry.
 
+#include <cstdio>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <set>
+#include <stdexcept>
+#include <string>
+#include <utility>
+#include <vector>
+
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_registry.h"
-#include "lemon/model_manager.h"
-#include <cstdio>
-#include <set>
-#include <string>
+#include "lemon/backends/fastflowlm/fastflowlm_models.h"
 #include "lemon/backends/vllm/vllm_server.h"
 #include "lemon/backends/whispercpp/whispercpp_server.h"
+#include "lemon/config_file.h"
+#include "lemon/model_manager.h"
 #include "lemon/models/registry_id.h"
-#include "lemon/backends/fastflowlm/fastflowlm_models.h"
-#include <stdexcept>
-#include <vector>
+#include "lemon/runtime_config.h"
+#include "lemon/system_info.h"
+#include "lemon/utils/path_utils.h"
 
 // What each backend says its models need fetched. The ingest path asks this
 // question instead of naming backends, so the three answers are pinned here.
@@ -218,6 +227,166 @@ int run() {
 
 }  // namespace flm_pull_args
 
+namespace backend_uninstall {
+namespace {
+
+namespace fs = std::filesystem;
+using lemon::json;
+
+class ScopedEnvVar {
+public:
+    explicit ScopedEnvVar(std::string name)
+        : name_(std::move(name)), had_value_(std::getenv(name_.c_str()) != nullptr),
+          old_value_(lemon::utils::get_environment_variable_utf8(name_)) {
+        lemon::utils::unset_environment_variable_utf8(name_);
+    }
+
+    ~ScopedEnvVar() {
+        if (had_value_) {
+            lemon::utils::set_environment_variable_utf8(name_, old_value_);
+        } else {
+            lemon::utils::unset_environment_variable_utf8(name_);
+        }
+    }
+
+    void set(const fs::path& value) const {
+        lemon::utils::set_environment_variable_utf8(name_, lemon::utils::path_to_utf8(value));
+    }
+
+private:
+    std::string name_;
+    bool had_value_;
+    std::string old_value_;
+};
+
+class TestSystemInfo final : public lemon::SystemInfo {
+public:
+    lemon::CPUInfo get_cpu_device() override { return {}; }
+    lemon::GPUInfo get_amd_igpu_device() override { return {}; }
+    std::vector<lemon::GPUInfo> get_amd_dgpu_devices() override { return {}; }
+    std::vector<lemon::GPUInfo> get_nvidia_gpu_devices() override { return {}; }
+    lemon::NPUInfo get_npu_device() override { return {}; }
+};
+
+json build_recipes(const json& config_json, std::string* flm_path = nullptr) {
+    lemon::RuntimeConfig config(config_json);
+    auto* previous = lemon::RuntimeConfig::global();
+    lemon::RuntimeConfig::set_global(&config);
+    try {
+        TestSystemInfo system_info;
+        json result = system_info.build_recipes_info({
+            {"cpu", {{"name", "Test CPU"}, {"family", "x86_64"}}},
+        });
+        if (flm_path) {
+            *flm_path = lemon::backends::fastflowlm::find_flm_executable();
+        }
+        lemon::RuntimeConfig::set_global(previous);
+        return result;
+    } catch (...) {
+        lemon::RuntimeConfig::set_global(previous);
+        throw;
+    }
+}
+
+void write_binary(const fs::path& path) {
+    fs::create_directories(path.parent_path());
+    std::ofstream file(path, std::ios::binary);
+    file << "stub";
+    file.close();
+    if (!file) throw std::runtime_error("Could not write backend fixture");
+#ifndef _WIN32
+    fs::permissions(path, fs::perms::owner_exec, fs::perm_options::add);
+#endif
+}
+
+}  // namespace
+
+int run() {
+    int failures = 0;
+    const auto check = [&failures](bool ok, const char* message) {
+        std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", message);
+        if (!ok) ++failures;
+    };
+    const auto can_uninstall = [](const json& recipes, const char* recipe, const char* backend) {
+        return recipes.at(recipe).at("backends").at(backend).at("can_uninstall").get<bool>();
+    };
+
+    const fs::path scratch = fs::path(lemon::utils::get_cache_dir()) / "backend-uninstall";
+    const fs::path empty_path = scratch / "empty";
+    const fs::path system_path = scratch / "system";
+    fs::create_directories(empty_path);
+#ifdef _WIN32
+    const std::string binary_name = "flm.exe";
+#else
+    const std::string binary_name = "flm";
+#endif
+    write_binary(system_path / binary_name);
+    const fs::path managed_flm = fs::path(lemon::utils::get_downloaded_bin_dir())
+        / "flm" / "npu" / binary_name;
+    write_binary(managed_flm);
+
+    ScopedEnvVar path_env("PATH");
+    ScopedEnvVar flm_bin_env("LEMONADE_FLM_NPU_BIN");
+    ScopedEnvVar cpu_bin_env("LEMONADE_LLAMACPP_CPU_BIN");
+    path_env.set(empty_path);
+    json config = lemon::ConfigFile::base_defaults();
+    config["flm"]["prefer_system"] = false;
+    std::string flm_path;
+    const json managed = build_recipes(config, &flm_path);
+    check(!can_uninstall(managed, "llamacpp", "system"), "System backend cannot be uninstalled");
+    check(can_uninstall(managed, "llamacpp", "cpu"), "Managed llama.cpp can be uninstalled");
+    check(can_uninstall(managed, "flm", "npu"), "Managed FLM can be uninstalled");
+    check(fs::equivalent(flm_path, managed_flm), "FLM resolves to managed binary");
+
+    config["flm"]["prefer_system"] = true;
+    const json fallback = build_recipes(config, &flm_path);
+    check(can_uninstall(fallback, "flm", "npu"), "Missing system FLM keeps managed uninstall");
+    check(fs::equivalent(flm_path, managed_flm), "Missing system FLM resolves to managed binary");
+
+    path_env.set(managed_flm.parent_path());
+    const json managed_in_path = build_recipes(config, &flm_path);
+    check(can_uninstall(managed_in_path, "flm", "npu"), "Managed FLM on PATH can be uninstalled");
+    check(fs::equivalent(flm_path, managed_flm), "PATH resolves to managed FLM binary");
+
+    const fs::path nested_flm = managed_flm.parent_path() / "release" / binary_name;
+    write_binary(nested_flm);
+    path_env.set(nested_flm.parent_path());
+    const json nested_in_path = build_recipes(config, &flm_path);
+    check(can_uninstall(nested_in_path, "flm", "npu"), "Nested managed FLM on PATH can be uninstalled");
+    check(fs::equivalent(flm_path, nested_flm), "PATH resolves to nested managed FLM binary");
+
+    const fs::path sibling_flm = managed_flm.parent_path().string() + "-external";
+    write_binary(sibling_flm / binary_name);
+    path_env.set(sibling_flm);
+    check(!can_uninstall(build_recipes(config), "flm", "npu"), "Sibling FLM directory is external");
+
+    path_env.set(system_path);
+    const json system = build_recipes(config, &flm_path);
+    check(!can_uninstall(system, "flm", "npu"), "System FLM cannot be uninstalled");
+    check(flm_path == lemon::utils::find_executable_in_path(binary_name), "FLM resolves to system binary");
+    check(fs::equivalent(flm_path, system_path / binary_name), "PATH returns the discovered FLM path");
+    config["flm"]["prefer_system"] = false;
+    check(can_uninstall(build_recipes(config), "flm", "npu"), "Disabled system FLM keeps managed uninstall");
+
+    config["flm"]["npu_bin"] = lemon::utils::path_to_utf8(system_path);
+    check(!can_uninstall(build_recipes(config), "flm", "npu"), "External FLM cannot be uninstalled");
+    config["llamacpp"]["cpu_bin"] = lemon::utils::path_to_utf8(system_path);
+    check(!can_uninstall(build_recipes(config), "llamacpp", "cpu"), "External llama.cpp cannot be uninstalled");
+    config["llamacpp"]["cpu_bin"] = lemon::utils::path_to_utf8(scratch / "missing");
+    check(!can_uninstall(build_recipes(config), "llamacpp", "cpu"), "Missing external path keeps recipe metadata");
+    config["llamacpp"]["cpu_bin"] = "latest";
+    check(can_uninstall(build_recipes(config), "llamacpp", "cpu"), "Latest version pin keeps managed uninstall");
+    config["llamacpp"]["cpu_bin"] = "b1234";
+    check(can_uninstall(build_recipes(config), "llamacpp", "cpu"), "Version tag keeps managed uninstall");
+
+    config = lemon::ConfigFile::base_defaults();
+    config["flm"]["prefer_system"] = false;
+    flm_bin_env.set(system_path);
+    check(!can_uninstall(build_recipes(config), "flm", "npu"), "Environment FLM override cannot be uninstalled");
+    return failures == 0 ? 0 : 1;
+}
+
+}  // namespace backend_uninstall
 
 namespace backend_about {
 
@@ -268,6 +437,8 @@ int main() {
     failures |= engine_protocols::run();
     std::printf("\n=== flm pull args ===\n");
     failures |= flm_pull_args::run();
+    std::printf("\n=== backend uninstall ===\n");
+    failures |= backend_uninstall::run();
     std::printf("\n=== backend about ===\n");
     failures |= backend_about::run();
     return failures;
