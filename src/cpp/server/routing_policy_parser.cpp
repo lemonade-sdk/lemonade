@@ -160,6 +160,12 @@ void require_declared(const std::string& resolved,
     }
 }
 
+// Cap on the cost labels of a whole policy, summed over its cost classifiers;
+// cost_select fills its labels from routing.candidates. Each label costs one
+// cost_of() lookup per evaluate(), and /v1/routing/validate accepts any name, so
+// the total is bounded here. Other policies keep any number of candidates.
+constexpr std::size_t kMaxCostLabels = 64;
+
 std::vector<std::string> parse_candidates(const json& routing,
                                           const std::set<std::string>& declared,
                                           const RoutingPolicyParseOptions& options) {
@@ -383,6 +389,7 @@ MatchExpr parse_match_expr(const json& expr,
 }
 
 json parse_classifier_configs(const json& routing,
+                              const std::vector<std::string>& candidates,
                               const std::set<std::string>& declared,
                               const RoutingPolicyParseOptions& options) {
     if (!routing.contains("classifiers")) {
@@ -394,12 +401,45 @@ json parse_classifier_configs(const json& routing,
     }
 
     json resolved = json::array();
+    std::size_t cost_labels = 0;
     for (std::size_t i = 0; i < classifiers.size(); ++i) {
         const std::string path = path_index("routing.classifiers", i);
         const json& classifier = classifiers[i];
         reject_unknown_keys(classifier, routing_classifier_keys(), path);
         required_string(classifier, "id", path);
         const std::string type = required_string(classifier, "type", path);
+
+        if (type == "cost" && classifier.contains("labels")) {
+            const json& labels = classifier.at("labels");
+            if (!labels.is_array()) {
+                throw std::invalid_argument(path + ".labels must be an array");
+            }
+            cost_labels += labels.size();
+            if (cost_labels > kMaxCostLabels) {
+                throw std::invalid_argument(path + ".labels brings the policy's cost labels over " +
+                                            std::to_string(kMaxCostLabels));
+            }
+            std::set<std::string> resolved_labels;
+            for (std::size_t label_index = 0; label_index < labels.size(); ++label_index) {
+                const std::string label_path = path_index(path + ".labels", label_index);
+                if (!labels[label_index].is_string() ||
+                    labels[label_index].get<std::string>().empty()) {
+                    throw std::invalid_argument(label_path + " must be a non-empty string");
+                }
+                const std::string original = labels[label_index].get<std::string>();
+                const std::string resolved =
+                    resolve_component(original, options, label_path);
+                if (!contains_string(candidates, resolved)) {
+                    throw std::invalid_argument(
+                        label_path + " references '" + original +
+                        "', which is not listed in routing.candidates");
+                }
+                if (!resolved_labels.insert(resolved).second) {
+                    throw std::invalid_argument(
+                        label_path + " duplicates cost candidate '" + original + "'");
+                }
+            }
+        }
 
         if (classifier.contains("on_error")) {
             const std::string on_error = optional_string(classifier, "on_error", path);
@@ -618,35 +658,42 @@ const std::set<std::string>& routing_metadata_match_keys() {
     return keys;
 }
 
-// Desugar the `routing.router` (L0a) sugar into the explicit core form: one
-// `llm` classifier whose labels are the candidates, plus one identity rule per
+// Desugar the `routing.router` sugar into the explicit core form: one
+// classifier whose labels are the candidates, plus one identity rule per
 // candidate (label X -> route_to X), evaluated first-match-wins. The engine
 // stays single-path; `routing.router` is pure load-time sugar. Returns a new
 // `routing` object with `router` removed and `classifiers`/`rules` synthesized.
 //
+// Two variants share this shape:
+//   - "llm" (L0(a)): the classifier is an `llm` classifier that runs the
+//     author's model + prompt and must pick one candidate by name.
+//   - "cost_select" (L0(b)): the classifier is a deterministic `cost`
+//     classifier with no model/prompt — it ranks candidates via CostServices
+//     and picks the cheapest, falling open to `default_model` when no
+//     candidate has cost data.
+//
 // Names: the synthesized classifier labels and rule match.labels use the
 // AUTHORED candidate names (read from routing.candidates verbatim), because
-// that is the vocabulary the author's prompt exposes to the router LLM and
-// therefore what the model replies with. Only route_to is canonicalized — and
-// that happens downstream in parse_rules via the component resolver, exactly as
-// for hand-written rules. Feeding pre-resolved canonical IDs in here would
-// break label matching (the LLM never sees canonical IDs) and would
-// double-resolve route_to.
+// for "llm" that is the vocabulary the author's prompt exposes to the router
+// LLM and therefore what the model replies with (and for "cost_select" it's
+// simply the candidate identity the cost classifier ranks over). Only
+// route_to is canonicalized — and that happens downstream in parse_rules via
+// the component resolver, exactly as for hand-written rules. Feeding
+// pre-resolved canonical IDs in here would break label matching (the LLM
+// never sees canonical IDs) and would double-resolve route_to.
 json desugar_routing_router(const json& routing) {
     const json& router = routing.at("router");
     reject_unknown_keys(router, routing_router_keys(), "routing.router");
 
     const std::string type = required_string(router, "type", "routing.router");
-    if (type != "llm") {
-        throw std::invalid_argument("routing.router.type must be 'llm'");
+    if (type != "llm" && type != "cost_select") {
+        throw std::invalid_argument("routing.router.type must be 'llm' or 'cost_select'");
     }
     // The sugar owns classifiers + rules; authoring both forms is ambiguous.
     if (routing.contains("classifiers") || routing.contains("rules")) {
         throw std::invalid_argument(
             "routing.router cannot be combined with routing.classifiers or routing.rules");
     }
-    required_string(router, "model", "routing.router");
-    required_string(router, "prompt", "routing.router");
 
     // Authored names, validated already by parse_candidates (shape, non-empty,
     // declared, no duplicates after resolution) before this runs.
@@ -658,15 +705,29 @@ json desugar_routing_router(const json& routing) {
     json out = routing;
     out.erase("router");
 
-    // The single llm classifier. `model` is resolved later by
-    // parse_classifier_configs; labels are the candidates it must choose among.
-    out["classifiers"] = json::array({json{
-        {"id", "__router"},
-        {"type", "llm"},
-        {"model", router.at("model")},
-        {"prompt", router.at("prompt")},
-        {"labels", authored},
-    }});
+    if (type == "llm") {
+        required_string(router, "model", "routing.router");
+        required_string(router, "prompt", "routing.router");
+        // `model` is resolved later by parse_classifier_configs; labels are
+        // the candidates the llm classifier must choose among.
+        out["classifiers"] = json::array({json{
+            {"id", "__router"},
+            {"type", "llm"},
+            {"model", router.at("model")},
+            {"prompt", router.at("prompt")},
+            {"labels", authored},
+        }});
+    } else {  // cost_select
+        if (router.contains("model") || router.contains("prompt")) {
+            throw std::invalid_argument(
+                "routing.router.type 'cost_select' does not accept 'model' or 'prompt'");
+        }
+        out["classifiers"] = json::array({json{
+            {"id", "__router"},
+            {"type", "cost"},
+            {"labels", authored},
+        }});
+    }
 
     // Identity rules. Index-based ids avoid any charset assumptions about
     // candidate names (which may contain '.' or '-').
@@ -722,7 +783,8 @@ RoutePolicy parse_route_policy_collection(const json& collection_json,
     // routing_policy.cpp for why an author-declared classifier never does.
     const bool expose_request_features = is_router_sugar;
 
-    const json classifier_configs = parse_classifier_configs(*routing_eff, declared, options);
+    const json classifier_configs =
+        parse_classifier_configs(*routing_eff, policy.candidates, declared, options);
     policy.classifiers = make_classifiers(classifier_configs, expose_request_features);
     policy.rules = parse_rules(*routing_eff, policy.candidates, policy.classifiers, declared, options);
     policy.helper_models = collect_policy_helper_models(policy);

@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <cstdio>
 #include <filesystem>
 #include <optional>
@@ -119,6 +120,52 @@ static void test_cost_cache_sees_new_price(ModelManager& manager) {
           approx_equal(services.cost_of("user.PricedModel").cost_input_per_million, 0.75));
 }
 
+// /v1/routing/validate takes any candidate name, so names that are not models
+// must not pile up in the process-wide cache. The generations start far above
+// any ModelManager's so these tests get a cache of their own.
+static void test_cost_cache_skips_unknown_models(ModelManager& manager) {
+    int resolves = 0;
+    const lemon::CostServices services = lemon::make_cached_cost_services(
+        [] { return std::uint64_t{1000000}; },
+        [&manager, &resolves](const std::string& candidate) -> std::optional<lemon::CostInfo> {
+            ++resolves;
+            if (!manager.model_exists(candidate)) return std::nullopt;
+            return lemon::resolve_model_cost_info(manager.get_model_info(candidate));
+        });
+
+    for (int round = 0; round < 2; ++round) {
+        for (int i = 0; i < 500; ++i) {
+            services.cost_of("user.NoSuchModel" + std::to_string(i));
+        }
+    }
+    check("unknown candidates are resolved on every request, never cached", resolves == 1000);
+
+    services.cost_of("user.PricedModel");
+    services.cost_of("user.PricedModel");
+    check("a registered model is still cached", resolves == 1001);
+}
+
+static void test_cost_cache_is_bounded() {
+    int resolves = 0;
+    const lemon::CostServices services = lemon::make_cached_cost_services(
+        [] { return std::uint64_t{1000001}; },
+        [&resolves](const std::string&) -> std::optional<lemon::CostInfo> {
+            ++resolves;
+            return lemon::CostInfo{};
+        });
+
+    services.cost_of("model-0");
+    services.cost_of("model-0");
+    check("an entry within the bound is served from the cache", resolves == 1);
+
+    for (int i = 1; i <= 1024; ++i) {
+        services.cost_of("model-" + std::to_string(i));
+    }
+    const int before = resolves;
+    services.cost_of("model-0");
+    check("a full cache drops its entries rather than growing", resolves == before + 1);
+}
+
 static void test_typed_price_wins_over_extras() {
     lemon::ModelInfo info;
     info.cost_input_per_million = 2.0;
@@ -207,8 +254,10 @@ int main() {
         test_registration_preserves_cost_props(manager);
         test_router_resolves_registered_cost(manager);
         test_cost_cache_sees_new_price(manager);
+        test_cost_cache_skips_unknown_models(manager);
         test_unusable_values_are_dropped_on_read(manager);
     }
+    test_cost_cache_is_bounded();
     test_typed_price_wins_over_extras();
     test_unusable_cost_metadata_names_bad_keys();
     test_import_keeps_cost_props();

@@ -1253,6 +1253,25 @@ static void test_resolve_cost_info_typed_and_extras() {
           near(*from_both.cost_output_per_million, 10.0));
 }
 
+static void test_resolve_cost_info_provider_price_beats_tier() {
+    std::map<std::string, json> extras = {{"cost_tier", "free"}};
+    lemon::CostInfo priced =
+        lemon::resolve_cost_info(std::optional<double>{3.0},
+                                 std::optional<double>{15.0}, extras);
+    check("cost_tier is ignored when the provider supplies prices",
+          !priced.cost_tier.has_value());
+    check("the provider's prices are kept",
+          priced.cost_input_per_million.has_value() &&
+          near(*priced.cost_input_per_million, 3.0) &&
+          priced.cost_output_per_million.has_value() &&
+          near(*priced.cost_output_per_million, 15.0));
+
+    lemon::CostInfo partial =
+        lemon::resolve_cost_info(std::optional<double>{3.0}, std::nullopt, extras);
+    check("one provider price is enough to ignore cost_tier",
+          !partial.cost_tier.has_value());
+}
+
 static void test_resolve_cost_info_rejects_unknown_cost_tier() {
     std::map<std::string, json> extras = {{"cost_tier", "cheap"}};
     lemon::CostInfo info =
@@ -1326,6 +1345,7 @@ int main() {
     test_estimated_cost_swallows_cost_of_exception();
     test_estimated_cost_preserves_author_set_value();
     test_resolve_cost_info_typed_and_extras();
+    test_resolve_cost_info_provider_price_beats_tier();
     test_resolve_cost_info_rejects_unknown_cost_tier();
     test_cost_info_to_json();
 

@@ -43,7 +43,8 @@ ClassifierServices make_classifier_services_from_router_calls(
 // Resolve CostInfo from optional typed per-million fields plus recognized
 // extras keys (cost_tier, cost_*_per_million, latency_ms_hint). Typed values
 // win when present; extras fill gaps. cost_tier must be one of
-// free|low|medium|high — other values are dropped. Used by the Router
+// free|low|medium|high — other values are dropped — and is ignored when a
+// typed price is present, since those come from the cloud provider. Used by the Router
 // CostServices wiring and unit tests — keeps ModelInfo out of this header's
 // include graph.
 CostInfo resolve_cost_info(std::optional<double> cost_input_per_million,
@@ -56,9 +57,12 @@ CostInfo resolve_model_cost_info(const ModelInfo& info);
 
 // The cost_of behind make_router_cost_services(): results are cached across
 // calls and dropped whenever `generation` moves, so a price changed through
-// /pull is seen on the next request.
-CostServices make_cached_cost_services(std::function<std::uint64_t()> generation,
-                                       std::function<CostInfo(const std::string& candidate)> resolve);
+// /pull is seen on the next request. `resolve` returns std::nullopt for a name
+// that is not a registered model; that answer is not cached, since
+// /v1/routing/validate accepts any candidate name.
+CostServices make_cached_cost_services(
+    std::function<std::uint64_t()> generation,
+    std::function<std::optional<CostInfo>(const std::string& candidate)> resolve);
 
 CostServices make_router_cost_services(Router& router);
 

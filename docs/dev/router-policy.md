@@ -102,6 +102,7 @@ window, estimate ~4 bytes per token.
 | `zero_shot` | Scores the input against the `labels` **you** declare, sent with each request. Supports two kinds of zero-shot model: an LFM2 prompt router that reads the labels and the text together in a single pass, on the `onnxruntime` backend, and a llama.cpp decision model (`systemone` label). No LLM fallback. |
 | `systemone` | One typed question (`choice`, `noul`, or `score`) with your own instructions, answered by a llama.cpp decision model through `/v1/systemone`. Its labels are the question's options. |
 | `llm` | An LLM picks exactly one of the declared `labels` for the request (with a rationale); the chosen label scores `1.0`, the rest `0`. You supply the `model` and a `prompt` describing when to choose each label. |
+| `cost` | Deterministic, no model needed despite living in this table: ranks the declared `labels` by cost (`cost_input_per_million + cost_output_per_million`) and reports the cheapest as the winning label (`1.0`). No `model`/`prompt`. See [Cost-based routing](#cost-based-routing-routingroutertype-cost_select). |
 
 A classifier condition is a band test: `{ "classifier": "<id>", "label": "<name>",
 "min_score": 0.5, "max_score": 1.0 }` (omitting both bounds defaults to
@@ -201,6 +202,14 @@ and every entry's `model` must be one of `components`:
 > and replaces rules entirely (it's shorthand for a single `llm` classifier whose
 > labels are the candidate models); a `type: "llm"` classifier only produces a
 > label that rules combine with any other condition.
+>
+> The same split exists for cost: a `type: "cost"` classifier and
+> [`routing.router.type: "cost_select"`](#cost-based-routing-routingroutertype-cost_select)
+> are the two cost forms. `cost_select` is shorthand for a single `cost`
+> classifier whose labels are the candidates; a standalone `type: "cost"`
+> classifier just produces a label — every label must name a unique member of
+> `routing.candidates`, and you can combine it with other conditions, e.g.
+> "route to the cheapest candidate, but only when the request carries no tools."
 
 ### Truncated input (`on_truncation`)
 
@@ -416,6 +425,57 @@ Unlike a `type: "llm"` classifier (which never receives `has_tools`/
 `has_images`, see above), the router always does: it's the sole decision
 mechanism here, so `prompt` can rely on them directly — e.g. "use Vision-GGUF
 when the request includes images."
+
+## Cost-based routing (`routing.router.type: "cost_select"`)
+
+Instead of an LLM or hand-written rules, you can route automatically to
+whichever candidate is cheapest. Provide a `routing.router` block with no
+`model`/`prompt`:
+
+```json
+"routing": {
+  "candidates": ["Cheap-GGUF", "Mid-GGUF", "cloud.expensive"],
+  "default_model": "Mid-GGUF",
+  "router": {
+    "type": "cost_select"
+  }
+}
+```
+
+At request time the engine ranks every candidate by `cost_input_per_million +
+cost_output_per_million` — the same per-million prices behind
+`outputs.estimated_cost` — and routes to the cheapest. A candidate whose
+model entry sets `cost_tier: "free"` always scores as the cheapest,
+regardless of any per-million fields — this is how a free local model wins
+against a priced cloud one. The exception is a cloud model the provider
+prices: the provider's price wins, and the entry's `cost_tier` is ignored. Cloud models get their prices from the provider
+(see the [cloud guide](../guide/configuration/cloud.md)). A local model gets
+them from its own entry: pass the fields to `/v1/pull` when you register it,
+or write them in `user_models.json`, which is read at startup (see
+[Cost metadata](../guide/configuration/custom-models.md#cost-metadata)).
+`recipe_options.json` does not carry them, and built-in models have none.
+Cost selection is deterministic: no helper model, no `model`/`prompt`
+fields, and it desugars into the same first-match engine and `Decision`/trace
+as every other router form. The chosen candidate's own cost is still
+surfaced on `outputs.estimated_cost` exactly as it would be for a rule- or
+LLM-chosen `route_to` — cost reporting and cost selection compose.
+
+A candidate that's neither `cost_tier: "free"` nor resolves both per-million
+prices (any local model registered without them), or reports a negative/non-finite/overflowing price,
+is excluded from ranking. Each candidate is one price lookup per request,
+so the cost classifiers of a policy list at most 64 labels together, and
+`cost_select` takes at most 64 candidates. If **no** candidate in the list has usable cost
+data, the router falls open to `default_model` — the same fail-open contract
+as the `"llm"` router when it can't use a reply.
+`routing.router.type` must be `"llm"` or `"cost_select"`, and the block
+remains **mutually exclusive** with `routing.rules` and
+`routing.classifiers`.
+
+`cost_select` ranks by price only. It does not look at `has_images`,
+`has_tools` or any other request feature, and since the block cannot be
+combined with `routing.rules`, a policy cannot add a guard in front of it.
+List only candidates that can serve every request the collection receives:
+if some requests carry images, every candidate must accept images.
 
 ## Request Cancellation & Connection Robustness
 
