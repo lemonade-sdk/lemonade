@@ -22,7 +22,7 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `POST` | [`/v1/load`](#post-v1load) | Load a model |
 | `POST` | [`/v1/unload`](#post-v1unload) | Unload a model |
 | `POST` | [`/v1/audio/generations`](#post-v1audiogenerations) | Generate audio (music or sound effects) from a text prompt |
-| `POST` | [`/v1/3d/generations`](#post-v13dgenerations) | Generate a textured 3D mesh from an image |
+| `POST` | [`/v1/3d/generations`](#post-v13dgenerations) | Generate a 3D mesh from an image |
 | `POST` | [`/v1/videos`](#post-v1videos) | Generate a video from a text prompt |
 | `GET` | [`/v1/videos/{id}`](#get-v1videosid) | Read a video's status |
 | `GET` | [`/v1/videos/{id}/content`](#get-v1videosidcontent) | Download a generated video |
@@ -1446,7 +1446,7 @@ Format the `lyrics` value the way the ACE-Step authors recommend:
 ## `POST /v1/3d/generations`
 <sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
 
-Generates a textured 3D mesh, as a glTF-binary (`.glb`) file, from an image. It serves TRELLIS models such as `TRELLIS-3D` and is a Lemonade extension.
+Generates a mesh from an image. TRELLIS produces textured GLB meshes; TheNoise Hunyuan3D 2.1 produces geometry without textures. This is a Lemonade extension.
 
 Requires `LEMONADE_API_KEY` when it is set.
 
@@ -1456,13 +1456,20 @@ Requires `LEMONADE_API_KEY` when it is set.
 |-----------|----------|-------------|--------|
 | `model` | Yes | The model to run; loaded on first use. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `image` | Yes | Base64-encoded PNG, JPEG, BMP or GIF image, optionally as a `data:` URL. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `resolution` | No | Cascade resolution: `512`, `1024` or `1536`. Defaults to `512`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `bg_removal` | No | Background removal mode: `threshold` or `birefnet`. Use `birefnet` for photos with real backgrounds. Defaults to the backend's own. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `uv` | No | UV atlas method. `xatlas` unwraps every face into its own atlas space for the best texture quality, but slows down on large meshes. `box` is a faster six-plane projection that can leave small artifacts in concave regions. Defaults to `xatlas`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `resolution` | No | TRELLIS cascade resolution: `512`, `1024` or `1536`. Defaults to `512`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `bg_removal` | No | TRELLIS background removal mode: `threshold` or `birefnet`. Use `birefnet` for photos with real backgrounds. Defaults to the backend's own. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `uv` | No | TRELLIS UV atlas method. `xatlas` unwraps every face into its own atlas space for the best texture quality, but slows down on large meshes. `box` is a faster six-plane projection that can leave small artifacts in concave regions. Defaults to `xatlas`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `octree_resolution` | No | TheNoise mesh extraction grid resolution (8-768). Defaults to the model's `octree_resolution` recipe option, else the backend default. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `triangles` | No | TheNoise fraction of triangles to retain (0.001-1.0). Defaults to the model's `triangles` recipe option, else 0.05; use 1.0 for the raw detail level. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `steps` | No | TheNoise mesh denoising steps. Defaults to the model setting. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `seed` | No | Random seed for reproducibility. Defaults to the backend's own. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `response_format` | No | Output encoding. Only `glb`, the format the backend produces, is accepted. Defaults to `glb`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `response_format` or `output_format` | No | Output encoding: `glb` (default), or `stl` or `obj` (TheNoise only). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
-Reconstruction runs on the GPU (Vulkan, ROCm or CUDA) and takes minutes; higher `resolution` values take longer.
+Reconstruction runs on the GPU (Vulkan, ROCm or CUDA) and takes minutes; higher `resolution` (TRELLIS) or `octree_resolution` (TheNoise) values take longer.
+
+Backend-specific parameters are only used by the corresponding backend.
+
+TheNoise forwards additional JSON fields to its native mesh API, such as `smooth` and `floaters` (0.0-1.0).
 
 Errors carry a JSON `error` object.
 

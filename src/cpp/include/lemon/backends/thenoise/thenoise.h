@@ -33,6 +33,9 @@ inline const BackendDescriptor descriptor = {
         {"width", "", 512, "SIZE", "Output image width", "TheNoise Options"},
         {"height", "", 512, "SIZE", "Output image height", "TheNoise Options"},
         {"sampler", "", "", "ARGS", "Denoising solver (e.g. euler, er_sde, unipc)", "TheNoise Options"},
+        // Mesh generation defaults; 0 leaves octree resolution to the model.
+        {"octree_resolution", "", 0, "SIZE", "Mesh extraction grid resolution (8-768; 0 = model default)", "TheNoise Options"},
+        {"triangles", "", 0.05, "SIZE", "Fraction of mesh triangles to retain (0.001-1.0)", "TheNoise Options"},
         // Shared defaults must match sd-cpp: RecipeOptions keys are global.
         // TheNoise forwards only stored overrides; otherwise use native defaults.
         {"video_frames", "", 33, "SIZE", "Number of video frames", "TheNoise Options"},
@@ -52,15 +55,15 @@ inline const BackendDescriptor descriptor = {
 #endif
     },
     /*about*/ {
-        {"rocm", {"Lemonade's PyTorch image and video diffusion engine, tuned for AMD GPUs.",
+        {"rocm", {"Lemonade's PyTorch image, video and 3D generation engine, tuned for AMD GPUs.",
                   "lemonade-sdk", "lemonade-sdk", "Apache-2.0", "https://github.com/lemonade-sdk/thenoise"}},
 #if defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64)
-        {"cuda", {"Lemonade's PyTorch image and video diffusion engine, on NVIDIA GPUs.",
+        {"cuda", {"Lemonade's PyTorch image, video and 3D generation engine, on NVIDIA GPUs.",
                   "lemonade-sdk", "lemonade-sdk", "Apache-2.0", "https://github.com/lemonade-sdk/thenoise"}},
 #endif
     },
-    /*supported_modes*/ {"image", "video"},
-    /*required_checkpoints*/ {"main"},  // text_encoder+vae validated together in load()
+    /*supported_modes*/ {"image", "video", "3d"},
+    /*required_checkpoints*/ {"main"},  // Additional checkpoints depend on the deployment mode.
     /*default_capabilities*/ {},
     /*web_display_name*/ "thenoise",
     /*rocm_channels*/   {},  // single rocm artifact, no stable/nightly channels

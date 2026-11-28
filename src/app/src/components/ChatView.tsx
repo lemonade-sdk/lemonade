@@ -658,6 +658,8 @@ type Model3DSourceMode = 'image' | 'text';
 interface Model3DSettings {
   sourceMode: Model3DSourceMode;
   resolution: 512 | 1024 | 1536;
+  octreeResolution: 96 | 192 | 384 | 768 | '';
+  triangles: number | '';
   backgroundRemoval: 'birefnet' | 'threshold';
   seed: number | '';
   imageModel: string;
@@ -666,6 +668,8 @@ interface Model3DSettings {
 const DEFAULT_MODEL3D_SETTINGS: Model3DSettings = {
   sourceMode: 'image',
   resolution: 512,
+  octreeResolution: '',
+  triangles: '',
   backgroundRemoval: 'birefnet',
   seed: -1,
   imageModel: '',
@@ -1286,6 +1290,9 @@ const ChatView: React.FC<ChatViewProps> = ({
     || selectedModel
     || modelInfoName(lastReadyModelInfo)
     || preferredDefaultModelName;
+  useEffect(() => {
+    setModel3dSettings(prev => ({ ...prev, octreeResolution: '', triangles: '' }));
+  }, [currentModel]);
   const currentLoadedModel = useMemo(
     () => loadedModels.find(m => m.model_name.toLowerCase() === currentModel.toLowerCase()) || null,
     [loadedModels, currentModel],
@@ -2996,9 +3003,14 @@ ${finalText}`
         } else if (!referenceImage) {
           throw new Error(t('Image-to-3D needs one reference image.'));
         }
+        const isTheNoiseMesh = String(model.recipe || findModelInfoByName(knownModelInfos, model.name)?.recipe || '').toLowerCase() === 'thenoise';
         const result = await api.model3dGeneration(model.name, referenceImage, {
-          resolution: model3dSettings.resolution,
-          bg_removal: model3dSettings.backgroundRemoval,
+          ...(isTheNoiseMesh
+            ? {
+                ...(model3dSettings.octreeResolution === '' ? {} : { octree_resolution: model3dSettings.octreeResolution }),
+                ...(model3dSettings.triangles === '' ? {} : { triangles: model3dSettings.triangles }),
+              }
+            : { resolution: model3dSettings.resolution, bg_removal: model3dSettings.backgroundRemoval }),
           seed: model3dSettings.seed === '' ? -1 : model3dSettings.seed,
         });
         if (generatedReference?.length) {
@@ -3009,8 +3021,8 @@ ${finalText}`
         }
         appendAssistantMessage(convoId, {
           content: model3dSettings.sourceMode === 'text'
-            ? t('Rendered a reference image and reconstructed it as a textured 3D model.')
-            : t('Reconstructed the reference image as a textured 3D model.'),
+            ? t('Rendered a reference image and reconstructed it as a 3D model.')
+            : t('Reconstructed the reference image as a 3D model.'),
           generatedImages: generatedReference,
           generatedImageNames: generatedReference ? [`${model3dSettings.imageModel}-3d-reference.png`] : undefined,
           model3dUrl: trackGeneratedMediaUrl(result.url),
@@ -4731,29 +4743,60 @@ ${index}`;
                 </select>
               </label>
             )}
-            <label className="composer__image-setting">
-              <span>{t('Resolution')}</span>
-              <select
-                value={model3dSettings.resolution}
-                onChange={e => setModel3dSettings(prev => ({ ...prev, resolution: Number(e.target.value) as 512 | 1024 | 1536 }))}
-                disabled={isBusy}
-              >
-                <option value={512}>512 · fast</option>
-                <option value={1024}>1024 · sharp</option>
-                <option value={1536}>1536 · heavy</option>
-              </select>
-            </label>
-            <label className="composer__image-setting">
-              <span>{t('Background')}</span>
-              <select
-                value={model3dSettings.backgroundRemoval}
-                onChange={e => setModel3dSettings(prev => ({ ...prev, backgroundRemoval: e.target.value as 'birefnet' | 'threshold' }))}
-                disabled={isBusy}
-              >
-                <option value="birefnet">{t('Auto matte')}</option>
-                <option value="threshold">{t('Plain background')}</option>
-              </select>
-            </label>
+            {currentRecipe === 'thenoise' ? (
+              <>
+                <label className="composer__image-setting">
+                  <span>{t('Octree resolution')}</span>
+                  <select
+                    value={model3dSettings.octreeResolution}
+                    onChange={e => setModel3dSettings(prev => ({ ...prev, octreeResolution: e.target.value === '' ? '' : Number(e.target.value) as Model3DSettings['octreeResolution'] }))}
+                    disabled={isBusy}
+                  >
+                    <option value="">{t('Default')}</option>
+                    {[96, 192, 384, 768].map(value => <option key={value} value={value}>{value}</option>)}
+                  </select>
+                </label>
+                <label className="composer__image-setting">
+                  <span>{t('Triangles to retain')}</span>
+                  <select
+                    value={model3dSettings.triangles}
+                    onChange={e => setModel3dSettings(prev => ({ ...prev, triangles: e.target.value === '' ? '' : Number(e.target.value) }))}
+                    disabled={isBusy}
+                  >
+                    <option value="">{t('Default')}</option>
+                    {[1, 5, 10, 25, 50, 100].map(percent => (
+                      <option key={percent} value={percent / 100}>{percent}%</option>
+                    ))}
+                  </select>
+                </label>
+              </>
+            ) : (
+              <>
+                <label className="composer__image-setting">
+                  <span>{t('Resolution')}</span>
+                  <select
+                    value={model3dSettings.resolution}
+                    onChange={e => setModel3dSettings(prev => ({ ...prev, resolution: Number(e.target.value) as 512 | 1024 | 1536 }))}
+                    disabled={isBusy}
+                  >
+                    <option value={512}>512 · fast</option>
+                    <option value={1024}>1024 · sharp</option>
+                    <option value={1536}>1536 · heavy</option>
+                  </select>
+                </label>
+                <label className="composer__image-setting">
+                  <span>{t('Background')}</span>
+                  <select
+                    value={model3dSettings.backgroundRemoval}
+                    onChange={e => setModel3dSettings(prev => ({ ...prev, backgroundRemoval: e.target.value as 'birefnet' | 'threshold' }))}
+                    disabled={isBusy}
+                  >
+                    <option value="birefnet">{t('Auto matte')}</option>
+                    <option value="threshold">{t('Plain background')}</option>
+                  </select>
+                </label>
+              </>
+            )}
             <label className="composer__image-setting">
               <span>{t('Seed')}</span>
               <input

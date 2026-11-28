@@ -3,6 +3,40 @@
   "checksums": {
     "comment": "Expected SHA-256 of downloaded backend artifacts, verified after download (see BackendUtils::lookup_expected_asset_hash). GitHub release assets are keyed by checksums.github.<owner/repo>.<tag>.<asset>, with the sha256:<hex> digests GitHub publishes. Artifacts published outside GitHub are keyed by checksums.<recipe>.<backend>.<version>.<file>, apply to every backend_source, and are required. Update alongside the matching version pin below.",
     "github": {
+      "lemonade-sdk/thenoise": {
+        "thenoise-0.17.0-rocm10.1.0": {
+          "qualification-report-thenoise-0.17.0-rocm10.1.0-linux.json": "sha256:c7ff3497e5a864036715b1bcffad63cf9b514fe8e4fee7b048ddc57b0a247f04",
+          "qualification-report-thenoise-0.17.0-rocm10.1.0-windows.json": "sha256:d18ff9c6da8225fdb354823326f26e62720b45bc7873ea46b01295a018953636",
+          "thenoise-0.17.0-rocm10.1.0-cuda-x64.part01-of-02.tar.gz": "sha256:6f74410f4877a50a7cd624e62600e294391c9db328ae5fc4561e7e55687a29b6",
+          "thenoise-0.17.0-rocm10.1.0-cuda-x64.part02-of-02.tar.gz": "sha256:5292868e116cb75c976028f11e1b752d29f131abb3abc4c5b88c1af0a128962c",
+          "thenoise-0.17.0-rocm10.1.0-cuda-x64.partcount": "sha256:53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
+          "thenoise-0.17.0-rocm10.1.0-cuda-x64.sha256": "sha256:2b44b2ebc30ea382787e26d6127fac59f90c383dcbe3613b0a8b838abf95aa58",
+          "thenoise-0.17.0-rocm10.1.0-gfx103X-win-x64.part01-of-02.zip": "sha256:e0bfdd49dfe5ec2d993387de923d8855be8e59f67c14a1ca5e0414e2cea07568",
+          "thenoise-0.17.0-rocm10.1.0-gfx103X-win-x64.part02-of-02.zip": "sha256:6325461f5cb855094616951d51a4ba38acbd83a23f57bc8ad7a62d240644ce08",
+          "thenoise-0.17.0-rocm10.1.0-gfx103X-win-x64.partcount": "sha256:53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
+          "thenoise-0.17.0-rocm10.1.0-gfx103X-x64.part01-of-02.tar.gz": "sha256:947c2dbb6429ea3ac889aa611e769f28a4be0b7a7b42b86bdcf95b6e031a80c3",
+          "thenoise-0.17.0-rocm10.1.0-gfx103X-x64.part02-of-02.tar.gz": "sha256:72acd5c67d289957c2291d7a75e2345b4345edeafd7755ce3e323e07c7b2dc86",
+          "thenoise-0.17.0-rocm10.1.0-gfx103X-x64.partcount": "sha256:53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
+          "thenoise-0.17.0-rocm10.1.0-gfx110X-win-x64.part01-of-02.zip": "sha256:1ecb2dca55832c63c2b5b1f5d6022112dd122dd01359ab4bc4ac85204f36ba9d",
+          "thenoise-0.17.0-rocm10.1.0-gfx110X-win-x64.part02-of-02.zip": "sha256:b769156c3beb68a987a82dd7a4ac606639fabf4455f1d74341537f63a2b034d9",
+          "thenoise-0.17.0-rocm10.1.0-gfx110X-win-x64.partcount": "sha256:53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
+          "thenoise-0.17.0-rocm10.1.0-gfx110X-x64.part01-of-02.tar.gz": "sha256:498660e85020647b3d4af9948e9956d67a713a35dc470a034c15b56223f5f41e",
+          "thenoise-0.17.0-rocm10.1.0-gfx110X-x64.part02-of-02.tar.gz": "sha256:f5769f29c1017e980d7f52bae486273f14e5ebca5dea29c986b01df2bf0493a2",
+          "thenoise-0.17.0-rocm10.1.0-gfx110X-x64.partcount": "sha256:53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
+          "thenoise-0.17.0-rocm10.1.0-gfx1150-win-x64.zip": "sha256:fd7b12b7aa94e95be4c9c0f2358846008ce31c67ea7d6440907d9a89e4564741",
+          "thenoise-0.17.0-rocm10.1.0-gfx1150-x64.tar.gz": "sha256:f9419986ab7962dbd856d7dba0db7a00834e63f4c99f5b4029f54c4146576186",
+          "thenoise-0.17.0-rocm10.1.0-gfx1151-win-x64.zip": "sha256:a33fb869a6b20ae6801f99b4e4862b14edbfb1af0fea62098ee4bd4c1e70f43b",
+          "thenoise-0.17.0-rocm10.1.0-gfx1151-x64.tar.gz": "sha256:38797e1c41f0e7fa7df6036457c6d653d3aad2cea3550dd3bc3f09234d389940",
+          "thenoise-0.17.0-rocm10.1.0-gfx1152-win-x64.zip": "sha256:1aeeae843851ed7a632c2335bcb6bf1547f7a1e4571c2d030a8100d5c2fa90e6",
+          "thenoise-0.17.0-rocm10.1.0-gfx1152-x64.tar.gz": "sha256:e3cb0fdff3c619af87225fa4484b7fbdf5ff951beb1e92890991ee52f84db352",
+          "thenoise-0.17.0-rocm10.1.0-gfx120X-win-x64.part01-of-02.zip": "sha256:47a31d8c189303efd0e8f9e83fe5976c60c425b0754d8983d525017defdf07af",
+          "thenoise-0.17.0-rocm10.1.0-gfx120X-win-x64.part02-of-02.zip": "sha256:b89f7277c7f7892c6b9c833f38ea2f44476f38e91f515187dc62cedcae1b9ccb",
+          "thenoise-0.17.0-rocm10.1.0-gfx120X-win-x64.partcount": "sha256:53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
+          "thenoise-0.17.0-rocm10.1.0-gfx120X-x64.part01-of-02.tar.gz": "sha256:a7efc6910a0e603dfe8a5eae838e5fab2fb28bc235d6eaa679dc9ddac970c05f",
+          "thenoise-0.17.0-rocm10.1.0-gfx120X-x64.part02-of-02.tar.gz": "sha256:1149f289996ceb58cb1fa2faecef500dccecf6c1c90d0ed016752423e24bfe4a",
+          "thenoise-0.17.0-rocm10.1.0-gfx120X-x64.partcount": "sha256:53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3"
+        }
+      },
       "lemonade-sdk/ryzenai-server": {
         "v1.9.0": {
           "ryzenai-server.zip": "sha256:fbafd130d05fb6b6428e927761c65085d672384dd5968d5230b8ee3df878b5f0"
@@ -648,8 +682,8 @@
   },
   "thenoise": {
     "comment": "TheNoise shared release: ROCm uses <tag>-gfxNNNN-x64.tar.gz; Linux CUDA uses <tag>-cuda-x64.tar.gz.",
-    "rocm": "thenoise-0.16.0-rocm10.1.0",
-    "cuda": "thenoise-0.16.0-rocm10.1.0"
+    "rocm": "thenoise-0.17.0-rocm10.1.0",
+    "cuda": "thenoise-0.17.0-rocm10.1.0"
   },
   "rocm_asset_families": {
     "comment": "Maps a concrete ROCm ISA (as detected on the device) to the family target name the GitHub release repos publish assets under. ISAs not listed here (e.g. gfx908, gfx90a, which ship as individual assets) are used verbatim. Add a new GPU's ISA here when its release asset is published under a family name.",

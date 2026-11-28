@@ -206,6 +206,8 @@ Each backend has a tier and a format; see [Backend Tiers and Formats](../api/lem
 | `width` | — | SIZE | 512 | Output image width |
 | `height` | — | SIZE | 512 | Output image height |
 | `sampler` | — | ARGS | "" | Denoising solver (e.g. euler, er_sde, unipc) |
+| `octree_resolution` | — | SIZE | 0 | Mesh extraction grid resolution (8-768; 0 = model default) |
+| `triangles` | — | SIZE | 0.05 | Fraction of mesh triangles to retain (0.001-1.0) |
 | `video_frames` | — | SIZE | 33 | Number of video frames |
 | `fps` | — | SIZE | 16 | Video frames per second |
 | `flow_shift` | — | SIZE | 0.0 | Video flow shift (0 = model default) |

@@ -7,12 +7,13 @@
 #include "lemon/model_manager_types.h"
 #include "lemon/recipe_options.h"
 #include "lemon/backends/backend_utils.h"
+#include <mutex>
 #include <string>
 
 namespace lemon {
 namespace backends {
 
-class TheNoiseServer : public WrappedServer, public IImageServer, public IVideoServer, public IUpscaleServer {
+class TheNoiseServer : public WrappedServer, public IImageServer, public IVideoServer, public IUpscaleServer, public IModel3DServer {
 public:
     static InstallParams get_install_params(const std::string& backend, const std::string& version);
 
@@ -38,12 +39,16 @@ public:
     // IVideoServer implementation
     json video_generations(const json& request, std::atomic<bool>* cancel = nullptr) override;
 
+    void model_3d_generations(const json& request, httplib::DataSink& sink) override;
+
     std::string upscale_via_cli(
         const std::string& b64_image,
         const std::string& upscale_model_path,
         double upscale_factor) override;
 
 private:
+    std::mutex mesh_request_mutex_;
+
     nlohmann::json build_request(const nlohmann::json& request) const;
 
     // Returns "" when no size is named anywhere.

@@ -57,7 +57,7 @@ interface GltfDocument {
 
 interface ParsedGlb {
   json: GltfDocument;
-  binary: ArrayBuffer;
+  binary: DataView;
 }
 
 const GLB_MAGIC = 0x46546c67;
@@ -91,7 +91,7 @@ function parseGlb(data: ArrayBuffer): ParsedGlb {
   if (declaredLength > data.byteLength) throw new Error('The generated GLB file is truncated.');
 
   let json: GltfDocument | null = null;
-  let binary = new ArrayBuffer(0);
+  let binary = new DataView(new ArrayBuffer(0));
   let offset = 12;
   while (offset + 8 <= declaredLength) {
     const chunkLength = view.getUint32(offset, true);
@@ -103,7 +103,7 @@ function parseGlb(data: ArrayBuffer): ParsedGlb {
       const text = new TextDecoder().decode(new Uint8Array(data, chunkStart, chunkLength)).replace(/\u0000+$/g, '').trim();
       json = JSON.parse(text) as GltfDocument;
     } else if (chunkType === BIN_CHUNK) {
-      binary = data.slice(chunkStart, chunkEnd);
+      binary = new DataView(data, chunkStart, chunkLength);
     }
     offset = chunkEnd;
   }
@@ -167,7 +167,7 @@ function componentValue(view: DataView, byteOffset: number, type: GltfComponentT
   }
 }
 
-function accessorData(document: GltfDocument, binary: ArrayBuffer, accessorIndex: number): number[][] {
+function accessorData(document: GltfDocument, binary: DataView, accessorIndex: number): number[][] {
   const accessor = document.accessors?.[accessorIndex];
   if (!accessor) throw new Error(`Missing glTF accessor ${accessorIndex}.`);
   const componentCount = COMPONENTS[accessor.type];
@@ -179,7 +179,7 @@ function accessorData(document: GltfDocument, binary: ArrayBuffer, accessorIndex
     if (!bufferView || (bufferView.buffer ?? 0) !== 0) throw new Error('STL export supports only the embedded GLB buffer.');
     const stride = bufferView.byteStride || componentCount * componentBytes;
     const start = (bufferView.byteOffset || 0) + (accessor.byteOffset || 0);
-    const view = new DataView(binary);
+    const view = binary;
     for (let item = 0; item < accessor.count; item += 1) {
       for (let component = 0; component < componentCount; component += 1) {
         values[item][component] = componentValue(
@@ -197,8 +197,8 @@ function accessorData(document: GltfDocument, binary: ArrayBuffer, accessorIndex
     const indexViewInfo = document.bufferViews?.[sparse.indices.bufferView];
     const valueViewInfo = document.bufferViews?.[sparse.values.bufferView];
     if (!indexViewInfo || !valueViewInfo) throw new Error('The GLB contains an invalid sparse accessor.');
-    const indexView = new DataView(binary);
-    const valueView = new DataView(binary);
+    const indexView = binary;
+    const valueView = binary;
     const indexBytes = COMPONENT_BYTES[sparse.indices.componentType];
     const indexStart = (indexViewInfo.byteOffset || 0) + (sparse.indices.byteOffset || 0);
     const valueStart = (valueViewInfo.byteOffset || 0) + (sparse.values.byteOffset || 0);
@@ -242,7 +242,7 @@ function normal(a: Vec3, b: Vec3, c: Vec3): Vec3 {
   return length > 1e-12 ? [nx / length, ny / length, nz / length] : [0, 0, 0];
 }
 
-function collectTriangles(document: GltfDocument, binary: ArrayBuffer): Array<[Vec3, Vec3, Vec3]> {
+function collectTriangles(document: GltfDocument, binary: DataView): Array<[Vec3, Vec3, Vec3]> {
   const nodes = document.nodes || [];
   const meshes = document.meshes || [];
   const triangles: Array<[Vec3, Vec3, Vec3]> = [];
@@ -321,4 +321,184 @@ export async function glbUrlToStlBlob(glbUrl: string): Promise<Blob> {
   if (!response.ok) throw new Error(`Unable to read generated GLB (${response.status}).`);
   const parsed = parseGlb(await response.arrayBuffer());
   return new Blob([binaryStl(collectTriangles(parsed.json, parsed.binary))], { type: 'model/stl' });
+}
+
+// Read directly from the GLB buffer, including sparse overrides. The software
+// renderer needs every face, but does not expand it into per-triangle JS arrays.
+function previewAccessor(document: GltfDocument, binary: DataView, index: number, type: 'VEC3' | 'SCALAR') {
+  const accessor = document.accessors?.[index];
+  if (!accessor || accessor.type !== type || !Number.isSafeInteger(accessor.count) || accessor.count < 0) {
+    throw new Error('Invalid GLB preview accessor.');
+  }
+  const components = COMPONENTS[type];
+  const bytes = COMPONENT_BYTES[accessor.componentType];
+  if (!bytes) throw new Error('Unsupported GLB preview component type.');
+  const getView = (index: number) => {
+    const view = document.bufferViews?.[index];
+    if (!view || (view.buffer ?? 0) !== 0 || (view as GltfBufferView & { extensions?: Record<string, unknown> }).extensions?.EXT_meshopt_compression) {
+      throw new Error('Software preview requires uncompressed embedded geometry.');
+    }
+    return view;
+  };
+  const view = accessor.bufferView === undefined ? undefined : getView(accessor.bufferView);
+  const stride = view?.byteStride || components * bytes;
+  const start = (view?.byteOffset || 0) + (accessor.byteOffset || 0);
+  const sparse = accessor.sparse;
+  const indexStart = sparse ? (getView(sparse.indices.bufferView).byteOffset || 0) + (sparse.indices.byteOffset || 0) : 0;
+  const valueStart = sparse ? (getView(sparse.values.bufferView).byteOffset || 0) + (sparse.values.byteOffset || 0) : 0;
+  const indexBytes = sparse ? COMPONENT_BYTES[sparse.indices.componentType] : 0;
+  return {
+    count: accessor.count,
+    offset(item: number): number | undefined {
+      if (!Number.isInteger(item) || item < 0 || item >= accessor.count) throw new Error('Invalid GLB preview index.');
+      let offset = view ? start + item * stride : undefined;
+      if (sparse) {
+        // glTF sparse indices are sorted. Find an override without allocating the accessor.
+        let lo = 0; let hi = sparse.count;
+        while (lo < hi) {
+          const mid = Math.floor((lo + hi) / 2);
+          const target = componentValue(binary, indexStart + mid * indexBytes, sparse.indices.componentType);
+          if (target < item) lo = mid + 1; else hi = mid;
+        }
+        if (lo < sparse.count && componentValue(binary, indexStart + lo * indexBytes, sparse.indices.componentType) === item) {
+          offset = valueStart + lo * components * bytes;
+        }
+      }
+      return offset;
+    },
+    readScalar(item: number): number {
+      const offset = this.offset(item);
+      return offset === undefined ? 0 : componentValue(binary, offset, accessor.componentType, accessor.normalized);
+    },
+    readVec3(item: number, target: Vec3): void {
+      const offset = this.offset(item);
+      for (let c = 0; c < 3; c++) target[c] = offset === undefined ? 0
+        : componentValue(binary, offset + c * bytes, accessor.componentType, accessor.normalized);
+    },
+  };
+}
+
+export interface SoftwarePreviewView {
+  width: number;
+  height: number;
+  yaw: number;
+  pitch: number;
+  zoom: number;
+}
+
+// A depth buffer, rather than a painter's sort or a face sample, preserves
+// occlusion and actual openings in the mesh at any tessellation density.
+function rasterizeTriangle(projected: Float32Array, ia: number, ib: number, ic: number,
+                           width: number, height: number, depth: Float32Array, pixels: Uint8ClampedArray) {
+  const a = 3 * ia; const b = 3 * ib; const c = 3 * ic;
+  const ax = projected[a]; const ay = projected[a + 1]; const az = projected[a + 2];
+  const ux = projected[b] - ax; const uy = projected[b + 1] - ay; const uz = projected[b + 2] - az;
+  const vx = projected[c] - ax; const vy = projected[c + 1] - ay; const vz = projected[c + 2] - az;
+  const nx = uy * vz - uz * vy; const ny = uz * vx - ux * vz; const area = ux * vy - uy * vx;
+  if (!Number.isFinite(area) || area === 0) return;
+  const left = Math.max(0, Math.ceil(Math.min(ax, ax + ux, ax + vx) - 0.5));
+  const right = Math.min(width - 1, Math.floor(Math.max(ax, ax + ux, ax + vx) - 0.5));
+  const top = Math.max(0, Math.ceil(Math.min(ay, ay + uy, ay + vy) - 0.5));
+  const bottom = Math.min(height - 1, Math.floor(Math.max(ay, ay + uy, ay + vy) - 0.5));
+  if (left > right || top > bottom) return;
+  const inverse = 1 / area;
+  const length = Math.hypot(nx, ny, area);
+  const shade = Math.round(90 + 150 * Math.min(1, Math.abs(0.3 * nx - 0.5 * ny + 0.81 * area) / length));
+  // Pixel centers and inclusive shared edges avoid cracks between adjacent faces.
+  for (let y = top; y <= bottom; y++) {
+    const dy = y + 0.5 - ay;
+    for (let x = left; x <= right; x++) {
+      const dx = x + 0.5 - ax;
+      const u = (dx * vy - dy * vx) * inverse;
+      const v = (ux * dy - uy * dx) * inverse;
+      if (u < -1e-7 || v < -1e-7 || u + v > 1 + 1e-7) continue;
+      const z = az + u * uz + v * vz;
+      const i = y * width + x;
+      if (z <= depth[i]) continue;
+      depth[i] = z;
+      pixels[4 * i] = pixels[4 * i + 1] = pixels[4 * i + 2] = shade;
+      pixels[4 * i + 3] = 255;
+    }
+  }
+}
+
+export function createGlbPreview(data: ArrayBuffer) {
+  const { json: document, binary } = parseGlb(data);
+  const nodes = document.nodes || [];
+  type Accessor = ReturnType<typeof previewAccessor>;
+  const parts: Array<{ positions: Accessor; indices: Accessor | null; world: Mat4; mode: number; count: number }> = [];
+  const visit = (nodeIndex: number, parent: Mat4, path: Set<number>) => {
+    if (path.has(nodeIndex)) throw new Error('The generated GLB contains a cyclic node hierarchy.');
+    const node = nodes[nodeIndex];
+    if (!node) return;
+    const world = multiply(parent, nodeMatrix(node));
+    const nextPath = new Set(path).add(nodeIndex);
+    for (const primitive of (node.mesh === undefined ? [] : document.meshes?.[node.mesh]?.primitives || [])) {
+      if (primitive.extensions?.KHR_draco_mesh_compression || primitive.extensions?.EXT_meshopt_compression) {
+        throw new Error('Software preview requires uncompressed embedded geometry.');
+      }
+      const mode = primitive.mode ?? 4;
+      if (![4, 5, 6].includes(mode) || primitive.attributes?.POSITION === undefined) continue;
+      const positions = previewAccessor(document, binary, primitive.attributes.POSITION, 'VEC3');
+      const indices = primitive.indices === undefined ? null : previewAccessor(document, binary, primitive.indices, 'SCALAR');
+      const n = indices?.count ?? positions.count;
+      const count = mode === 4 ? Math.floor(n / 3) : Math.max(0, n - 2);
+      if (count) parts.push({ positions, indices, world, mode, count });
+    }
+    for (const child of node.children || []) visit(child, world, nextPath);
+  };
+  const children = new Set(nodes.flatMap(node => node.children || []));
+  const roots = document.scenes?.[document.scene ?? 0]?.nodes || nodes.map((_, i) => i).filter(i => !children.has(i));
+  for (const root of roots) visit(root, identity(), new Set<number>());
+  const triangleCount = parts.reduce((sum, part) => sum + part.count, 0);
+  if (!Number.isSafeInteger(triangleCount) || triangleCount < 1) throw new Error('The generated GLB contains no triangle mesh to preview.');
+
+  const min = [Infinity, Infinity, Infinity]; const max = [-Infinity, -Infinity, -Infinity];
+  const point: Vec3 = [0, 0, 0];
+  let maxVertices = 0;
+  for (const { positions, world } of parts) {
+    maxVertices = Math.max(maxVertices, positions.count);
+    for (let i = 0; i < positions.count; i++) {
+      positions.readVec3(i, point);
+      const p = transformPoint(world, point);
+      if (!p.every(Number.isFinite)) throw new Error('Invalid GLB preview vertex.');
+      for (let j = 0; j < 3; j++) { min[j] = Math.min(min[j], p[j]); max[j] = Math.max(max[j], p[j]); }
+    }
+  }
+  const center = min.map((v, i) => v + (max[i] - v) / 2);
+  const diameter = Math.hypot(...max.map((v, i) => v - min[i]));
+  if (!Number.isFinite(diameter) || diameter <= 0) throw new Error('Invalid GLB preview bounds.');
+  // Reuse a single compact projection buffer. The original GLB is retained in
+  // the worker; no full triangle soup, sort, or duplicate index buffer is needed.
+  const projected = new Float32Array(3 * maxVertices);
+
+  return { triangleCount, render({ width, height, yaw, pitch, zoom }: SoftwarePreviewView): Uint8ClampedArray {
+    if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > 960 || height > 960
+        || ![yaw, pitch, zoom].every(Number.isFinite) || zoom <= 0 || zoom > 4) throw new Error('Invalid GLB preview view.');
+    const pixels = new Uint8ClampedArray(width * height * 4);
+    const depth = new Float32Array(width * height).fill(-Infinity);
+    const scale = 0.85 * Math.min(width, height) * zoom / diameter;
+    const cy = Math.cos(yaw); const sy = Math.sin(yaw); const cp = Math.cos(pitch); const sp = Math.sin(pitch);
+    for (const { positions, indices, world, mode, count } of parts) {
+      for (let i = 0; i < positions.count; i++) {
+        positions.readVec3(i, point);
+        const p = transformPoint(world, point);
+        const x = p[0] - center[0]; const y = p[1] - center[1]; const z = p[2] - center[2];
+        const u = cy * x + sy * z; const w = -sy * x + cy * z;
+        projected[3 * i] = width / 2 + scale * u;
+        projected[3 * i + 1] = height / 2 - scale * (cp * y - sp * w);
+        projected[3 * i + 2] = scale * (sp * y + cp * w);
+      }
+      const index = (i: number) => indices ? indices.readScalar(i) : i;
+      for (let face = 0; face < count; face++) {
+        let a: number; let b: number; let c: number;
+        if (mode === 4) { a = index(3 * face); b = index(3 * face + 1); c = index(3 * face + 2); }
+        else if (mode === 5) { a = index(face); b = index(face + 1); c = index(face + 2); }
+        else { a = index(0); b = index(face + 1); c = index(face + 2); }
+        if (![a, b, c].every(i => Number.isInteger(i) && i >= 0 && i < positions.count)) throw new Error('Invalid GLB preview index.');
+        if (a !== b && b !== c && a !== c) rasterizeTriangle(projected, a, b, c, width, height, depth, pixels);
+      }
+    }
+    return pixels;
+  } };
 }

@@ -1443,7 +1443,8 @@ jobs:
             runner: [Linux, X64, rocm, stx-halo, lemon-prod]
             suites: >-
               [{"name":"llamacpp-hrx","script":"server_llm.py","extra_args":"--wrapped-server llamacpp-hrx","backends":"hrx"},
-               {"name":"thenoise","script":"server_thenoise.py","extra_args":"--wrapped-server thenoise","backends":"rocm"}]
+               {"name":"thenoise","script":"server_thenoise.py","extra_args":"--wrapped-server thenoise","backends":"rocm"},
+               {"name":"3d-thenoise","script":"server_3d.py","extra_args":"--wrapped-server thenoise","backends":"rocm"}]
           - name: vulkan-stx-halo
             runner: [Linux, X64, vulkan, stx-halo, lemon-prod]
             suites: >-
