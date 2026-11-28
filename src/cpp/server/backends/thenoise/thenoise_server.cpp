@@ -482,6 +482,7 @@ json TheNoiseServer::video_generations(const json& request, std::atomic<bool>* c
     const auto supplied = [&](const char* key) {
         return request.contains(key) && !request[key].is_null();
     };
+    if (supplied("image")) body["image"] = request["image"];
     const auto option = [&](const char* key, const char* target, bool zero_is_unset = false) {
         if (supplied(key)) {
             body[target] = request[key];

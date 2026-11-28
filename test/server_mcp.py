@@ -94,6 +94,9 @@ MCP_HUB_EXPECTED_TOOLS = {
     "lemonade_generate_image",
     "lemonade_generate_audio",
     "lemonade_text_to_speech",
+    "lemonade_generate_video",
+    "lemonade_get_video",
+    "lemonade_cancel_video",
     "lemonade_transcribe_audio",
     "lemonade_chat",
     "lemonade_omni",
@@ -532,6 +535,71 @@ class McpGatewayTests(ServerTestBase):
             self.assertEqual(response.status_code, 200)
             body = response.json()
             self.assertTrue(body["result"]["isError"], msg=str(arguments))
+
+    def test_021e_video_rejects_invalid_arguments_without_inference(self):
+        model = "Wan2.1-T2V-1.3B"
+        for arguments in (
+            {},
+            {"model": "", "prompt": "a cat"},
+            {"model": model},
+            {"model": model, "image": "not-base64!"},
+            {"model": model, "image": "aW1hZ2U=", "image_path": "start.png"},
+            {"model": model, "image_path": "../outside.png"},
+            {"model": model, "prompt": "a cat", "width": 0},
+            {"model": model, "prompt": "a cat", "clip_file": "injected"},
+            {"model": model, "prompt": "a cat", "image_file": "injected"},
+        ):
+            result = _call_tool("lemonade_generate_video", arguments)
+            self.assertTrue(result["isError"], msg=str(arguments))
+            self.assertNotIn("Unknown Lemonade server tool", str(result))
+
+        result = _call_tool(
+            "lemonade_generate_video", {"model": model, "image": "AAAA"}
+        )
+        self.assertTrue(result["isError"], result)
+        self.assertIn("image-to-video", str(result))
+
+        for name in ("lemonade_get_video", "lemonade_cancel_video"):
+            for job_id in ("does-not-exist", "../health"):
+                result = _call_tool(name, {"id": job_id})
+                self.assertTrue(result["isError"], msg=str(result))
+                self.assertNotIn("Unknown Lemonade server tool", str(result))
+
+    def test_021f_video_job_round_trip_without_gpu(self):
+        # The existing job API rejects non-video models before loading them.
+        import time
+
+        result = _call_tool(
+            "lemonade_generate_video",
+            {
+                "model": "Qwen3-0.6B-GGUF",
+                "prompt": "a cat",
+            },
+        )
+        self.assertFalse(result["isError"], result)
+        job_id = result["structuredContent"]["id"]
+        self.assertEqual(result["structuredContent"]["status"], "queued")
+        try:
+            deadline = time.monotonic() + TIMEOUT_DEFAULT
+            while time.monotonic() < deadline:
+                status = _call_tool("lemonade_get_video", {"id": job_id})
+                self.assertFalse(status["isError"], status)
+                payload = status["structuredContent"]
+                self.assertEqual(payload["id"], job_id)
+                if payload["status"] == "failed":
+                    self.assertIn("is not a video model", str(payload.get("error")))
+                    self.assertNotIn("content_path", payload)
+                    break
+                self.assertIn(payload["status"], ("queued", "running"), payload)
+                time.sleep(0.25)
+            else:
+                self.fail("Video job did not reach failed status")
+        finally:
+            requests.delete(
+                f"http://localhost:{PORT}/api/v1/jobs/{job_id}",
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
 
     def test_022_omni_rejects_non_collection_model(self):
         """

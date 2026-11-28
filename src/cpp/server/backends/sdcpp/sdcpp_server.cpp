@@ -687,6 +687,10 @@ json SDServer::video_generations(const json& request, std::atomic<bool>* cancel)
         body["negative_prompt"] = request["negative_prompt"];
     }
 
+    if (request.contains("image") && !request["image"].is_null()) {
+        body["init_image"] = request["image"];
+    }
+
     // Prefer explicit request dimensions, then the model's recipe options.
     // Omitted entirely when neither supplies them, so sd-server keeps its own
     // defaults rather than us inventing a resolution the model wasn't trained on.
@@ -784,8 +788,12 @@ json SDServer::video_generations(const json& request, std::atomic<bool>* cancel)
             BackendException(server_name_, "video generation canceled", 499));
     }
 
-    LOG(DEBUG, "SDServer") << "Forwarding video request to sd-server: "
-                           << body.dump(2) << std::endl;
+    if (body.contains("init_image")) {
+        LOG(DEBUG, "SDServer") << "Forwarding image-conditioned video request to sd-server" << std::endl;
+    } else {
+        LOG(DEBUG, "SDServer") << "Forwarding video request to sd-server: "
+                               << body.dump(2) << std::endl;
+    }
 
     // vid_gen is asynchronous: it answers 202 with a job handle and does the
     // work in the background. forward_request reports any non-200 as a backend

@@ -1,9 +1,13 @@
-#include <set>
+#include "video_shared.h"
+
+#include <optional>
 #include <string>
 
 #include <lemon/utils/aixlog.hpp>
 
 #include "lemon/jobs/job_manager.h"
+#include "lemon/model_manager.h"
+#include "lemon/model_types.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/shared_args.h"
 #include "lemon/server/video_store.h"
@@ -17,10 +21,14 @@ using ordered_json = nlohmann::ordered_json;
 const RouteError kShuttingDown{503, "", "The server is shutting down"};
 const RouteError kJobLimit{429, "", "All 50 jobs in the store are still active or resumable"};
 
-const RouteArg kPrompt{"prompt", ArgIn::JsonBody, {{"type", "string"}}, true, Support::Available,
-                       "The text description of the video to generate."};
+const RouteArg kPrompt{"prompt", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+                       "Text describing the video. Required without an image; image-only requests "
+                       "use the default prompt: Animate the image."};
 const RouteArg kNegativePrompt{"negative_prompt", ArgIn::JsonBody, {{"type", "string"}}, false,
                                Support::Available, "Text describing what to avoid."};
+const RouteArg kImage{"image", ArgIn::JsonBody, {{"type", "string"}}, false, Support::Available,
+                      "Optional start image as raw base64 (no data URL, maximum 8 MiB encoded); "
+                      "requires a video model with the `image-to-video` label."};
 const RouteArg kVideoFrames{"video_frames", ArgIn::JsonBody,
                             {{"type", "integer"}, {"minimum", 1}, {"maximum", video_store::kMaxVideoFrames}}, false,
                             Support::Available,
@@ -68,10 +76,10 @@ public:
         s.id = "lemonade.videos_create";
         s.methods = {"POST"};
         s.paths = {"videos"};
-        s.summary = "Generate a video from a text prompt";
+        s.summary = "Generate a video from text or an image";
         s.experimental = true;
         s.description =
-            "Starts generating a video from a text prompt and returns a handle at once. Generation "
+            "Starts generating a video from a text prompt or optional start image and returns a handle at once. Generation "
             "runs for minutes, so it is a job rather than a held connection: poll "
             "[`GET /v1/videos/{id}`](#get-v1videosid), then fetch the clip from "
             "[`GET /v1/videos/{id}/content`](#get-v1videosidcontent). It serves "
@@ -79,7 +87,8 @@ public:
             "[TheNoise](https://github.com/lemonade-sdk/thenoise) video models and is a Lemonade extension.";
         s.notes = {
             "The model loads when the job starts, not during this request.",
-            "The clip is kept on disk under the cache directory. Generating another video deletes the clips of deleted or evicted jobs.",
+            "Input images and clips are kept on disk under the cache directory. Generating another video "
+            "removes files of deleted or evicted jobs.",
             "stable-diffusion.cpp generates a single frame when no frame count is given, and video "
             "models need a few dozen frames before they animate rather than drift, so Lemonade sends "
             "33 by default.",
@@ -89,8 +98,8 @@ public:
             "takes about 140 s and peaks at about 14 GB of VRAM.",
         };
         s.args = {
-            kPrompt, model_loading::kModel, kNegativePrompt, kDuration, kVideoFrames, kFps, kWidth, kHeight,
-            kVideoSteps, kCfgScale, kSamplingMethod, kFlowShift, inference::kSeed, kOutputFormat
+            kPrompt, model_loading::kModel, kNegativePrompt, kImage, kDuration, kVideoFrames, kFps,
+            kWidth, kHeight, kVideoSteps, kCfgScale, kSamplingMethod, kFlowShift, inference::kSeed, kOutputFormat
         };
 
         RouteResponse response;
@@ -127,14 +136,44 @@ public:
             const std::string model =
                 canonical_model_name(ctx_, req.arg(model_loading::kModel).get<std::string>());
             req.body[model_loading::kModel.name] = model;
+            if (req.body.contains("image_file")) {
+                write_openai_error(res, kArgInvalid, "'image_file' is reserved for the server");
+                return;
+            }
             if (const std::string error = video_store::normalize_request(req.body); !error.empty()) {
                 write_openai_error(res, kArgInvalid, error);
                 return;
             }
-            // Set here, never taken from the client, and named before the job runs so
-            // the clean-up below cannot remove a clip that is still being written.
+            if (!req.body.contains(kPrompt.name) || !req.body[kPrompt.name].is_string() ||
+                req.body[kPrompt.name].get_ref<const std::string&>().find_first_not_of(" \t\r\n") == std::string::npos) {
+                write_openai_error(res, kArgInvalid, "Provide a prompt or an image");
+                return;
+            }
+            const bool has_image = req.body.contains(kImage.name) && !req.body[kImage.name].is_null();
+            if (has_image) {
+                std::optional<ModelInfo> info;
+                try {
+                    info = ctx_.model_manager->get_model_info(model);
+                } catch (const std::exception&) {
+                }
+                if (!info || get_model_type_from_labels(info->labels) != ModelType::VIDEO ||
+                    !has_label(info->labels, "image-to-video")) {
+                    write_openai_error(res, kArgInvalid,
+                        "model '" + model + "' must be an available video model with the image-to-video label");
+                    return;
+                }
+            }
+
+            prune_video_files(ctx_);
+            video_store::StagedImages staged;
+            if (has_image) {
+                const auto file = staged.stage(req.body[kImage.name].get_ref<const std::string&>());
+                req.body.erase(kImage.name);
+                req.body["image_file"] = file;
+            }
+            // Set here, never taken from the client. The job records the preferred
+            // output name before the worker reserves and writes the clip.
             req.body["clip_file"] = video_store::new_file_name();
-            remove_unreferenced_clips();
 
             lemon::jobs::StepRecord step;
             step.id = "video";
@@ -167,27 +206,6 @@ public:
         }
     }
 
-private:
-    void remove_unreferenced_clips() {
-        video_store::clean_up([this] {
-            video_store::CleanupSnapshot snapshot;
-            for (const auto& summary : ctx_.job_manager->list()) {
-                const auto found = ctx_.job_manager->get(summary.value("id", ""));
-                if (!found) continue;
-                snapshot.live_jobs.insert(found->id);
-                const json job = found->to_api_json();
-                if (!job.contains("steps") || !job["steps"].is_array()) continue;
-                for (const auto& step : job["steps"]) {
-                    for (const char* where : {"params", "output"}) {
-                        if (step.contains(where) && step[where].is_object() &&
-                            step[where].contains("clip_file") && step[where]["clip_file"].is_string())
-                            snapshot.referenced.insert(step[where]["clip_file"].get<std::string>());
-                    }
-                }
-            }
-            return snapshot;
-        });
-    }
 };
 
 } // namespace

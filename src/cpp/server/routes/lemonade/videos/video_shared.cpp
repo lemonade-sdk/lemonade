@@ -26,6 +26,28 @@ std::optional<nlohmann::json> find_video(ServerContext& ctx, const std::string& 
     return record;
 }
 
+void prune_video_files(ServerContext& ctx) {
+    video_store::clean_up([&ctx] {
+        video_store::CleanupSnapshot snapshot;
+        for (const auto& summary : ctx.job_manager->list()) {
+            const auto found = ctx.job_manager->get(summary.value("id", ""));
+            if (!found) continue;
+            snapshot.live_jobs.insert(found->id);
+            for (const auto& step : found->steps) {
+                for (const auto* record : {&step.params, &step.output}) {
+                    if (record->is_object() && record->contains("clip_file") &&
+                        (*record)["clip_file"].is_string())
+                        snapshot.referenced.insert((*record)["clip_file"].get<std::string>());
+                }
+                if (step.op == "generate_video" && step.params.is_object() &&
+                    step.params.contains("image_file") && step.params["image_file"].is_string())
+                    snapshot.referenced.insert(step.params["image_file"].get<std::string>());
+            }
+        }
+        return snapshot;
+    });
+}
+
 void write_unknown_video(httplib::Response& res) {
     write_plain_error(res, kUnknownVideo, "unknown video");
 }

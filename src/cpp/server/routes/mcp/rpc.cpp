@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "lemon/jobs/job_manager.h"
 #include "lemon/model_manager.h"
 #include "lemon/model_types.h"
 #include "lemon/router.h"
@@ -22,6 +23,8 @@
 #include "lemon/mcp_server.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/model_loader.h"
+#include "lemon/server/video_store.h"
+#include "lemon/utils/path_utils.h"
 
 namespace lemon {
 namespace {
@@ -476,6 +479,52 @@ nlohmann::json call_mcp_server_capability(ServerContext& ctx,
             return call_binary_handler(
                 body, "/api/v1/audio/speech", "Generated speech audio.",
                 fallback_mime_type);
+        }
+
+        if (tool_name == "lemonade_generate_video") {
+            validate_mcp_model_arguments(arguments, {
+                "model", "prompt", "image", "negative_prompt", "duration", "video_frames",
+                "fps", "width", "height", "steps", "cfg_scale", "sampling_method",
+                "flow_shift", "seed", "output_format"});
+            json body = arguments;
+            body["model"] = required_mcp_model_string(arguments, "model");
+            return call_json_handler(body, "/api/v1/videos");
+        }
+
+        if (tool_name == "lemonade_get_video" || tool_name == "lemonade_cancel_video") {
+            validate_mcp_model_arguments(arguments, {"id"});
+            const std::string id = required_mcp_model_string(arguments, "id");
+            // The ID becomes a route path segment, never an arbitrary route.
+            if (id.size() > 128 || !std::all_of(id.begin(), id.end(), [](unsigned char c) {
+                    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                           (c >= '0' && c <= '9') || c == '-' || c == '_';
+                })) {
+                throw std::invalid_argument("Invalid video job id");
+            }
+            const std::string path = "/api/v1/videos/" + id;
+            if (tool_name == "lemonade_cancel_video") {
+                return call_json_handler(json::object(), (path + "/cancel").c_str());
+            }
+            json result = call_get_handler(path.c_str());
+            if (result.at("isError").get<bool>()) return result;
+
+            json payload = result.at("structuredContent");
+            if (payload.value("status", std::string()) == "completed") {
+                payload["content_path"] = path + "/content";
+                if (const auto job = ctx.job_manager->get(id)) {
+                    const json record = job->to_api_json();
+                    if (video_store::is_video_job(record)) {
+                        const auto& step = record.at("steps").at(0);
+                        if (step.contains("output") && step["output"].is_object()) {
+                            const auto file = step["output"].value("clip_file", std::string());
+                            if (video_store::is_valid_file_name(file) && video_store::exists(file)) {
+                                payload["file_path"] = utils::path_to_utf8(video_store::dir() / file);
+                            }
+                        }
+                    }
+                }
+            }
+            return mcp_model_tool_result(std::move(payload), false);
         }
 
         return mcp_model_tool_result({{"error", "Unknown Lemonade server tool: " + tool_name}}, true);

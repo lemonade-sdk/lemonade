@@ -538,11 +538,9 @@ DISTINCT_ARGUMENTS = {
             ],
         ),
         (
-            "Audio's prompt is the style caption, with lyrics separate; images' is the image; "
-            "videos' is the clip",
+            "Audio's prompt is the style caption, with lyrics separate; images' describes the image",
             [
                 "routes/lemonade/inference/audio_generations.cpp:kPrompt",
-                "routes/lemonade/videos/videos_create.cpp:kPrompt",
                 "routes/openai/images/images_generations.cpp:openai::images::kPrompt",
             ],
         ),
@@ -635,8 +633,10 @@ DISTINCT_ARGUMENTS = {
             ],
         ),
         (
-            "Text to continue or an image to generate, versus text to route",
+            "Videos require a prompt without an image; Ollama continues text or generates an image; "
+            "routing validation takes text to route",
             [
+                "routes/lemonade/videos/videos_create.cpp:kPrompt",
                 "routes/ollama/generate.cpp:kPrompt",
                 "routes/router/routing_validate.cpp:kPrompt",
             ],

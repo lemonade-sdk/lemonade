@@ -22,6 +22,7 @@
 #include "lemon/collection_orchestrator.h"
 #include "lemon/model_types.h"
 #include "lemon/models/store_snapshot.h"
+#include "lemon/server/video_store.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/version.h"
@@ -1766,6 +1767,111 @@ std::vector<McpTool> McpServer::build_tools() {
             },
             [this](const json& arguments) {
                 return tool_generate_image(arguments);
+            }),
+        McpTool(
+            json{
+                {"name", "lemonade_generate_video"},
+                {"description", "Start a video generation job from text, an image, or both. Choose an exact video model from lemonade_list_models; image conditioning requires a video model with the image-to-video label. An explicitly selected model may be downloaded on first use. Returns immediately; poll lemonade_get_video with the returned id instead of resubmitting."},
+                {"annotations", {{"readOnlyHint", false}, {"destructiveHint", false}, {"openWorldHint", true}}},
+                {"inputSchema", {
+                    {"type", "object"},
+                    {"required", json::array({"model"})},
+                    {"additionalProperties", false},
+                    {"properties", {
+                        {"model", {{"type", "string"}, {"description", "Exact video model ID."}}},
+                        {"prompt", {{"type", "string"}, {"description", "Text describing the video or motion. Required without an image; image-only requests default to Animate the image."}}},
+                        {"image", {{"type", "string"}, {"description", "Optional start image as raw base64 (no data URL; maximum 8 MiB encoded)."}}},
+                        {"image_path", {{"type", "string"}, {"description", "Optional start image file inside the MCP image sandbox (relative or absolute). Mutually exclusive with image."}}},
+                        {"negative_prompt", {{"type", "string"}, {"description", "Text describing what to avoid."}}},
+                        {"duration", {{"type", "number"}, {"description", "Approximate clip duration in seconds. video_frames takes precedence."}, {"minimum", 0}}},
+                        {"video_frames", {{"type", "integer"}, {"description", "Number of frames to generate."}, {"minimum", 1}}},
+                        {"fps", {{"type", "integer"}, {"description", "Frames per second."}, {"minimum", 1}}},
+                        {"width", {{"type", "integer"}, {"description", "Output width in pixels."}, {"minimum", 1}}},
+                        {"height", {{"type", "integer"}, {"description", "Output height in pixels."}, {"minimum", 1}}},
+                        {"steps", {{"type", "integer"}, {"description", "Number of sampling steps."}, {"minimum", 1}}},
+                        {"cfg_scale", {{"type", "number"}, {"description", "Classifier-free guidance scale."}}},
+                        {"sampling_method", {{"type", "string"}, {"description", "Sampler name, such as euler."}}},
+                        {"flow_shift", {{"type", "number"}, {"description", "Flow shift for compatible models."}}},
+                        {"seed", {{"type", "integer"}, {"description", "Random seed for reproducibility."}}},
+                        {"output_format", {{"type", "string"}, {"description", "Container: webm (default), webp or avi (SD.cpp), or mp4 (TheNoise)."}, {"enum", json::array({"webm", "webp", "avi", "mp4"})}}},
+                    }},
+                }},
+                {"_meta", {{"lemonade/result", {{"description", "Success returns structuredContent with id, status, model and creation metadata; the video is generated asynchronously."}}}}},
+            },
+            [this](const json& arguments) {
+                json body = json::object();
+                for (const auto& [key, value] : arguments.items()) {
+                    if (!value.is_null()) body[key] = value;
+                }
+                if (body.contains("image_path")) {
+                    if (body.contains("image")) {
+                        throw std::invalid_argument("Provide at most one of image or image_path");
+                    }
+                    const auto root = mcp_image_sandbox_root();
+                    const auto path = std::filesystem::canonical(sanitize_sandboxed_path(
+                        body["image_path"].get<std::string>(), root, "image_path"));
+                    const auto rel = path.lexically_relative(std::filesystem::canonical(root));
+                    if (rel.empty() || rel == "." || *rel.begin() == ".." ||
+                        !std::filesystem::is_regular_file(path)) {
+                        throw std::invalid_argument("image_path must name a regular file inside the MCP image sandbox");
+                    }
+                    std::ifstream input(path, std::ios::binary | std::ios::ate);
+                    if (!input) throw std::runtime_error("Cannot open image_path");
+                    const auto size = input.tellg();
+                    if (size <= 0 || size > static_cast<std::streamoff>(
+                            video_store::kMaxImageBase64Bytes / 4 * 3)) {
+                        throw std::invalid_argument("image_path is empty or exceeds the 6 MiB image limit");
+                    }
+                    std::string bytes(static_cast<std::size_t>(size), '\0');
+                    input.seekg(0);
+                    if (!input.read(bytes.data(), static_cast<std::streamsize>(bytes.size()))) {
+                        throw std::runtime_error("Cannot read image_path");
+                    }
+                    body["image"] = utils::JsonUtils::base64_encode(bytes);
+                    body.erase("image_path");
+                }
+                if (!body.contains("prompt")) body["prompt"] = "";
+                if (!body.contains("image") &&
+                    body["prompt"].get<std::string>().find_first_not_of(" \t\r\n") == std::string::npos) {
+                    throw std::invalid_argument("Provide a prompt or an image");
+                }
+                return server_tool_("lemonade_generate_video", body);
+            }),
+        McpTool(
+            json{
+                {"name", "lemonade_get_video"},
+                {"description", "Get a video job's current status. Poll the id from lemonade_generate_video until completed, failed or canceled. On completion, use content_path to download the clip from the same Lemonade server, or file_path when sharing the server filesystem."},
+                {"annotations", {{"readOnlyHint", true}, {"destructiveHint", false}, {"openWorldHint", false}}},
+                {"inputSchema", {
+                    {"type", "object"},
+                    {"required", json::array({"id"})},
+                    {"additionalProperties", false},
+                    {"properties", {
+                        {"id", {{"type", "string"}, {"description", "Video job ID returned by lemonade_generate_video."}}},
+                    }},
+                }},
+                {"_meta", {{"lemonade/result", {{"description", "Returns structuredContent with video status and metadata. Completed jobs include content_path and, if the stored clip exists, the server-local file_path. No video bytes are returned inline."}}}}},
+            },
+            [this](const json& arguments) {
+                return server_tool_("lemonade_get_video", arguments);
+            }),
+        McpTool(
+            json{
+                {"name", "lemonade_cancel_video"},
+                {"description", "Cancel a queued or running video job using the existing video job cancellation mechanism."},
+                {"annotations", {{"readOnlyHint", false}, {"destructiveHint", true}, {"openWorldHint", false}}},
+                {"inputSchema", {
+                    {"type", "object"},
+                    {"required", json::array({"id"})},
+                    {"additionalProperties", false},
+                    {"properties", {
+                        {"id", {{"type", "string"}, {"description", "Video job ID returned by lemonade_generate_video."}}},
+                    }},
+                }},
+                {"_meta", {{"lemonade/result", {{"description", "Returns structuredContent with status canceling on success. Poll lemonade_get_video for the final status."}}}}},
+            },
+            [this](const json& arguments) {
+                return server_tool_("lemonade_cancel_video", arguments);
             }),
         McpTool(
             json{
