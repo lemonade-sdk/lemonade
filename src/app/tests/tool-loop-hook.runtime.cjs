@@ -34,6 +34,7 @@ function makeHarness(executeTool) {
   const toolLoopDetector = new ToolLoopDetector();
   const runtime = { execute: executeTool };
   const controller = { signal: { aborted: false } };
+  const toolCallsStartedRef = { current: new Set() };
   const ownsConversation = () => true;
   const dropTokenBufferIfOwned = () => {};
   const cleanupIfOwned = () => {};

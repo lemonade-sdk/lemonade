@@ -101,6 +101,7 @@ interface Message {
   model3dUrl?: string; // transient generated GLB object URL
   model3dName?: string;
   thinking?: string;
+  interrupted?: boolean;
   stats?: ChatCompletionStats;
   toolCalls?: ToolCallEntry[];
   model?: ModelSnapshot | null;
@@ -320,6 +321,7 @@ function normalizeConversation(raw: unknown, stableId?: string): Conversation | 
       role: m.role === 'assistant' ? 'assistant' as const : 'user' as const,
       content: typeof m.content === 'string' ? m.content : '',
       thinking: typeof m.thinking === 'string' ? m.thinking : undefined,
+      interrupted: m.interrupted === true || undefined,
       stats: m.stats as ChatCompletionStats | undefined,
       toolCalls: Array.isArray(m.toolCalls) ? m.toolCalls as ToolCallEntry[] : undefined,
       model: normalizeSnapshot(m.model),
@@ -977,6 +979,16 @@ const ChatView: React.FC<ChatViewProps> = ({
   const [activeId, setActiveId] = useState<string | null>(null);
   const [incomingPrompt] = useState(readBrowserPromptDraft);
   const [inputValue, setInputValue] = useState(incomingPrompt);
+  // Asynchronous startup must never resurrect a deleted conversation.
+  const deletedConversationIdsRef = useRef<Set<string>>(new Set());
+  // Only the latest send/edit/retry may start inference for a conversation.
+  const startAttemptRef = useRef<Map<string, symbol>>(new Map());
+  // Tracks the old stream generation until the replacement stream is installed.
+  const interruptPendingRef = useRef<Map<string, number>>(new Map());
+  const [, setInterruptGuardEpoch] = useState(0);
+  const clearInterruptPending = useCallback((convoId: string) => {
+    if (interruptPendingRef.current.delete(convoId)) setInterruptGuardEpoch(epoch => epoch + 1);
+  }, []);
   const [imageMode, setImageMode] = useState<ImageMode>('generate');
   const [imageSettings, setImageSettings] = useState<ImageGenerationSettings>(DEFAULT_IMAGE_SETTINGS);
   const [audioGenerationSettings, setAudioGenerationSettings] = useState<AudioGenerationSettings>(DEFAULT_AUDIO_GENERATION_SETTINGS);
@@ -2226,7 +2238,23 @@ const ChatView: React.FC<ChatViewProps> = ({
     ? currentKnownModelInfo : findModelInfoByName(knownModelInfos, progressModelName);
   const progressRecipe = String((progressModelInfo as any)?.recipe || (progressModelName === currentModel ? currentRecipe : '')).toLowerCase();
   const capabilityBusy = activeId ? capabilityBusyConvoIds.has(activeId) : false;
-  const isBusy = isStreaming || capabilityBusy || isLiveRecording || micPreparation !== null || modelPreparation !== null;
+  const interruptPending = !!activeId && interruptPendingRef.current.has(activeId);
+  const isBusy = isStreaming || capabilityBusy || isLiveRecording || micPreparation !== null || modelPreparation !== null || interruptPending;
+  // Eligibility belongs to the in-flight request, not the last chat message:
+  // tool setup failures may append a UI error while the request is still active.
+  const canInterruptAndContinue = isStreaming && !interruptPending && modeSupportsChatCompletions
+    && connectionStatus === 'connected' && currentStream?.interruptible === true
+    && !currentStream?.toolCalls.length && !capabilityBusy && !isLiveRecording
+    && micPreparation === null && modelPreparation === null;
+
+  useEffect(() => {
+    // Token flushes from the old request must not release the send guard.
+    if (activeId && currentStream?.requestId !== undefined
+      && interruptPendingRef.current.has(activeId)
+      && interruptPendingRef.current.get(activeId) !== currentStream.requestId) {
+      clearInterruptPending(activeId);
+    }
+  }, [activeId, currentStream?.requestId, clearInterruptPending]);
 
   useEffect(() => {
     if (isBusy) setThinkingMenuOpen(false);
@@ -2544,14 +2572,18 @@ const ChatView: React.FC<ChatViewProps> = ({
   }, [onModelSelect]);
 
   const handleDeleteConversation = useCallback((id: string) => {
+    deletedConversationIdsRef.current.add(id);
+    startAttemptRef.current.delete(id);
     streaming.stop(id);
+    clearInterruptPending(id);
+    clearModelPreparation(id);
     delete streamModelsRef.current[id];
     imageRegistry.clearConversation(id);
     setConversations(prev => prev.filter(c => c.id !== id));
     const wasActive = activeId === id;
     if (wasActive) setActiveId(null);
     setFallbackModelOverride(prev => releaseConversationModel(prev, wasActive));
-  }, [activeId, streaming.stop]);
+  }, [activeId, clearInterruptPending, clearModelPreparation, streaming.stop]);
 
 
   const handleRailToggle = useCallback(() => {
@@ -2645,20 +2677,22 @@ const ChatView: React.FC<ChatViewProps> = ({
     if (!activeId) return;
     const model = streamModelsRef.current[activeId] || currentModelSnapshot;
     const partial = streaming.stop(activeId);
+    clearInterruptPending(activeId);
     delete streamModelsRef.current[activeId];
-    if (partial) {
+    if (partial && (partial.content || partial.thinking)) {
       updateConversation(activeId, c => ({
         ...c,
         messages: [...c.messages, {
           role: 'assistant' as const,
           content: partial.content,
           thinking: partial.thinking,
+          interrupted: true,
           model,
         }],
         updatedAt: Date.now(),
       }));
     }
-  }, [activeId, currentModelSnapshot, streaming, updateConversation]);
+  }, [activeId, clearInterruptPending, currentModelSnapshot, streaming, updateConversation]);
 
   const appendLiveTranscript = useCallback((text: string) => {
     if (!currentModelSnapshot) return;
@@ -3094,7 +3128,10 @@ ${finalText}`
     audioFiles: File[],
     appendUserToConversation: boolean,
   ) => {
+    const startAttempt = startAttemptRef.current.get(convoId);
     const api = await getApiClient();
+    if (deletedConversationIdsRef.current.has(convoId)
+      || startAttemptRef.current.get(convoId) !== startAttempt) return;
     const text = userMessage.content.trim();
     const images = userMessage.images?.length ? [...userMessage.images] : undefined;
     const hasImages = !!images?.length;
@@ -3288,6 +3325,8 @@ ${index}`;
 
     const historyMessages = priorMessages.filter(m => {
       if (m.role === 'assistant' && !isPersistableAssistantMessage(m)) return false;
+      // Keep reasoning-only interruptions in the UI, not as empty assistant turns.
+      if (m.role === 'assistant' && m.interrupted && !m.content.trim()) return false;
       if (m.generatedImages?.length || m.audioUrl || m.model3dUrl) return false;
       return true;
     });
@@ -3322,8 +3361,13 @@ ${index}`;
       chatMessages.push({ role: 'user' as const, content: requestText });
     }
 
+    // Model/MCP/audio preparation may yield; only the latest attempt may stream.
+    if (deletedConversationIdsRef.current.has(convoId)
+      || startAttemptRef.current.get(convoId) !== startAttempt) return;
+    const interruptible = !hasImages && !userMessage.imageIds?.length
+      && audioFiles.length === 0 && !userMessage.audioName && !userMessage.fromBrowserPrompt;
     streamModelsRef.current[convoId] = modelSnapshot;
-    await streaming.send(convoId, requestModelName, chatMessages, toolRuntime, thinkingMode);
+    await streaming.send(convoId, requestModelName, chatMessages, toolRuntime, thinkingMode, interruptible);
   }, [
     appendAssistantMessage,
     currentCapability,
@@ -3364,11 +3408,21 @@ ${index}`;
             : currentCapability === 'tts'
               ? (!!text && !openMossDescribeUnavailable && !openMossCloneUnavailable)
               : (!!text || hasImages || (canUseAudioInput && audioFiles.length > 0));
-    if (!canSubmitContent || isBusy || !currentModelSnapshot) return;
+    // Only direct text corrections can interrupt a chat stream.
+    const interrupting = canInterruptAndContinue && !isExternalPrompt
+      && overrideText === undefined && !!activeId && !!text && !hasImages && audioFiles.length === 0;
+    if (!canSubmitContent || (isBusy && !interrupting) || !currentModelSnapshot) return;
+    // React may not have rendered the original stream yet; the controller is authoritative.
+    if (!interrupting && !isExternalPrompt && activeId && streaming.hasActiveRequest(activeId)) return;
+    if (interrupting && (connectionStatus !== 'connected'
+      || interruptPendingRef.current.has(activeId!) || currentStream?.requestId === undefined)) return;
     if (hasImages && currentCapability === 'chat' && !supportsChatImageInput
       && (isExternalPrompt || hasBrowserPromptContext(conversations.find(c => c.id === activeId)?.messages || []))) {
       setImageAttachmentError(t('The selected text model does not support image input. Choose a vision-capable model to send images.'));
       return;
+    }
+    if (interrupting && activeId && currentStream?.requestId !== undefined) {
+      interruptPendingRef.current.set(activeId, currentStream.requestId);
     }
     if (isExternalPrompt) {
       incomingPromptHandledRef.current = true;
@@ -3379,7 +3433,7 @@ ${index}`;
     threadFollowBottomRef.current = true;
     let convoId = isExternalPrompt ? null : activeId;
     const isNewConvo = !convoId;
-    const initialSnapshot = currentModelSnapshot;
+    const initialSnapshot = (interrupting && convoId ? streamModelsRef.current[convoId] : null) || currentModelSnapshot;
     const currentMessages = (conversations.find(c => c.id === convoId)?.messages || []);
     if (!convoId) convoId = generateId();
     const imageMessageId = generateId();
@@ -3388,8 +3442,23 @@ ${index}`;
       if (hasImages) imageIds = imageRegistry.addUploads(convoId, pendingImages.map(image => image.original), imageMessageId!);
     } catch (error) {
       setImageAttachmentError(friendlyErrorMessage(error));
+      if (interrupting) clearInterruptPending(convoId);
       return;
     }
+    // The hook rejects interrupting once tools have started, even if React has
+    // not yet rendered that status. In that case the user's draft stays intact.
+    const partial = interrupting ? streaming.stop(convoId, true) : null;
+    if (interrupting && !partial) {
+      clearInterruptPending(convoId);
+      return;
+    }
+    const interruptedMessage: Message | null = partial && (partial.content || partial.thinking)
+      ? { role: 'assistant', content: partial.content, thinking: partial.thinking, interrupted: true, model: initialSnapshot }
+      : null;
+    const priorMessages = interruptedMessage ? [...currentMessages, interruptedMessage] : currentMessages;
+    if (interrupting) delete streamModelsRef.current[convoId];
+    const startAttempt = Symbol('chat-start');
+    startAttemptRef.current.set(convoId, startAttempt);
     const userMessage: Message = {
       role: 'user',
       content: text || (audioFiles[0] ? `Audio file: ${audioFiles[0].name}` : ''),
@@ -3415,7 +3484,8 @@ ${index}`;
     } else {
       updateConversation(convoId, conversation => ({
         ...conversation,
-        messages: [...conversation.messages, userMessage],
+        // Commit the partial reply and correction atomically before restarting.
+        messages: [...conversation.messages, ...(interruptedMessage ? [interruptedMessage] : []), userMessage],
         model: initialSnapshot,
         title: conversation.messages.length === 0 ? titleFromInput(text, hasImages, audioFiles) : conversation.title,
         updatedAt: Date.now(),
@@ -3428,6 +3498,7 @@ ${index}`;
     if (!isExternalPrompt) void speakWithPinnedTts(text, 'user');
 
     if (connectionStatus !== 'connected') {
+      if (interrupting) clearInterruptPending(convoId);
       appendAssistantMessage(convoId, {
         content: friendlyChatError('Lemonade Server is not connected. Reconnect the server, then retry this message.'),
         model: initialSnapshot,
@@ -3439,6 +3510,8 @@ ${index}`;
 
     try {
       const preparedSnapshot = await ensureChatModelReady(currentModel, currentKnownModelInfo, convoId);
+      if (deletedConversationIdsRef.current.has(convoId)
+        || startAttemptRef.current.get(convoId) !== startAttempt) return;
       updateConversation(convoId, conversation => ({
         ...conversation,
         model: preparedSnapshot,
@@ -3454,11 +3527,13 @@ ${index}`;
         convoId,
         preparedSnapshot,
         { ...userMessage, model: preparedSnapshot },
-        currentMessages,
+        priorMessages,
         audioFiles,
         false,
       );
     } catch (error) {
+      if (deletedConversationIdsRef.current.has(convoId)
+        || startAttemptRef.current.get(convoId) !== startAttempt) return;
       const errorMessage = friendlyErrorMessage(error);
       appendAssistantMessage(convoId, {
         content: isRouterModelInfo(initialSnapshot as any) ? friendlyRouterChatError(errorMessage) : friendlyChatError(errorMessage),
@@ -3466,13 +3541,17 @@ ${index}`;
         isError: true,
       });
     } finally {
-      clearModelPreparation(convoId);
+      // Also release the guard if startup fails before a new stream appears.
+      if (interrupting && interruptPendingRef.current.get(convoId) === currentStream?.requestId) {
+        clearInterruptPending(convoId);
+      }
+      if (startAttemptRef.current.get(convoId) === startAttempt) clearModelPreparation(convoId);
       requestAnimationFrame(() => inputRef.current?.focus());
     }
   };
 
   const handleRetryAssistant = useCallback(async (messageIndex: number) => {
-    if (!activeId || isBusy) return;
+    if (!activeId || isBusy || streaming.hasActiveRequest(activeId)) return;
     if (connectionStatus !== 'connected' || !currentModel || !currentModelSnapshot) return;
     const convo = conversations.find(c => c.id === activeId);
     if (!convo || convo.messages[messageIndex]?.role !== 'assistant') return;
@@ -3498,6 +3577,7 @@ ${index}`;
       trimmedMessages.flatMap(message => message.imageMessageId ? [message.imageMessageId] : []),
       originalUserMessage.imageMessageId,
     );
+    startAttemptRef.current.set(activeId, Symbol('chat-retry'));
     setConversations(prev => prev.map(c => c.id === activeId ? {
       ...c,
       messages: trimmedMessages,
@@ -3512,7 +3592,7 @@ ${index}`;
       [],
       false,
     );
-  }, [activeId, appendAssistantMessage, connectionStatus, conversations, currentModel, currentModelSnapshot, isBusy, startAssistantResponse]);
+  }, [activeId, appendAssistantMessage, connectionStatus, conversations, currentModel, currentModelSnapshot, isBusy, startAssistantResponse, streaming.hasActiveRequest]);
 
   const handleSpeakAssistantMessage = useCallback((text: string) => {
     void speakWithPinnedTts(text, 'assistant', true);
@@ -3522,7 +3602,7 @@ ${index}`;
 
   const handleEditUserMessage = useCallback(async (messageIndex: number, revisedContent: string) => {
     const text = revisedContent.trim();
-    if (!text || !activeId || isBusy) return;
+    if (!text || !activeId || isBusy || streaming.hasActiveRequest(activeId)) return;
     if (connectionStatus !== 'connected' || !currentModel || !currentModelSnapshot) return;
     const convo = conversations.find(c => c.id === activeId);
     if (!convo || convo.messages[messageIndex]?.role !== 'user') return;
@@ -3541,6 +3621,7 @@ ${index}`;
       [...priorMessages, editedUserMessage].flatMap(message => message.imageMessageId ? [message.imageMessageId] : []),
       editedUserMessage.imageMessageId,
     );
+    startAttemptRef.current.set(activeId, Symbol('chat-edit'));
     setConversations(prev => prev.map(c => c.id === activeId ? {
       ...c,
       messages: [...priorMessages, editedUserMessage],
@@ -5051,7 +5132,7 @@ ${index}`;
             onChange={e => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
-            disabled={isBusy}
+            disabled={isBusy && !canInterruptAndContinue}
             rows={1}
             aria-label={t('Message')}
           />
@@ -5134,7 +5215,18 @@ ${index}`;
             </button>
           )}
           {isStreaming ? (
-            <button className="composer__stop" onClick={handleStop} aria-label={t('Stop generating')} title={t('Stop')}><Icon name="stop" size={16} /></button>
+            <>
+              <button className="composer__stop" onClick={handleStop} aria-label={t('Stop generating')} title={t('Stop')}><Icon name="stop" size={16} /></button>
+              {canInterruptAndContinue && (
+                <button
+                  className="composer__send"
+                  onClick={() => handleSend()}
+                  disabled={!inputValue.trim() || pendingImages.length > 0 || pendingAudioFiles.length > 0}
+                  aria-label={t('Interrupt and continue')}
+                  title={t('Interrupt and continue')}
+                ><Icon name="send" size={16} /></button>
+              )}
+            </>
           ) : (
             <button
               className="composer__send"
@@ -5599,7 +5691,7 @@ const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | n
       </div>
       <div className="message__body">
         <div className="message__author-row">
-          <div className="message__author">{message.isError ? 'Lemonade' : modelDisplayName(displayModel)}</div>
+          <div className="message__author">{message.isError ? 'Lemonade' : modelDisplayName(displayModel)}{message.interrupted ? ` · ${t('Interrupted')}` : ''}</div>
         </div>
         {message.thinking && (
           <details
