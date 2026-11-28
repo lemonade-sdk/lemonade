@@ -4104,6 +4104,13 @@ if(BUILD_TESTING AND EXISTS "${_SDCPP_VIDEO_POLL_TEST_SRC}")
     add_cpp_ci_test(SdcppVideoPollTest CI ON COMMAND test_sdcpp_video_poll)
 endif()
 
+set(_SDCPP_IMAGE_TIMEOUT_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_sdcpp_image_timeout.cpp")
+if(BUILD_TESTING AND EXISTS "${_SDCPP_IMAGE_TIMEOUT_TEST_SRC}")
+    add_executable(test_sdcpp_image_timeout test/cpp/test_sdcpp_image_timeout.cpp)
+    target_link_libraries(test_sdcpp_image_timeout PRIVATE lemonade-server-core)
+    add_cpp_ci_test(SdcppImageTimeoutTest CI ON COMMAND test_sdcpp_image_timeout)
+endif()
+
 set(_THENOISE_VIDEO_POLL_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_thenoise_video_poll.cpp")
 if(BUILD_TESTING AND EXISTS "${_THENOISE_VIDEO_POLL_TEST_SRC}")
     add_executable(test_thenoise_video_poll test/cpp/test_thenoise_video_poll.cpp)
