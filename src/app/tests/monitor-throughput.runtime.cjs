@@ -105,7 +105,7 @@ assert.equal(selectGenerationTps(0, quietStats, true, false), 65,
 // Protect the backend routing contract: FLM must not trigger a /slots request.
 const hookSource = fs.readFileSync(path.resolve(__dirname, '../src/hooks/useMonitorData.ts'), 'utf8');
 assert.match(hookSource, /activeModel && \(activeModel\.recipe === 'llamacpp' \|\| activeModel\.recipe === 'vllm'\)/);
-assert.match(hookSource, /if \(supportsSlots\) \{[\s\S]*?const response = await api\.slots\(\)/);
+assert.match(hookSource, /if \(supportsSlots\) \{[\s\S]*?const response = await api\.slots\(slotsAbortController\.signal\)/);
 assert.match(hookSource, /selectGenerationTps\(aggTps, st, newCompletion, supportsSlots\)/);
 assert.match(hookSource, /slotActive = isSlotProcessing\(s, slotTps\)/);
 assert.match(hookSource, /slotTps = 0;[\s\S]*?winMap\.set\(s\.id, samples\.slice\(-1\)\)/);
