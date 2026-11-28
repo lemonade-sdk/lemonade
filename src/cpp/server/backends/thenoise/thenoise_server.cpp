@@ -456,7 +456,8 @@ json TheNoiseServer::image_variations(const json& /* request */) {
     );
 }
 
-json TheNoiseServer::video_generations(const json& request, std::atomic<bool>* cancel) {
+json TheNoiseServer::video_generations(const json& request, std::atomic<bool>* cancel,
+                                       const ProgressFn& progress) {
     constexpr long control_timeout = 5;
     constexpr int max_control_failures = 3;
     constexpr auto cancel_grace = std::chrono::minutes(5);
@@ -611,6 +612,18 @@ json TheNoiseServer::video_generations(const json& request, std::atomic<bool>* c
                 throw std::runtime_error("unexpected video job state: " + state);
             }
             poll_failures = 0;
+            if (progress && status.contains("progress") && status["progress"].is_object()) {
+                // TheNoise reports a stage it cannot count with `of` 0.
+                const json& reported = status["progress"];
+                auto count = [&](const char* key) {
+                    return reported.contains(key) && reported[key].is_number_integer() ? reported[key].get<int64_t>() : 0;
+                };
+                const bool named = reported.contains("stage") && reported["stage"].is_string();
+                const int64_t of = count("of");
+                progress({{"stage", named ? reported["stage"].get<std::string>() : std::string()},
+                          {"completed", of > 0 ? json(count("step")) : json(nullptr)},
+                          {"total", of > 0 ? json(of) : json(nullptr)}});
+            }
         } catch (const std::exception& e) {
             if (!is_backend_alive() || ++poll_failures >= max_control_failures) {
                 return lost_job(e.what());

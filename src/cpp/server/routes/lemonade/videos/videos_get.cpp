@@ -41,7 +41,17 @@ public:
                 "output_format": {"type": "string", "description": "The clip's container format, present once completed."},
                 "frame_count": {"type": "integer", "description": "Frames in the clip, present once completed."},
                 "fps": {"type": "integer", "description": "The clip's frame rate, present once completed."},
-                "duration": {"type": "number", "description": "The clip's length in seconds, `frame_count` over `fps`, present once completed."}
+                "duration": {"type": "number", "description": "The clip's length in seconds, `frame_count` over `fps`, present once completed."},
+                "progress": {
+                    "type": "object",
+                    "description": "How far a running video has got, present when its backend reports it. On stable-diffusion.cpp each sampling pass counts from zero, so a two-stage model such as Wan2.2 A14B counts its steps twice.",
+                    "required": ["stage", "completed", "total"],
+                    "properties": {
+                        "stage": {"type": "string", "description": "The backend's name for the current stage, such as `sampling`."},
+                        "completed": {"type": ["integer", "null"], "description": "Units done in the current stage, or `null` when the stage is not counted."},
+                        "total": {"type": ["integer", "null"], "description": "Units in the current stage, or `null` when the stage is not counted."}
+                    }
+                }
             }
         })");
         s.responses = {response};
@@ -90,6 +100,10 @@ public:
                     out["duration"] = out["frame_count"].get<double>() / out["fps"].get<double>();
                 }
             }
+        }
+        if (status == "running") {
+            const json progress = video_store::progress(out["id"].get<std::string>());
+            if (!progress.is_null()) out["progress"] = progress;
         }
         res.set_content(out.dump(), "application/json");
     }

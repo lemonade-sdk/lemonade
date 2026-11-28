@@ -223,6 +223,21 @@ static void test_video_status() {
           store::video_status(paused("pending")) == "paused");
 }
 
+static void test_progress() {
+    check("progress: none before a backend reports", store::progress("job-p").is_null());
+    store::set_progress("job-p", {{"stage", "sampling"}, {"completed", 3}, {"total", 8}});
+    store::set_progress("job-q", {{"stage", "conditioning"}, {"completed", nullptr}, {"total", nullptr}});
+    store::set_progress("job-p", {{"stage", "sampling"}, {"completed", 4}, {"total", 8}});
+    check("progress: the latest report is kept",
+          store::progress("job-p") == nlohmann::json({{"stage", "sampling"}, {"completed", 4}, {"total", 8}}));
+    check("progress: each job keeps its own", store::progress("job-q").value("stage", "") == "conditioning");
+    store::clear_progress("job-p");
+    check("progress: cleared once the job stops", store::progress("job-p").is_null() && !store::progress("job-q").is_null());
+    store::set_progress("", {{"stage", "sampling"}});
+    check("progress: a job without an id is not recorded", store::progress("").is_null());
+    store::clear_progress("job-q");
+}
+
 int main() {
     test_file_names();
     test_write_read();
@@ -233,6 +248,7 @@ int main() {
     test_normalize_request();
     test_is_video_job();
     test_video_status();
+    test_progress();
     if (g_failures) {
         std::printf("%d FAILURE(S)\n", g_failures);
         return 1;

@@ -4,6 +4,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include <httplib.h>
 
@@ -35,7 +36,7 @@ const std::string clip_bytes("\x1a\x45\xdf\xa3\0video", 10);
 struct FakeBackend {
     httplib::Server server;
     std::thread thread;
-    std::atomic<int> submits{0}, polls{0}, cancels{0}, downloads{0}, after_cancel{0};
+    std::atomic<int> submits{0}, polls{0}, cancels{0}, downloads{0}, after_cancel{0}, progress_polls{0};
     std::atomic<bool> fail_first_poll{false}, hold_running{false}, cancel_on_submit{false};
     std::atomic<bool> complete_on_cancel{false}, fail_all_polls{false};
     std::atomic<bool> stall_content{false}, release_content{false};
@@ -62,6 +63,13 @@ struct FakeBackend {
             if (fail_all_polls || fail_first_poll.exchange(false)) {
                 res.status = 503;
                 res.set_content("busy", "text/plain");
+                return;
+            }
+            if (progress_polls > 0) {
+                res.set_content(--progress_polls == 1
+                                    ? R"({"status":"running","progress":{"stage":"loading","step":0,"of":0}})"
+                                    : R"({"status":"running","progress":{"stage":"sampling","step":2,"of":4}})",
+                                "application/json");
                 return;
             }
             if (hold_running) {
@@ -158,6 +166,20 @@ void test_success() {
         {"output_format", "webm"}}));
 }
 
+void test_progress() {
+    FakeBackend backend;
+    FakeTheNoise model(backend.port);
+    backend.progress_polls = 2;
+    std::vector<json> seen;
+    const auto result = model.video_generations({{"prompt", "a cat"}}, nullptr,
+                                                [&](const json& p) { seen.push_back(p); });
+    check("progress: the clip still comes back", result.contains("b64_json"));
+    check("progress: an uncounted stage has null counts", seen.size() == 2 &&
+          seen[0] == json({{"stage", "loading"}, {"completed", nullptr}, {"total", nullptr}}));
+    check("progress: sampling steps are passed on", seen.size() == 2 &&
+          seen[1] == json({{"stage", "sampling"}, {"completed", 2}, {"total", 4}}));
+}
+
 void test_cancel(bool during_submit, bool completion_wins) {
     std::atomic<bool> flag{true};
     FakeBackend backend(&flag);
@@ -210,6 +232,7 @@ void test_cancel_content() {
 int main() {
     test_shared_recipe_defaults();
     test_success();
+    test_progress();
     test_cancel(false, false);
     test_cancel(true, false);
     test_cancel(false, true);

@@ -668,7 +668,8 @@ json SDServer::image_generations(const json& request) {
     return forward_request("/v1/images/generations", sd_request, 0);
 }
 
-json SDServer::video_generations(const json& request, std::atomic<bool>* cancel) {
+json SDServer::video_generations(const json& request, std::atomic<bool>* cancel,
+                                 const ProgressFn& progress) {
     if (request.contains("output_format") && request["output_format"] == "mp4") {
         return ErrorResponse::from_exception(
             InvalidRequestException("stable-diffusion.cpp video supports output_format webm, webp or avi"));
@@ -889,6 +890,16 @@ json SDServer::video_generations(const json& request, std::atomic<bool>* cancel)
         failed_polls = 0;
         const std::string state = status.value("status", std::string());
         if (state == "queued" || state == "generating") {
+            if (progress && status.contains("progress") && status["progress"].is_object()) {
+                const json& reported = status["progress"];
+                auto count = [&](const char* key) {
+                    return reported.contains(key) && reported[key].is_number_integer() ? reported[key] : json(nullptr);
+                };
+                const bool named = reported.contains("stage") && reported["stage"].is_string();
+                progress({{"stage", named ? reported["stage"].get<std::string>() : std::string()},
+                          {"completed", count("completed")},
+                          {"total", count("total")}});
+            }
             continue;
         }
         if (!status.value("error", json()).is_null()) {

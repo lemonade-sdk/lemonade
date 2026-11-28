@@ -2603,7 +2603,8 @@ json Router::image_generations(const json& request, std::atomic<bool>* cancel) {
     });
 }
 
-json Router::video_generations(const json& request, std::atomic<bool>* cancel) {
+json Router::video_generations(const json& request, std::atomic<bool>* cancel,
+                               const IVideoServer::ProgressFn& progress) {
     return execute_inference(request, [&](WrappedServer* server) {
         if (server->get_model_type() != ModelType::VIDEO) {
             return ErrorResponse::from_exception(InvalidRequestException(
@@ -2615,7 +2616,7 @@ json Router::video_generations(const json& request, std::atomic<bool>* cancel) {
                 UnsupportedOperationException("Video generation", device_type_to_string(server->get_device_type()))
             );
         }
-        return video_server->video_generations(request, cancel);
+        return video_server->video_generations(request, cancel, progress);
     });
 }
 

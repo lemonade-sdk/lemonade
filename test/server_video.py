@@ -558,6 +558,49 @@ class VideoGenerationTests(ServerTestBase):
             unload_model(chat_model)
 
     @needs_video_model
+    def test_016_running_video_reports_progress(self):
+        """A running clip reports its sampling steps, and a finished one does not."""
+        self._ensure_model_pulled()
+        model = get_test_model("video")
+        steps = 12
+        job_id = self._create(
+            {
+                "model": model,
+                "prompt": "a lovely cat walking through tall grass",
+                "video_frames": 9,
+                "fps": 8,
+                "steps": steps,
+                "width": 480,
+                "height": 272,
+            }
+        )
+        sampling = []
+        deadline = time.time() + TIMEOUT_VIDEO_GENERATION
+        while time.time() < deadline:
+            payload = requests.get(
+                f"{self.base_url}/videos/{job_id}", timeout=TIMEOUT_DEFAULT
+            ).json()
+            if payload.get("status") in TERMINAL:
+                break
+            progress = payload.get("progress")
+            if progress is not None:
+                self.assertEqual(payload.get("status"), "running", payload)
+                self.assertEqual(
+                    set(progress), {"stage", "completed", "total"}, progress
+                )
+                if progress["stage"] == "sampling":
+                    sampling.append(progress)
+            time.sleep(0.5)
+        self.assertEqual(payload.get("status"), "completed", payload)
+        self.assertNotIn("progress", payload, "a finished video still reports progress")
+        self.assertTrue(sampling, "no sampling progress was reported")
+        for progress in sampling:
+            self.assertEqual(progress["total"], steps, progress)
+            self.assertTrue(0 <= progress["completed"] <= steps, progress)
+        counts = [p["completed"] for p in sampling]
+        self.assertEqual(counts, sorted(counts), f"steps went backwards: {counts}")
+        print(f"[OK] progress reported {len(sampling)} times while sampling: {counts}")
+
     def test_015_image_endpoints_reject_a_video_model(self):
         """A video model is refused by image generation, edits and variations."""
         self._ensure_model_pulled()
