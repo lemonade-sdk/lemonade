@@ -276,6 +276,8 @@ class McpGatewayTests(ServerTestBase):
         )
         expected = {
             "lemonade_list_models",
+            "lemonade_search_models",
+            "lemonade_get_pull_variants",
             "lemonade_chat",
             "lemonade_transcribe_audio",
             "lemonade_generate_image",
