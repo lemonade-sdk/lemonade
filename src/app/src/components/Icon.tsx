@@ -72,6 +72,7 @@ export function capabilityIconName(capability: CapabilityIconTarget): IconName {
     case 'transcription': return 'mic';
     case 'tts': return 'tts';
     case 'model3d': return 'box';
+    case 'video': return 'play';
     case 'embedding': return 'embedding';
     case 'reranking': return 'reranking';
     case 'classification': return 'search-check';

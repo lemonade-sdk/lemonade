@@ -158,5 +158,47 @@ assert.match(sources.api, /async testMcpServer\(/);
 assert.doesNotMatch(sources.api, /body: \{ server: \{ \.\.\.server, transport: 'stdio' \} \}/);
 assert.doesNotMatch(sources.api, /\/internal\/mcp/);
 assert.match(sources.mcpRuntime, /return \[LEMONADE_MCP_SERVER\]/);
+assert.match(
+  sources.chat,
+  /const selectionEpoch = modelSelectionEpochRef\.current;[\s\S]{0,80}try \{\s*const video = await start\(/,
+  'the video reload must compare against the epoch from before the job, not after the stop',
+);
+assert.match(
+  sources.chat,
+  /if \(recoverableVideoJobId\(err\) && job\) \{[\s\S]{0,700}videoJob: job,/,
+  'a video job the chat lost track of must stay on the message so it can be resumed',
+);
+assert.match(sources.chat, /api\.resumeVideoGeneration\(job, control\)/);
+assert.match(
+  sources.chat,
+  /videoJob: parseVideoJobRef\(m\.videoJob\),/,
+  'a video job saved on a message must survive a reload so Resume stays available',
+);
+assert.match(
+  sources.chat,
+  /const stillHere = \(\) => activeIdRef\.current === convoId\s*&& modelSelectionEpochRef\.current === selectionEpoch\s*&& \(!job \|\| api\.baseUrl === job\.baseUrl\);/,
+  'the reload after a stop must skip a newer model selection and another server',
+);
+assert.match(
+  sources.chat,
+  /if \(stillHere\(\)\) \{\s*await loadModelForChat\([\s\S]{0,160}if \(stillHere\(\)\) onModelSelect\(model\.name/,
+  'a model picked while the reload runs must not be overwritten by it',
+);
+assert.match(
+  sources.chat,
+  /onRetry=\{msg\.role === 'assistant' && i > lastVideoJobIndex \?/,
+  'Retry must not drop a video job that can still be resumed',
+);
+assert.match(
+  sources.chat,
+  /onEditUser=\{msg\.role === 'user' && i > lastVideoJobIndex \?/,
+  'Edit & Resend must not drop a video job that can still be resumed',
+);
+assert.equal(
+  (sources.chat.match(/if \(holdsVideoJob\(convo\.messages, (?:userIndex \+ 1|messageIndex)\)\) return;/g) || []).length,
+  2,
+  'Retry and Edit & Resend refuse to drop a resumable video job',
+);
+assert.match(sources.chat, /api\.cancelVideoJob\(job\)/, 'deleting a conversation cancels its retained video jobs');
 
 console.log('UI regression contract checks passed.');

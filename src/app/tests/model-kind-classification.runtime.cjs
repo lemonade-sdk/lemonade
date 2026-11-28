@@ -146,6 +146,7 @@ assert.equal(identityFor('chat', 'collection.omni'), 'omni');
 assert.equal(identityFor('chat', 'collection.router'), 'router');
 assert.equal(identityFor('image', 'sd-cpp'), 'image');
 assert.equal(isComposerSelectableCapability('chat'), true);
+assert.equal(isComposerSelectableCapability('video'), true);
 assert.equal(isComposerSelectableCapability('embedding'), false);
 
 /* ── Loaded models are classified by the router's own ModelType ────── */

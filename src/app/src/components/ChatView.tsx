@@ -87,6 +87,14 @@ import {
   GLOBAL_MODEL_SETTINGS_EVENT,
   loadGlobalModelSettings,
 } from '../features/modelSettings/globalModelSettings';
+import type { VideoGenerationControl, VideoGenerationResult, VideoJobRef } from '../api';
+import {
+  isVideoJobCanceled,
+  isVideoJobStopUnconfirmed,
+  parseVideoJobRef,
+  recoverableVideoJobId,
+  VideoJobDownloadError,
+} from '../features/videoGeneration/videoJob';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -100,6 +108,9 @@ interface Message {
   audioName?: string;
   model3dUrl?: string; // transient generated GLB object URL
   model3dName?: string;
+  videoUrl?: string; // transient generated clip object URL
+  videoName?: string;
+  videoJob?: VideoJobRef; // a clip the chat lost track of; cleared once it is resumed
   thinking?: string;
   stats?: ChatCompletionStats;
   toolCalls?: ToolCallEntry[];
@@ -309,6 +320,12 @@ function normalizeSnapshot(raw: unknown): ModelSnapshot | null {
   };
 }
 
+// Retry and Edit & Resend drop every message from `from` on, which would lose
+// a job that can still be resumed.
+function holdsVideoJob(messages: Message[], from: number): boolean {
+  return messages.slice(from).some(m => m.videoJob);
+}
+
 function normalizeConversation(raw: unknown, stableId?: string): Conversation | null {
   if (!raw || typeof raw !== 'object') return null;
   const obj = raw as Record<string, unknown>;
@@ -323,6 +340,7 @@ function normalizeConversation(raw: unknown, stableId?: string): Conversation | 
       stats: m.stats as ChatCompletionStats | undefined,
       toolCalls: Array.isArray(m.toolCalls) ? m.toolCalls as ToolCallEntry[] : undefined,
       model: normalizeSnapshot(m.model),
+      videoJob: parseVideoJobRef(m.videoJob),
       isError: m.isError === true || (typeof m.content === 'string' && /^Error:/i.test(m.content)),
       fromBrowserPrompt: m.fromBrowserPrompt === true || undefined,
     }));
@@ -391,6 +409,8 @@ function saveConversations(convos: Conversation[]): boolean {
       audioName: undefined,
       model3dUrl: undefined,
       model3dName: undefined,
+      videoUrl: undefined,
+      videoName: undefined,
       toolCalls: prepareToolCallsForStorage(m.toolCalls),
     })),
   }));
@@ -620,6 +640,22 @@ const DEFAULT_AUDIO_GENERATION_SETTINGS: AudioGenerationSettings = {
   vocalLanguage: 'en',
   sigmaShift: 5,
   negativePrompt: '',
+};
+
+interface VideoSettings {
+  frames: number;
+  width: number;
+  height: number;
+  steps: number;
+  seed: number | '';
+}
+
+const DEFAULT_VIDEO_SETTINGS: VideoSettings = {
+  frames: 33,
+  width: 832,
+  height: 480,
+  steps: 20,
+  seed: -1,
 };
 
 const OPENMOSS_SFX_DEFAULTS = {
@@ -975,11 +1011,26 @@ const ChatView: React.FC<ChatViewProps> = ({
   const pendingDeletionsRef = useRef<Set<string>>(new Set());
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const activeIdRef = useRef(activeId);
+  activeIdRef.current = activeId;
+  const modelSelectionEpochRef = useRef(modelSelectionEpoch);
+  modelSelectionEpochRef.current = modelSelectionEpoch;
   const [incomingPrompt] = useState(readBrowserPromptDraft);
   const [inputValue, setInputValue] = useState(incomingPrompt);
   const [imageMode, setImageMode] = useState<ImageMode>('generate');
   const [imageSettings, setImageSettings] = useState<ImageGenerationSettings>(DEFAULT_IMAGE_SETTINGS);
   const [audioGenerationSettings, setAudioGenerationSettings] = useState<AudioGenerationSettings>(DEFAULT_AUDIO_GENERATION_SETTINGS);
+  const [videoSettings, setVideoSettings] = useState<VideoSettings>(DEFAULT_VIDEO_SETTINGS);
+  const videoSettingsEditedRef = useRef<{ model: string | null; fields: Set<keyof VideoSettings> }>({
+    model: null,
+    fields: new Set(),
+  });
+  const editVideoSetting = useCallback((patch: Partial<VideoSettings>) => {
+    for (const key of Object.keys(patch) as Array<keyof VideoSettings>) videoSettingsEditedRef.current.fields.add(key);
+    setVideoSettings(prev => ({ ...prev, ...patch }));
+  }, []);
+  const [videoJobStatus, setVideoJobStatus] = useState<Record<string, string>>({});
+  const videoAbortRef = useRef<Map<string, AbortController>>(new Map());
   const [openMossSettings, setOpenMossSettings] = useState<OpenMossSettings>(DEFAULT_OPENMOSS_SETTINGS);
   const [openMossSpeechParams, setOpenMossSpeechParams] = useState<Record<string, number>>({});
   const [model3dSettings, setModel3dSettings] = useState<Model3DSettings>(DEFAULT_MODEL3D_SETTINGS);
@@ -1429,6 +1480,7 @@ const ChatView: React.FC<ChatViewProps> = ({
     const needsModelOptions = connectionStatus === 'connected' && !!currentModel && (
       currentCapability === 'image'
       || currentCapability === 'audio-generation'
+      || currentCapability === 'video'
       || currentCapability === 'tts'
       || isOpenMossTts
     );
@@ -1489,6 +1541,34 @@ const ChatView: React.FC<ChatViewProps> = ({
   }, [currentModel, currentCapability, currentModelRecipeOptions, isAceStepAudio, isOpenMossSfx]);
 
   useEffect(() => {
+    if (currentCapability !== 'video') return;
+    // The model's options can arrive after the user has edited a field, and
+    // those edits win until another model is picked.
+    const edited = videoSettingsEditedRef.current;
+    if (edited.model !== currentModel) {
+      edited.model = currentModel;
+      edited.fields.clear();
+    }
+    const recipeOptions = currentModelRecipeOptions || {};
+    const positive = (value: unknown, fallback: number) => (
+      typeof value === 'number' && value > 0 ? value : fallback
+    );
+    const seeded: Pick<VideoSettings, 'frames' | 'width' | 'height' | 'steps'> = {
+      frames: positive(recipeOptions.video_frames, DEFAULT_VIDEO_SETTINGS.frames),
+      width: positive(recipeOptions.width, DEFAULT_VIDEO_SETTINGS.width),
+      height: positive(recipeOptions.height, DEFAULT_VIDEO_SETTINGS.height),
+      steps: positive(recipeOptions.steps, DEFAULT_VIDEO_SETTINGS.steps),
+    };
+    setVideoSettings(prev => {
+      const next = { ...prev };
+      for (const key of Object.keys(seeded) as Array<keyof typeof seeded>) {
+        if (!edited.fields.has(key)) next[key] = seeded[key];
+      }
+      return next;
+    });
+  }, [currentModel, currentCapability, currentModelRecipeOptions]);
+
+  useEffect(() => {
     if (!isOpenMossTts) {
       openMossSettingsModelRef.current = null;
       return;
@@ -1529,7 +1609,7 @@ const ChatView: React.FC<ChatViewProps> = ({
     [hasRealtimeAudio],
   );
   const supportsDictation = canUseMicrophone() && (
-    ['chat', 'image', 'audio-generation', 'tts'].includes(currentCapability)
+    ['chat', 'image', 'audio-generation', 'video', 'tts'].includes(currentCapability)
     || (currentCapability === 'model3d' && model3dSettings.sourceMode === 'text')
   );
   const supportsChatAudioInput = useMemo(
@@ -2226,6 +2306,10 @@ const ChatView: React.FC<ChatViewProps> = ({
     ? currentKnownModelInfo : findModelInfoByName(knownModelInfos, progressModelName);
   const progressRecipe = String((progressModelInfo as any)?.recipe || (progressModelName === currentModel ? currentRecipe : '')).toLowerCase();
   const capabilityBusy = activeId ? capabilityBusyConvoIds.has(activeId) : false;
+  const activeVideoStatus = activeId ? videoJobStatus[activeId] : undefined;
+  // Once the clip is done, Stop would only throw the finished video away.
+  const videoStoppable = activeVideoStatus !== undefined
+    && !['canceling', 'completed', 'downloading'].includes(activeVideoStatus);
   const isBusy = isStreaming || capabilityBusy || isLiveRecording || micPreparation !== null || modelPreparation !== null;
 
   useEffect(() => {
@@ -2263,6 +2347,7 @@ const ChatView: React.FC<ChatViewProps> = ({
 
   const activeConvo = conversations.find(c => c.id === activeId) || null;
   const messages = activeConvo?.messages || [];
+  const lastVideoJobIndex = messages.reduce((last, m, i) => (m.videoJob ? i : last), -1);
   const contextUsage = useMemo(() => {
     const thread = activeConvo?.messages || [];
     for (let i = thread.length - 1; i >= 0; i--) {
@@ -2543,15 +2628,27 @@ const ChatView: React.FC<ChatViewProps> = ({
     onModelSelect(model);
   }, [onModelSelect]);
 
+  // A video job would keep the GPU busy for a conversation that no longer exists,
+  // and so would one the chat lost track of, which only its Resume control still
+  // reaches. The conversation is going away, so a failed cancel is not kept.
+  const cancelConversationVideos = useCallback((id: string) => {
+    videoAbortRef.current.get(id)?.abort();
+    const retainedJobs = conversations.find(c => c.id === id)?.messages.flatMap(m => (m.videoJob ? [m.videoJob] : [])) || [];
+    if (retainedJobs.length > 0) {
+      void getApiClient().then(api => Promise.allSettled(retainedJobs.map(job => api.cancelVideoJob(job))));
+    }
+  }, [conversations]);
+
   const handleDeleteConversation = useCallback((id: string) => {
     streaming.stop(id);
+    cancelConversationVideos(id);
     delete streamModelsRef.current[id];
     imageRegistry.clearConversation(id);
     setConversations(prev => prev.filter(c => c.id !== id));
     const wasActive = activeId === id;
     if (wasActive) setActiveId(null);
     setFallbackModelOverride(prev => releaseConversationModel(prev, wasActive));
-  }, [activeId, streaming.stop]);
+  }, [activeId, cancelConversationVideos, streaming.stop]);
 
 
   const handleRailToggle = useCallback(() => {
@@ -2643,6 +2740,11 @@ const ChatView: React.FC<ChatViewProps> = ({
 
   const handleStop = useCallback(() => {
     if (!activeId) return;
+    const videoController = videoAbortRef.current.get(activeId);
+    if (videoController) {
+      videoController.abort();
+      return;
+    }
     const model = streamModelsRef.current[activeId] || currentModelSnapshot;
     const partial = streaming.stop(activeId);
     delete streamModelsRef.current[activeId];
@@ -2877,6 +2979,82 @@ ${finalText}`
     };
   }, [onDictationEnd, stopRecording]);
 
+  // A new clip and a resumed one share Stop, the status line, the result and
+  // the handling of a job the chat loses track of.
+  const followVideoJob = useCallback(async (
+    convoId: string,
+    model: ModelSnapshot,
+    start: (control: VideoGenerationControl) => Promise<VideoGenerationResult>,
+    knownJob?: VideoJobRef,
+  ) => {
+    const controller = new AbortController();
+    videoAbortRef.current.set(convoId, controller);
+    // Taken before the job starts so that a model picked while the clip runs
+    // or while Stop is pending is not overwritten by the reload below.
+    const selectionEpoch = modelSelectionEpochRef.current;
+    let job = knownJob;
+    try {
+      const video = await start({
+        signal: controller.signal,
+        onStatus: record => setVideoJobStatus(prev => ({ ...prev, [convoId]: record.status })),
+        onJob: created => { job = created; },
+      });
+      const seconds = Number(video.record.duration);
+      appendAssistantMessage(convoId, {
+        content: Number.isFinite(seconds) && seconds > 0
+          ? t('Generated a {seconds} s video from your prompt.', { seconds: seconds.toFixed(1) })
+          : t('Generated a video from your prompt.'),
+        videoUrl: trackGeneratedMediaUrl(video.url),
+        videoName: video.filename,
+        model,
+      });
+    } catch (err) {
+      if (recoverableVideoJobId(err) && job) {
+        // Reloading now could race a backend that is still generating, so the
+        // job is kept on the message for the user to resume instead.
+        appendAssistantMessage(convoId, {
+          content: isVideoJobStopUnconfirmed(err)
+            ? t('The server did not confirm that the video stopped. It may still be generating; try again in a moment.')
+            : err instanceof VideoJobDownloadError
+              ? t('The video finished but could not be downloaded.')
+              : t('Lost contact with the video job. It may still be running on the server.'),
+          videoJob: job,
+          model,
+        });
+        return;
+      }
+      if (!isVideoJobCanceled(err)) throw err;
+      // Stopping a clip stops its backend, which unloads the model. Bring it
+      // back so the next prompt stays in video mode instead of falling back
+      // to whatever chat model is still loaded, unless the user has moved to
+      // another conversation or model since.
+      // The reload goes to the selected server, which is not the job's after a
+      // connection change, and loading there could evict an unrelated model.
+      const api = await getApiClient();
+      const stillHere = () => activeIdRef.current === convoId
+        && modelSelectionEpochRef.current === selectionEpoch
+        && (!job || api.baseUrl === job.baseUrl);
+      try {
+        if (stillHere()) {
+          await loadModelForChat(model.name, findModelInfoByName(knownModelInfos, model.name) || null);
+          await Promise.resolve(onRefresh());
+          if (stillHere()) onModelSelect(model.name, { navigate: false });
+        }
+      } catch {
+        // The stop itself succeeded; a failed reload only leaves the model unloaded.
+      }
+      appendAssistantMessage(convoId, { content: t('Video generation stopped.'), model });
+    } finally {
+      if (videoAbortRef.current.get(convoId) === controller) videoAbortRef.current.delete(convoId);
+      setVideoJobStatus(prev => {
+        if (!(convoId in prev)) return prev;
+        const next = { ...prev };
+        delete next[convoId];
+        return next;
+      });
+    }
+  }, [appendAssistantMessage, knownModelInfos, loadModelForChat, onModelSelect, onRefresh, trackGeneratedMediaUrl]);
+
   const runCapabilityRequest = useCallback(async (
     convoId: string,
     model: ModelSnapshot,
@@ -3052,6 +3230,16 @@ ${finalText}`
           audioName: `${model.name}.wav`,
           model,
         });
+      } else if (model.capability === 'video') {
+        if (!text) throw new Error(t('Video mode needs a text prompt.'));
+        await followVideoJob(convoId, model, control => api.videoGeneration(model.name, text, {
+          video_frames: videoSettings.frames,
+          width: videoSettings.width,
+          height: videoSettings.height,
+          steps: videoSettings.steps,
+          // -1 asks the server for a random seed; leaving it out gives a fixed one.
+          seed: videoSettings.seed === '' ? -1 : videoSettings.seed,
+        }, control));
       } else if (model.capability === 'audio') {
         const file = audioFiles[0];
         if (!file) throw new Error(t('Audio mode needs an audio file to transcribe.'));
@@ -3080,11 +3268,38 @@ ${finalText}`
       });
     }
   }, [
-    appendAssistantMessage, audioGenerationSettings, imageMode, imageSettings,
+    appendAssistantMessage, audioGenerationSettings, followVideoJob, imageMode, imageSettings, videoSettings,
     isOpenMossTts, knownModelInfos, loadedModels, model3dSettings, onRefresh,
     loadModelForChat, openMossMode, openMossSettings, openMossSpeechParams,
     speakWithPinnedTts, trackGeneratedMediaUrl,
   ]);
+
+  const handleResumeVideoJob = useCallback(async (convoId: string, job: VideoJobRef, model: ModelSnapshot) => {
+    if (videoAbortRef.current.has(convoId)) return;
+    updateConversation(convoId, c => ({
+      ...c,
+      messages: c.messages.map(m => (m.videoJob?.id === job.id ? { ...m, videoJob: undefined } : m)),
+    }));
+    setCapabilityBusyConvoIds(prev => new Set(prev).add(convoId));
+    try {
+      const api = await getApiClient();
+      await followVideoJob(convoId, model, control => api.resumeVideoGeneration(job, control), job);
+      onRefresh();
+    } catch (err) {
+      appendAssistantMessage(convoId, {
+        content: friendlyChatError(friendlyErrorMessage(err)),
+        model,
+        isError: true,
+      });
+    } finally {
+      setCapabilityBusyConvoIds(prev => {
+        if (!prev.has(convoId)) return prev;
+        const next = new Set(prev);
+        next.delete(convoId);
+        return next;
+      });
+    }
+  }, [appendAssistantMessage, followVideoJob, onRefresh, updateConversation]);
 
   const startAssistantResponse = useCallback(async (
     convoId: string,
@@ -3288,7 +3503,7 @@ ${index}`;
 
     const historyMessages = priorMessages.filter(m => {
       if (m.role === 'assistant' && !isPersistableAssistantMessage(m)) return false;
-      if (m.generatedImages?.length || m.audioUrl || m.model3dUrl) return false;
+      if (m.generatedImages?.length || m.audioUrl || m.model3dUrl || m.videoUrl) return false;
       return true;
     });
 
@@ -3357,7 +3572,7 @@ ${index}`;
       ? audioFiles.length > 0
       : currentCapability === 'image'
         ? (imageMode === 'edit' ? (!!text && hasImages) : !!text)
-        : currentCapability === 'audio-generation'
+        : currentCapability === 'audio-generation' || currentCapability === 'video'
           ? !!text
           : currentCapability === 'model3d'
             ? (model3dSettings.sourceMode === 'image' ? hasImages : (!!text && !!model3dSettings.imageModel))
@@ -3482,6 +3697,8 @@ ${index}`;
     while (userIndex >= 0 && convo.messages[userIndex].role !== 'user') userIndex--;
     if (userIndex < 0) return;
 
+    if (holdsVideoJob(convo.messages, userIndex + 1)) return;
+
     const originalUserMessage = convo.messages[userIndex];
     if (originalUserMessage.audioName) {
       appendAssistantMessage(activeId, {
@@ -3526,6 +3743,7 @@ ${index}`;
     if (connectionStatus !== 'connected' || !currentModel || !currentModelSnapshot) return;
     const convo = conversations.find(c => c.id === activeId);
     if (!convo || convo.messages[messageIndex]?.role !== 'user') return;
+    if (holdsVideoJob(convo.messages, messageIndex)) return;
 
     threadFollowBottomRef.current = true;
     const originalMessage = convo.messages[messageIndex];
@@ -3813,7 +4031,7 @@ ${index}`;
     ? pendingAudioFiles.length > 0
     : currentCapability === 'image'
       ? (imageMode === 'edit' ? (!!inputValue.trim() && pendingImages.length > 0) : !!inputValue.trim())
-      : currentCapability === 'audio-generation'
+      : currentCapability === 'audio-generation' || currentCapability === 'video'
         ? !!inputValue.trim()
         : currentCapability === 'model3d'
           ? (model3dSettings.sourceMode === 'image' ? pendingImages.length > 0 : (!!inputValue.trim() && !!model3dSettings.imageModel))
@@ -3836,6 +4054,8 @@ ${index}`;
           ? t('Attach audio or use the mic with {model}…', { model: currentModel })
         : currentCapability === 'audio-generation'
             ? (isAceStepAudio ? t('Describe the music style, mood, tempo, instruments, and voice…') : t('Describe the sound effect to generate…'))
+        : currentCapability === 'video'
+            ? t('Describe a video for {model}…', { model: currentModel })
           : currentCapability === 'model3d'
               ? (model3dSettings.sourceMode === 'image' ? t('Attach a reference image for 3D reconstruction…') : t('Describe the object to render and reconstruct in 3D…'))
             : currentCapability === 'tts'
@@ -3892,6 +4112,7 @@ ${index}`;
 
   const hasComposerSettings = currentCapability === 'image'
     || currentCapability === 'audio-generation'
+    || currentCapability === 'video'
     || currentCapability === 'model3d'
     || (currentCapability === 'tts' && isOpenMossTts);
 
@@ -3907,6 +4128,8 @@ ${index}`;
       ? 'Transcription mode · attach a file for /audio/transcriptions or use live mic via /v1/realtime'
       : currentCapability === 'audio-generation'
         ? (isAceStepAudio ? 'Music mode · instrumental or optional structured lyrics via /audio/generations' : 'Sound mode · prompt becomes /audio/generations')
+      : currentCapability === 'video'
+        ? 'Video mode · prompt becomes a /videos job · a clip takes minutes, Stop cancels it'
         : currentCapability === 'model3d'
           ? (model3dSettings.sourceMode === 'image' ? '3D mode · image becomes /3d/generations · export GLB or geometry-only STL' : '3D mode · image model renders a reference, then TRELLIS reconstructs it')
           : currentCapability === 'tts'
@@ -4109,9 +4332,12 @@ ${index}`;
                   userLabel="You"
                   defaultThinkingOpen={!globalModelSettings.collapseThinkingByDefault}
                   onOptionSelect={handleOptionSelect}
-                  onRetry={msg.role === 'assistant' ? () => handleRetryAssistant(i) : undefined}
+                  onRetry={msg.role === 'assistant' && i > lastVideoJobIndex ? () => handleRetryAssistant(i) : undefined}
                   onSpeak={canReadAssistantMessages && msg.role === 'assistant' && !msg.isError && msg.content ? () => handleSpeakAssistantMessage(msg.content) : undefined}
-                  onEditUser={msg.role === 'user' ? (text) => handleEditUserMessage(i, text) : undefined}
+                  onEditUser={msg.role === 'user' && i > lastVideoJobIndex ? (text) => handleEditUserMessage(i, text) : undefined}
+                  onResumeVideo={msg.videoJob && msg.model && activeId && !isBusy
+                    ? () => { void handleResumeVideoJob(activeId, msg.videoJob!, msg.model!); }
+                    : undefined}
                 />
               ))}
 
@@ -4166,7 +4392,17 @@ ${index}`;
                     </div>
                     <div className="message__content message__content--pending">
                       <span className="streaming-cursor streaming-cursor--leading" aria-hidden="true" />
-                      Working in {capabilityLabel(snapshotIdentity(currentModelSnapshot))} mode…
+                      {activeVideoStatus === 'queued'
+                        ? t('Video queued…')
+                        : activeVideoStatus === 'canceling'
+                          ? t('Stopping video…')
+                        : activeVideoStatus === 'completed' || activeVideoStatus === 'downloading'
+                          ? t('Downloading the video…')
+                        : activeVideoStatus === 'reconnecting'
+                          ? t('Lost contact with the server, still checking on the video…')
+                        : activeVideoStatus !== undefined
+                          ? t('Generating video… this takes a few minutes.')
+                          : <>Working in {capabilityLabel(snapshotIdentity(currentModelSnapshot))} mode…</>}
                     </div>
                   </div>
                 </article>
@@ -4612,6 +4848,67 @@ ${index}`;
                 />
               </label>
             )}
+          </div>
+        )}
+        {currentCapability === 'video' && (
+          <div className="composer__capability-settings composer__video-settings" aria-label={t('Video settings')}>
+            <label className="composer__image-setting">
+              <span>{t('Frames')}</span>
+              <input
+                type="number"
+                min={1}
+                max={241}
+                value={videoSettings.frames}
+                onChange={e => editVideoSetting({ frames: Math.max(1, Math.min(241, parseInt(e.target.value, 10) || 1)) })}
+                disabled={isBusy}
+              />
+            </label>
+            <label className="composer__image-setting">
+              <span>{t('Width')}</span>
+              <input
+                type="number"
+                min={64}
+                max={2048}
+                step={16}
+                value={videoSettings.width}
+                onChange={e => editVideoSetting({ width: Math.max(64, Math.min(2048, parseInt(e.target.value, 10) || 64)) })}
+                disabled={isBusy}
+              />
+            </label>
+            <label className="composer__image-setting">
+              <span>{t('Height')}</span>
+              <input
+                type="number"
+                min={64}
+                max={2048}
+                step={16}
+                value={videoSettings.height}
+                onChange={e => editVideoSetting({ height: Math.max(64, Math.min(2048, parseInt(e.target.value, 10) || 64)) })}
+                disabled={isBusy}
+              />
+            </label>
+            <label className="composer__image-setting">
+              <span>{t('Steps')}</span>
+              <input
+                type="number"
+                min={1}
+                max={200}
+                value={videoSettings.steps}
+                onChange={e => editVideoSetting({ steps: Math.max(1, Math.min(200, parseInt(e.target.value, 10) || 1)) })}
+                disabled={isBusy}
+              />
+            </label>
+            <label className="composer__image-setting">
+              <span>{t('Seed')}</span>
+              <input
+                type="number"
+                min={-1}
+                value={videoSettings.seed}
+                placeholder="-1"
+                onChange={e => editVideoSetting({ seed: seedFromInput(e.target.value) })}
+                disabled={isBusy}
+              />
+            </label>
           </div>
         )}
         {currentCapability === 'tts' && isOpenMossTts && (
@@ -5133,7 +5430,7 @@ ${index}`;
               <Icon name={isLiveRecording ? 'stop' : supportsDictation ? 'mic' : 'audio'} size={16} />
             </button>
           )}
-          {isStreaming ? (
+          {isStreaming || videoStoppable ? (
             <button className="composer__stop" onClick={handleStop} aria-label={t('Stop generating')} title={t('Stop')}><Icon name="stop" size={16} /></button>
           ) : (
             <button
@@ -5522,7 +5819,7 @@ const CopyButton: React.FC<{ text: string; disabled?: boolean }> = ({ text, disa
   );
 };
 
-const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | null; userLabel: string; defaultThinkingOpen?: boolean; onOptionSelect?: (text: string) => void; onRetry?: () => void; onSpeak?: () => void; onEditUser?: (text: string) => void }> = ({ message, activeModel, userLabel, defaultThinkingOpen = false, onOptionSelect, onRetry, onSpeak, onEditUser }) => {
+const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | null; userLabel: string; defaultThinkingOpen?: boolean; onOptionSelect?: (text: string) => void; onRetry?: () => void; onSpeak?: () => void; onEditUser?: (text: string) => void; onResumeVideo?: () => void }> = ({ message, activeModel, userLabel, defaultThinkingOpen = false, onOptionSelect, onRetry, onSpeak, onEditUser, onResumeVideo }) => {
   const { t } = useI18n();
   const [thinkingOpen, setThinkingOpen] = useState(defaultThinkingOpen);
   const [isEditing, setIsEditing] = useState(false);
@@ -5652,6 +5949,18 @@ const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | n
             </a>
           </div>
         )}
+        {message.videoUrl && (
+          <div className="message__video">
+            <video controls loop playsInline src={message.videoUrl}>{t('Your browser does not support video playback.')}</video>
+            <a
+              href={message.videoUrl}
+              download={(message.videoName || `${displayModel?.name || 'lemonade-video'}.webm`).replace(/[^a-z0-9._-]+/gi, '-')}
+              className="message__action message__video-download"
+            >
+              <Icon name="download" size={13} /> {t('Download video')}
+            </a>
+          </div>
+        )}
         {message.model3dUrl && (
           <Suspense fallback={<div className="model3d-viewer model3d-viewer--loading" role="status">{t('Preparing 3D result…')}</div>}>
             <Model3DResult src={message.model3dUrl} name={message.model3dName || displayModel?.name} />
@@ -5674,6 +5983,11 @@ const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | n
           {onSpeak && (
             <button type="button" className="message__action" onClick={onSpeak}>
               <Icon name="tts" size={13} /> {t('Read aloud')}
+            </button>
+          )}
+          {onResumeVideo && (
+            <button type="button" className="message__action" onClick={onResumeVideo}>
+              <Icon name="play" size={13} /> {t('Resume video')}
             </button>
           )}
           {onRetry && (

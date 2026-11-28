@@ -215,7 +215,7 @@ export function canUseChatCompletions(model?: LoadedModel | null): boolean {
 }
 
 const COMPOSER_CAPABILITIES: ReadonlySet<ModelCapability> = new Set<ModelCapability>([
-  'chat', 'image', 'audio', 'audio-generation', 'tts', 'model3d',
+  'chat', 'image', 'audio', 'audio-generation', 'tts', 'model3d', 'video',
 ]);
 
 export function isComposerSelectableCapability(capability: ModelCapability): boolean {
