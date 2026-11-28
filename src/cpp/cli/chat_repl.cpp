@@ -6,6 +6,7 @@
 #include <condition_variable>
 #include <csignal>
 #include <cstdio>
+#include <cstdlib>
 #include <iostream>
 #include <mutex>
 #include <sstream>
@@ -906,9 +907,337 @@ void print_model_list(const TermUi& ui,
     }
 }
 
+enum ExitCode { kExitOk = 0, kExitFailure = 1, kExitUsage = 2, kExitInterrupted = 130 };
+
+// Checks whether stdin is a terminal rather than a pipe or file.
+bool stdin_is_tty() {
+#ifdef _WIN32
+    return _isatty(_fileno(stdin)) != 0;
+#else
+    return isatty(STDIN_FILENO) != 0;
+#endif
+}
+
+#ifdef _WIN32
+std::atomic<UINT> g_saved_output_code_page{0};
+#endif
+
+// Switches a Windows console to UTF-8 output and puts the previous code page back afterwards.
+// Does nothing when stdout is not a console or on other platforms.
+class Utf8ConsoleOutput {
+public:
+    Utf8ConsoleOutput() {
+#ifdef _WIN32
+        if (!stdout_is_tty()) return;
+        UINT previous = GetConsoleOutputCP();
+        if (previous != 0 && previous != CP_UTF8 && SetConsoleOutputCP(CP_UTF8)) {
+            g_saved_output_code_page = previous;
+        }
+#endif
+    }
+    ~Utf8ConsoleOutput() { restore(); }
+    Utf8ConsoleOutput(const Utf8ConsoleOutput&) = delete;
+    Utf8ConsoleOutput& operator=(const Utf8ConsoleOutput&) = delete;
+
+    static void restore() {
+#ifdef _WIN32
+        UINT previous = g_saved_output_code_page.exchange(0);
+        if (previous != 0) SetConsoleOutputCP(previous);
+#endif
+    }
+};
+
+// Ctrl-C ends a one-shot run immediately with exit code 130.
+#ifdef _WIN32
+BOOL WINAPI oneshot_ctrl_handler(DWORD ctrl_type) {
+    if (ctrl_type == CTRL_C_EVENT || ctrl_type == CTRL_BREAK_EVENT) {
+        Utf8ConsoleOutput::restore();
+        std::_Exit(kExitInterrupted);
+    }
+    return FALSE;
+}
+#else
+void oneshot_sigint_handler(int) {
+    std::_Exit(kExitInterrupted);
+}
+#endif
+
+// Sends anything written to std::cout to stderr while it is alive.
+class StdoutToStderr {
+public:
+    StdoutToStderr() : saved_(std::cout.rdbuf(std::cerr.rdbuf())) {}
+    ~StdoutToStderr() { std::cout.rdbuf(saved_); }
+    StdoutToStderr(const StdoutToStderr&) = delete;
+    StdoutToStderr& operator=(const StdoutToStderr&) = delete;
+
+private:
+    std::streambuf* saved_;
+};
+
+bool is_blank(const std::string& s) {
+    return s.find_first_not_of(" \t\r\n") == std::string::npos;
+}
+
+std::string read_all_stdin() {
+    std::ostringstream ss;
+    ss << std::cin.rdbuf();
+    return ss.str();
+}
+
+// Dumps JSON without throwing on invalid UTF-8.
+std::string dump_safe(const json& j) {
+    return j.dump(-1, ' ', false, json::error_handler_t::replace);
+}
+
+int oneshot_error(const std::string& message, int code) {
+    std::cerr << "Error: " << message << std::endl;
+    return code;
+}
+
+bool stdout_write_failed() {
+    std::cout.flush();
+    return std::cout.fail();
+}
+
+std::string describe_exception(const std::exception& e) {
+    if (const auto* http = dynamic_cast<const lemonade::HttpError*>(&e)) {
+        return lemonade::extract_server_error_message(*http);
+    }
+    return e.what();
+}
+
+// Sends one non-streaming request; prints the answer text, or one JSON object if json_output.
+int oneshot_blocking(lemonade::LemonadeClient& client, const std::string& model,
+                     json request_body, bool json_output) {
+    request_body["stream"] = false;
+
+    json response;
+    try {
+        std::string body = client.make_request("/api/v1/chat/completions", "POST",
+                                               dump_safe(request_body), "application/json",
+                                               /*connection_timeout_ms=*/30000,
+                                               /*read_timeout_ms=*/600000);
+        response = json::parse(body);
+    } catch (const std::exception& e) {
+        return oneshot_error(describe_exception(e), kExitFailure);
+    }
+
+    if (!response.is_object() || !response.contains("choices") ||
+        !response["choices"].is_array() || response["choices"].empty() ||
+        !response["choices"][0].is_object()) {
+        return oneshot_error("server returned an invalid chat response", kExitFailure);
+    }
+    const json& choice = response["choices"][0];
+    if (!choice.contains("message") || !choice["message"].is_object()) {
+        return oneshot_error("server returned a response without an assistant message",
+                             kExitFailure);
+    }
+    const json& message = choice["message"];
+    const bool has_content = message.contains("content") &&
+        (message["content"].is_string() || message["content"].is_null());
+    const bool has_tool_calls = message.contains("tool_calls") && message["tool_calls"].is_array();
+    if (!has_content && !has_tool_calls) {
+        return oneshot_error("server returned a response without an assistant message",
+                             kExitFailure);
+    }
+    if (json_output) {
+        json out;
+        out["model"] = response.contains("model") && response["model"].is_string()
+            ? response["model"] : json(model);
+        out["message"] = message;
+        out["usage"] = response.contains("usage") && response["usage"].is_object()
+            ? response["usage"] : json::object();
+        out["finish_reason"] = choice.contains("finish_reason") ? choice["finish_reason"]
+                                                                 : json(nullptr);
+        std::cout << dump_safe(out) << std::endl;
+        return stdout_write_failed() ? oneshot_error("failed to write to stdout", kExitFailure)
+                                     : kExitOk;
+    }
+
+    std::string text = message.contains("content") && message["content"].is_string()
+        ? message["content"].get<std::string>() : std::string();
+    std::cout << text;
+    if (text.empty() || text.back() != '\n') std::cout << "\n";
+    std::cout.flush();
+    return stdout_write_failed() ? oneshot_error("failed to write to stdout", kExitFailure)
+                                 : kExitOk;
+}
+
+// Streams the answer text to stdout as it arrives; any stream failure exits 1 after partial output.
+int oneshot_streaming(lemonade::LemonadeClient& client, json request_body) {
+    request_body["stream"] = true;
+    request_body["stream_options"] = {{"include_usage", true}};
+
+    bool done = false;
+    bool stdout_failed = false;
+    std::string stream_error;
+    char last_char = '\n';
+    bool wrote_any = false;
+
+    auto callback = [&](const std::string&, const std::string& event_data) {
+        if (stdout_failed) return;
+        if (event_data == "[DONE]") {
+            done = true;
+            return;
+        }
+        try {
+            json chunk = json::parse(event_data);
+            if (chunk.is_object() && chunk.contains("error")) {
+                const json& err = chunk["error"];
+                stream_error = err.is_object() && err.contains("message") && err["message"].is_string()
+                    ? err["message"].get<std::string>() : err.dump();
+                return;
+            }
+            if (!chunk.contains("choices") || !chunk["choices"].is_array() ||
+                chunk["choices"].empty()) {
+                return;
+            }
+            const json& delta = chunk["choices"][0].contains("delta")
+                ? chunk["choices"][0]["delta"] : json::object();
+            if (delta.is_object() && delta.contains("content") && delta["content"].is_string()) {
+                const std::string piece = delta["content"].get<std::string>();
+                if (!piece.empty()) {
+                    std::cout << piece << std::flush;
+                    if (std::cout.fail()) stdout_failed = true;
+                    last_char = piece.back();
+                    wrote_any = true;
+                }
+            }
+        } catch (const json::exception&) {
+            if (stream_error.empty()) stream_error = "received a malformed stream event";
+        }
+    };
+
+    int code = kExitOk;
+    try {
+        client.make_request("/api/v1/chat/completions", "POST", dump_safe(request_body),
+                            "application/json", callback,
+                            /*connection_timeout_ms=*/30000,
+                            /*read_timeout_ms=*/600000,
+                            /*should_abort=*/[&] { return stdout_failed; });
+        if (stdout_failed) {
+            code = oneshot_error("failed to write to stdout", kExitFailure);
+        } else if (!stream_error.empty()) {
+            code = oneshot_error(stream_error, kExitFailure);
+        } else if (!done) {
+            code = oneshot_error("response stream ended unexpectedly", kExitFailure);
+        }
+    } catch (const std::exception& e) {
+        code = oneshot_error(describe_exception(e), kExitFailure);
+    }
+
+    if (code == kExitOk && !wrote_any) {
+        std::cout << "\n";
+    } else if (wrote_any && last_char != '\n') {
+        std::cout << "\n";
+    }
+    if (stdout_write_failed() && code == kExitOk) {
+        code = oneshot_error("failed to write to stdout", kExitFailure);
+    }
+    return code;
+}
+
+// Checks whether the server already has this model loaded.
+bool is_model_loaded(lemonade::LemonadeClient& client, const std::string& model) {
+    try {
+        json health = json::parse(client.make_request("/api/v1/health", "GET", "", "", 1000, 1000));
+        if (!health.contains("all_models_loaded") || !health["all_models_loaded"].is_array()) {
+            return false;
+        }
+        for (const auto& m : health["all_models_loaded"]) {
+            if (m.is_string() && m.get<std::string>() == model) return true;
+            if (m.is_object() && m.contains("model_name") && m["model_name"].is_string() &&
+                m["model_name"].get<std::string>() == model) {
+                return true;
+            }
+        }
+    } catch (const std::exception&) {
+    }
+    return false;
+}
+
+// Runs a single request built from -p and/or stdin, then exits.
+int run_chat_oneshot(lemonade::LemonadeClient& client, const ChatOptions& options) {
+    if (options.prompt.has_value() && is_blank(*options.prompt)) {
+        return oneshot_error("--prompt is empty", kExitUsage);
+    }
+
+    std::string content = options.prompt.value_or("");
+    if (!stdin_is_tty()) {
+        std::string piped = read_all_stdin();
+        if (!is_blank(piped)) {
+            if (!content.empty()) content += "\n\n";
+            content += piped;
+        }
+    }
+    if (content.empty()) {
+        return oneshot_error("no input; pass --prompt or pipe text on stdin", kExitUsage);
+    }
+
+    std::string model = options.initial_model;
+    bool already_loaded = false;
+    if (model.empty()) {
+        try {
+            std::string body = client.make_request("/api/v1/health", "GET", "", "", 1000, 1000);
+            json health = json::parse(body);
+            if (health.contains("model_loaded") && health["model_loaded"].is_string()) {
+                model = health["model_loaded"].get<std::string>();
+            }
+        } catch (const std::exception& e) {
+            return oneshot_error(describe_exception(e), kExitFailure);
+        }
+        if (model.empty()) {
+            return oneshot_error("no model specified and none is loaded; pass MODEL",
+                                 kExitUsage);
+        }
+        already_loaded = true;
+    } else {
+        already_loaded = is_model_loaded(client, model);
+    }
+
+#ifdef _WIN32
+    SetConsoleCtrlHandler(oneshot_ctrl_handler, TRUE);
+#else
+    std::signal(SIGINT, oneshot_sigint_handler);
+#endif
+
+    if (!already_loaded) {
+        TermUi quiet_ui;
+        quiet_ui.unicode = false;
+        StdoutToStderr progress_to_stderr;
+        if (!ensure_model_loaded(quiet_ui, client, model)) {
+            return kExitFailure;
+        }
+    }
+
+    json messages = json::array();
+    if (!options.system_prompt.empty()) {
+        messages.push_back({{"role", "system"}, {"content", options.system_prompt}});
+    }
+    messages.push_back({{"role", "user"}, {"content", content}});
+
+    json request_body;
+    request_body["model"] = model;
+    request_body["messages"] = messages;
+
+    if (options.json_output || !options.stream) {
+        return oneshot_blocking(client, model, request_body, options.json_output);
+    }
+    return oneshot_streaming(client, request_body);
+}
+
 } // namespace
 
 int run_chat_repl(lemonade::LemonadeClient& client, const ChatOptions& options) {
+    const bool oneshot = options.prompt.has_value() || !stdin_is_tty();
+    if (options.json_output && !oneshot) {
+        return oneshot_error("--json requires --prompt or piped stdin", kExitUsage);
+    }
+    if (oneshot) {
+        Utf8ConsoleOutput utf8_output;
+        return run_chat_oneshot(client, options);
+    }
+
     TermUi ui = init_term_ui();
 
     std::string active_model = options.initial_model;
