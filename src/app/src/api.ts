@@ -9,7 +9,8 @@ import { COLLECTION_IMAGE_SIZE } from './features/collections/collectionImageCon
 import { buildChatContextUsage, collectChatTokenCounts, estimateChatContextUsage, newChatTokenCounts, withGeneratedContextUsage, type ChatContextUsage } from './features/chat/contextUsage';
 
 function detectDefaultBaseUrl(): string {
-  if (typeof window !== 'undefined' && window.location) {
+  // Tauri exposes getServerPort too, but its renderer origin is not lemond.
+  if (typeof window !== 'undefined' && window.location && !('__TAURI_INTERNALS__' in window)) {
     // When served by lemond at /app, window.location.origin IS the API server.
     // Detect this by checking for the lemond-injected window.api shim or /app path.
     const servedByLemond = window.location.pathname.startsWith('/app')
