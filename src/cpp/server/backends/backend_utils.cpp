@@ -683,7 +683,9 @@ namespace lemon::backends {
             exe_path = find_executable_in_install_dir(install_dir, spec.binary);
             needs_install = exe_path.empty();
 
-            if (!needs_install && fs::exists(version_file)) {
+            if (!needs_install && spec.build_matches && !spec.build_matches(install_dir, asset_pattern)) {
+                needs_install = true;
+            } else if (!needs_install && fs::exists(version_file)) {
                 std::string installed_version;
                 std::ifstream vf(version_file);
                 std::getline(vf, installed_version);
@@ -987,6 +989,9 @@ namespace lemon::backends {
             }
             if (!archive_subdir.empty()) {
                 keep_archive_subdir(staging_dir, archive_subdir);
+            }
+            if (spec.build_matches && !spec.build_matches(staging_dir, filename)) {
+                throw std::runtime_error("Downloaded archive does not contain the requested backend build: " + filename);
             }
 
             // Save version info into the staging tree so it travels with the

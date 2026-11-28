@@ -823,6 +823,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
   const [installing, setInstalling] = useState<string | null>(null); // "recipe:backend"
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [runtimeConfig, setRuntimeConfig] = useState<Record<string, unknown>>({});
+  const [savingFlmBuild, setSavingFlmBuild] = useState(false);
   const backendTunings = useMemo<Record<string, BackendTuning>>(
     () => backendTuningsFromServerConfig(runtimeConfig, sysInfo),
     [runtimeConfig, sysInfo],
@@ -831,6 +832,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
   const [downloadItems, setDownloadItems] = useState<DownloadListItem[]>(() => downloadStore.snapshot());
   const terminalBackendRefreshRef = useRef<Set<string>>(new Set());
   const systemInfoRequestRef = useRef(0);
+  const runtimeConfigRequestRef = useRef(0);
   const pendingBackendActionsRef = useRef<Map<string, PendingBackendAction>>(new Map());
   const backendSyncPromisesRef = useRef<Map<string, Promise<BackendSyncResult>>>(new Map());
   const toastTimerRef = useRef<number | null>(null);
@@ -864,6 +866,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
   }, []);
 
   const fetchInfo = useCallback(async (showSpinner = true) => {
+    const configRequestId = ++runtimeConfigRequestRef.current;
     try {
       if (showSpinner) setLoading(true);
       setError(null);
@@ -872,7 +875,9 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
         loadSystemInfo(),
         api.getRuntimeConfig(),
       ]);
-      setRuntimeConfig(config);
+      if (configRequestId === runtimeConfigRequestRef.current) {
+        setRuntimeConfig(config);
+      }
     } catch (err) {
       setError(friendlyErrorMessage(err));
     } finally {
@@ -1058,6 +1063,24 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
     }
   }, [fetchInfo, syncBackendStatus, toast]);
 
+  const handleFlmBuildChange = useCallback(async (runtime: string) => {
+    setSavingFlmBuild(true);
+    runtimeConfigRequestRef.current += 1;
+    try {
+      await api.setRuntimeConfig({ flm_runtime: runtime });
+      runtimeConfigRequestRef.current += 1;
+      setRuntimeConfig(current => ({
+        ...current,
+        flm: { ...backendRuntimeRecord(current.flm), runtime },
+      }));
+      await fetchInfo(false);
+    } catch (err) {
+      toast(friendlyErrorMessage(err));
+    } finally {
+      setSavingFlmBuild(false);
+    }
+  }, [fetchInfo, toast]);
+
   const handleUninstall = useCallback(async (recipe: string, backend: string) => {
     const key = backendKey(recipe, backend);
     try {
@@ -1230,7 +1253,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
             const badge = stateBadge(info.state);
             const cellKey = backendKey(recipe, backend);
             const canEditArgs = backendArgsTarget(runtimeConfig, cellKey) !== null;
-            const isInstalling = installing === cellKey;
+            const isInstalling = installing === cellKey || (recipe === 'flm' && savingFlmBuild);
             const backendDownload = downloadItems.find(download => backendDownloadMatches(download, recipe, backend));
             const showBackendProgress = Boolean(backendDownload && (isDownloadActive(backendDownload) || backendDownload.status === 'paused'));
             const tuning = backendTunings[cellKey] || null;
@@ -1337,6 +1360,21 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
                   )}
                 </div>
 
+                {recipe === 'flm' && backend === 'npu' && (
+                  <label className="backend-card__variant-meta" title={t('Changing the runtime requires an update before FastFlowLM can run.')}>
+                    <span>{t('Runtime')}</span>
+                    <select
+                      className="select"
+                      aria-label={t('FastFlowLM runtime')}
+                      value={backendRuntimeRecord(runtimeConfig.flm)?.runtime === 'hrx' ? 'hrx' : 'xrt'}
+                      disabled={isInstalling || showBackendProgress || !runtimeConfig.flm}
+                      onChange={event => void handleFlmBuildChange(event.target.value)}
+                    >
+                      <option value="xrt">{t('XRT (default)')}</option>
+                      <option value="hrx">HRX</option>
+                    </select>
+                  </label>
+                )}
                 {description && <p className="backend-card__description">{description}</p>}
                 {provenance && <p className="backend-card__provenance">{provenance}</p>}
 
@@ -1438,7 +1476,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
         </div>
       </article>
     );
-  }, [backendTunings, downloadItems, handleAction, handleInstall, handleUninstall, installing, runtimeConfig, showLogos, showTech, sysInfo]);
+  }, [backendTunings, downloadItems, handleAction, handleFlmBuildChange, handleInstall, handleUninstall, installing, runtimeConfig, savingFlmBuild, showLogos, showTech, sysInfo]);
 
 
   const isUpdatesView = viewFilter === 'updates';

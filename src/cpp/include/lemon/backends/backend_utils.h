@@ -44,10 +44,13 @@ namespace lemon::backends {
         using InstallParamsFn = InstallParams(*)(const std::string& backend, const std::string& version);
         InstallParamsFn install_params_fn;  // nullptr for backends with no auto-install
 
+        using BuildMatchesFn = bool(*)(const std::filesystem::path&, const std::string& asset);
+        BuildMatchesFn build_matches;
+
         BackendSpec(std::string r, std::string b, InstallParamsFn fn = nullptr,
-                    bool split = false)
+                    bool split = false, BuildMatchesFn matches = nullptr)
             : recipe(std::move(r)), binary(std::move(b)),
-              supports_split_archive(split), install_params_fn(fn) {}
+              supports_split_archive(split), install_params_fn(fn), build_matches(matches) {}
 
         std::string log_name() const { return recipe + " Server"; };
     };

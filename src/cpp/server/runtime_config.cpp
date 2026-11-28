@@ -1200,6 +1200,11 @@ void RuntimeConfig::validate_backend(const std::string& backend, const std::stri
         }
         validate_bin_path(backend, key, value.get<std::string>());
     }
+    else if (backend == "flm" && key == "runtime") {
+        if (!value.is_string() || (value != "xrt" && value != "hrx")) {
+            throw std::invalid_argument("'flm.runtime' must be 'xrt' or 'hrx'");
+        }
+    }
     else if (key == "prefer_system") {
         if (!value.is_boolean()) {
             throw std::invalid_argument("'" + backend + "." + key + "' must be a boolean");

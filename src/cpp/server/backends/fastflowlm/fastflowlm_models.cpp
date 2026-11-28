@@ -1,4 +1,6 @@
 #include "lemon/backends/fastflowlm/fastflowlm_models.h"
+#include "lemon/backends/fastflowlm/fastflowlm.h"
+#include "lemon/backends/fastflowlm/fastflowlm_server.h"
 #include "lemon/backends/fastflowlm/flm_model_labels.h"
 
 #include <algorithm>
@@ -228,7 +230,8 @@ std::vector<std::string> flm_installed_checkpoints() {
 
 std::vector<ModelInfo> flm_discover_models() {
     std::vector<ModelInfo> flm_models;
-    if (!SystemInfoCache::get_flm_status().is_ready()) {
+    const auto status = SystemInfoCache::get_flm_status();
+    if (!status.is_ready() && status.state != "update_required") {
         return flm_models;
     }
 
@@ -667,6 +670,39 @@ std::string find_flm_executable() {
         }
     }
     return "";
+}
+
+bool flm_runtime_matches() {
+    if (!BackendUtils::find_external_backend_binary("flm", "npu").empty() ||
+        !find_flm_in_path().empty()) {
+        return true;
+    }
+    const std::string install_dir = BackendUtils::get_install_directory("flm", "npu");
+    if (BackendUtils::find_executable_in_install_dir(install_dir, descriptor.binary).empty()) {
+        return true;
+    }
+    return flm_build_matches(install_dir, FastFlowLMServer::get_install_params("npu", "").filename);
+}
+
+bool flm_build_matches(const fs::path& install_dir, const std::string& asset) {
+    bool installed_hrx = false;
+    std::error_code ec;
+    for (fs::recursive_directory_iterator it(install_dir, ec), end; !ec && it != end;
+         it.increment(ec)) {
+        const auto& entry = *it;
+        const std::string filename = entry.path().filename().string();
+#ifdef _WIN32
+        const bool hrx_library = filename == "hrx.dll";
+#else
+        const bool hrx_library = filename == "libhrx.so" || filename.rfind("libhrx.so.", 0) == 0;
+#endif
+        if (hrx_library && entry.is_regular_file(ec)) {
+            installed_hrx = true;
+            break;
+        }
+    }
+    if (ec) return false;
+    return installed_hrx == (asset.rfind("HRX_", 0) == 0);
 }
 
 bool run_flm_validate(const std::string& flm_path, std::string& error_message) {

@@ -3453,6 +3453,7 @@ if(BUILD_TESTING AND EXISTS "${_BACKEND_CONTRACTS_TEST_SRC}")
         test/cpp/test_backend_contracts.cpp
     )
     target_link_libraries(test_backend_contracts PRIVATE lemonade-server-core)
+    add_dependencies(test_backend_contracts copy_resources)
     include(CTest)
     add_cpp_ci_test(BackendContractsTest CI ON COMMAND test_backend_contracts)
 endif()
