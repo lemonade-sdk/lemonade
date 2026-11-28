@@ -18,6 +18,20 @@
 
 namespace lemon::system_info_detail {
 
+inline bool is_amd_discrete_gpu(const std::string& device_name) {
+    std::string name = device_name;
+    std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+
+    static const std::vector<std::string> keywords = {
+        "rx ", "xt", "pro w", "pro v", "radeon pro", "radeon ai pro", "firepro", "fury"
+    };
+    return std::any_of(keywords.begin(), keywords.end(), [&](const std::string& keyword) {
+        return name.find(keyword) != std::string::npos;
+    });
+}
+
 inline const std::set<std::string>& cuda_supported_archs() {
     static const std::set<std::string> archs = {
         "sm_75",   // Turing       (RTX 20, GTX 16, T4, Quadro RTX)

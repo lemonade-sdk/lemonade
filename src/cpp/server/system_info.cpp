@@ -74,11 +74,6 @@ namespace fs = std::filesystem;
 using namespace lemon::utils;
 using namespace lemon::backends;
 
-// AMD discrete GPU keywords
-const std::vector<std::string> AMD_DISCRETE_GPU_KEYWORDS = {
-    "rx ", "xt", "pro w", "pro v", "radeon pro", "firepro", "fury"
-};
-
 // NVIDIA discrete GPU keywords
 const std::vector<std::string> NVIDIA_DISCRETE_GPU_KEYWORDS = {
     "geforce", "rtx", "gtx", "quadro", "tesla", "titan",
@@ -3003,18 +2998,7 @@ std::vector<GPUInfo> WindowsSystemInfo::detect_amd_gpus(const std::string& gpu_t
 
         // Check if this is an AMD Radeon GPU
         if (name.find("AMD") != std::string::npos && name.find("Radeon") != std::string::npos) {
-            // Convert to lowercase for keyword matching
-            std::string name_lower = name;
-            std::transform(name_lower.begin(), name_lower.end(), name_lower.begin(), ::tolower);
-
-            // Classify as discrete or integrated based on keywords
-            bool is_discrete = false;
-            for (const auto& keyword : AMD_DISCRETE_GPU_KEYWORDS) {
-                if (name_lower.find(keyword) != std::string::npos) {
-                    is_discrete = true;
-                    break;
-                }
-            }
+            bool is_discrete = system_info_detail::is_amd_discrete_gpu(name);
             bool is_integrated = !is_discrete;
 
             // Filter based on requested type

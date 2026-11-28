@@ -32,6 +32,7 @@ Lemonade uses [llama.cpp](https://github.com/ggerganov/llama.cpp) as its primary
   - **Stable** (default): Custom builds with latest optimizations from lemonade-sdk
   - **Nightly**: Bleeding-edge builds from lemonade-sdk/llamacpp-rocm (experimental)
 - **Installation**: Varies by channel (see below)
+- **Windows GPU classification**: Radeon AI PRO GPUs are discrete; Ryzen AI integrated GPUs remain integrated. On hybrid AMD systems, default ROCm architecture selection prefers an available supported discrete GPU.
 
 ### CUDA
 - **Platform**: Windows, Linux
