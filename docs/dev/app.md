@@ -12,6 +12,8 @@ Tauri uses WebView2 on Windows, WKWebView on macOS, and webkit2gtk on Linux. It 
 
 The app connects to the saved endpoint or discovers a local server where possible; remote servers can be specified under **Settings > Server**. Server health and other API requests use the regular HTTP client, not a separate Rust-side proxy.
 
+The desktop Content Security Policy is configured in `src/app/src-tauri/tauri.conf.json`. HTTP(S) and WebSocket connections remain available for user-configured servers and MCP endpoints; remote images and blob/data media support model output. Inline styles and blob workers are needed by the renderer and 3D viewer. Tauri's automatic CSP modification is disabled only for `style-src`: a nonce there would override `'unsafe-inline'` and block dynamically injected styles. Tauri still supplies hashes and nonces for bundled scripts. The explicit script hash permits the stylesheet preload handler in `src/index.html` and must be updated if that handler changes. Verify policy changes in the native webviews on all three platforms; the browser build has a separate hosting configuration.
+
 ## Source layout
 
 Selected paths (not a complete file listing):
