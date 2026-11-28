@@ -226,6 +226,25 @@ CAPABILITIES = {
                 "tool_calling": "Llama-3.2-1B-Instruct-NPU",
             },
         },
+        "amdgpu-llm": {
+            "backends": ["gpu"],
+            "supports": {
+                "chat_completions": True,
+                "chat_completions_streaming": True,
+                "chat_completions_async": True,
+                "completions": True,
+                "completions_streaming": True,
+                "completions_async": True,
+                "tool_calls": True,
+                "tool_calls_streaming": True,
+                "multi_model": True,
+                "stop_parameter": True,
+                "echo_parameter": True,
+            },
+            "test_models": {
+                "llm": "Qwen2.5-14B-Instruct-GPU",
+            },
+        },
         "flm": {
             "backends": ["npu"],
             "supports": {
