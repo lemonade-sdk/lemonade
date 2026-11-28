@@ -8,6 +8,7 @@
   },
   "allowed_origins": "",
   "auto_check_model_updates": true,
+  "auto_context_safer": false,
   "auto_evict": false,
   "auto_evict_threshold_pct": 0.9,
   "auto_update_models": false,
