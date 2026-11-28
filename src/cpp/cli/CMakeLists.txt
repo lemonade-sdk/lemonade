@@ -26,6 +26,9 @@ set(COMMON_SOURCES
     bench_comparison.cpp
     bench_sysinfo.cpp
     chat_repl.cpp
+    chat_session.cpp
+    line_editor.cpp
+    session_picker.cpp
     ../server/recipe_options.cpp
     ../server/utils/process_manager.cpp
     ../server/utils/path_utils.cpp

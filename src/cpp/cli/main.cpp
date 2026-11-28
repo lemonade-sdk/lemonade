@@ -209,6 +209,12 @@ struct CliConfig {
     // Chat REPL options
     bool chat_cli = false;
     bool chat_no_stream = false;
+    std::optional<std::string> chat_prompt;
+    bool chat_json = false;
+    bool chat_continue = false;
+    bool chat_no_save = false;
+    std::string chat_resume;
+    std::string chat_session;
     std::string chat_system_prompt;
 
     // Bench command options
@@ -575,6 +581,12 @@ static int handle_chat_command(lemonade::LemonadeClient& client, const CliConfig
     options.initial_model = config.model;
     options.system_prompt = config.chat_system_prompt;
     options.stream = !config.chat_no_stream;
+    options.prompt = config.chat_prompt;
+    options.json_output = config.chat_json;
+    options.continue_last = config.chat_continue;
+    options.resume = config.chat_resume;
+    options.session_name = config.chat_session;
+    options.no_save = config.chat_no_save;
     return lemon_cli::run_chat_repl(client, options);
 }
 
@@ -1608,7 +1620,7 @@ int main(int argc, char* argv[]) {
     // Quick start commands
     CLI::App* run_cmd = app.add_subcommand("run", "Load a model and open the webapp in browser")->group("Quick start");
     CLI::App* launch_cmd = app.add_subcommand("launch", "Launch an agent with a model")->group("Quick start");
-    CLI::App* chat_cmd = app.add_subcommand("chat", "Open an interactive chat REPL in the terminal")->group("Quick start");
+    CLI::App* chat_cmd = app.add_subcommand("chat", "Chat in the terminal: interactive REPL, or one-shot with --prompt or piped stdin")->group("Quick start");
 
     // Server commands
     CLI::App* backends_cmd = app.add_subcommand("backends", "List supported recipes and backends. Use --all to show all backends")->group("Server");
@@ -1812,8 +1824,28 @@ int main(int argc, char* argv[]) {
         "Model to chat with (optional; uses currently loaded model if omitted)")->type_name("MODEL");
     chat_cmd->add_option("--system", config.chat_system_prompt,
         "System prompt to seed the conversation")->type_name("TEXT");
+    chat_cmd->add_option("-p,--prompt", config.chat_prompt,
+        "Send one prompt, print the answer, and exit (piped stdin also runs one-shot)")->type_name("TEXT");
+    chat_cmd->add_flag("-j,--json", config.chat_json,
+        "Print one JSON response object (one-shot only)");
     chat_cmd->add_flag("--no-stream", config.chat_no_stream,
         "Disable streaming; print the full response when it is ready");
+    const auto not_blank = [](const std::string& value) {
+        return value.find_first_not_of(" \t") == std::string::npos
+            ? std::string("must not be empty") : std::string();
+    };
+    CLI::Option* continue_opt = chat_cmd->add_flag("--continue", config.chat_continue,
+        "Continue the most recently used saved session");
+    CLI::Option* resume_opt = chat_cmd->add_option("--resume", config.chat_resume,
+        "Resume a saved session by ID, unique ID prefix, or name")
+        ->type_name("ID_OR_NAME")->check(not_blank);
+    CLI::Option* session_opt = chat_cmd->add_option("--session", config.chat_session,
+        "Open the session called NAME, creating it if needed (works with -p)")
+        ->type_name("NAME")->check(not_blank);
+    chat_cmd->add_flag("--no-save", config.chat_no_save,
+        "Do not write anything to the session store for this run");
+    continue_opt->excludes(resume_opt)->excludes(session_opt);
+    resume_opt->excludes(session_opt);
 
     // Unload options
     unload_cmd->add_option("model", config.model, "Model name to unload")->type_name("MODEL");
@@ -1890,13 +1922,17 @@ int main(int argc, char* argv[]) {
 
     // Parse arguments
     try {
+        // On Windows this replaces argv with UTF-8 so non-ASCII prompts survive; no-op elsewhere.
+        argv = app.ensure_utf8(argv);
         app.parse(argc, argv);
     } catch (const CLI::ParseError& e) {
         if (is_launch_provider_misuse(argc, argv)) {
             std::cerr << "Error: --provider is only supported for 'lemonade launch codex'." << std::endl;
             return 1;
         }
-        return app.exit(e);
+        int exit_code = app.exit(e);
+        // Invalid chat arguments are a usage error (2); --help keeps exit 0.
+        return (chat_cmd->count() > 0 && exit_code != 0) ? 2 : exit_code;
     }
 
     config.model_source_explicit = pull_source_opt->count() > 0;
