@@ -45,6 +45,20 @@
       ]
     }
   },
+  "conditions_turn_bounds": {
+    "version": "1",
+    "model_name": "user.Conditions-TurnBounds",
+    "recipe": "collection.router",
+    "components": ["local", "cloud"],
+    "routing": {
+      "candidates": ["local", "cloud"],
+      "default_model": "local",
+      "rules": [
+        { "id": "min_turns-rule", "match": { "min_turns": 3 }, "route_to": "cloud" },
+        { "id": "max_turns-rule", "match": { "max_turns": 1 }, "route_to": "cloud" }
+      ]
+    }
+  },
   "conditions_features": {
     "version": "1",
     "model_name": "user.Conditions-Features",
@@ -87,7 +101,9 @@
         ] }, "route_to": "local" },
         { "id": "no-consent-recorded-stays-local", "match": { "metadata": { "key": "consent", "exists": false } }, "route_to": "local" },
         { "id": "region-recorded-stays-local", "match": { "metadata": { "key": "region", "exists": true } }, "route_to": "local" },
-        { "id": "blank-equals-never-matches", "match": { "metadata": { "key": "note", "equals": "" } }, "route_to": "local" }
+        { "id": "blank-equals-never-matches", "match": { "metadata": { "key": "note", "equals": "" } }, "route_to": "local" },
+        { "id": "high-error-streak-escalates", "match": { "metadata": { "key": "tool_error_streak", "gte": 2 } }, "route_to": "local" },
+        { "id": "low-budget-stays-local", "match": { "metadata": { "key": "budget_remaining", "lte": 5 } }, "route_to": "local" }
       ]
     }
   },

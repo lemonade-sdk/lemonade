@@ -1,3 +1,6 @@
+#include <algorithm>
+#include <cstdint>
+#include <limits>
 #include <map>
 #include <optional>
 #include <string>
@@ -28,9 +31,25 @@ const RouteArg kHasImages{"has_images", ArgIn::JsonBody, {{"type", "boolean"}}, 
                           "Simulate a request carrying image input. Defaults to `false`."};
 const RouteArg kHasTools{"has_tools", ArgIn::JsonBody, {{"type", "boolean"}}, false, Support::Available,
                          "Simulate a request carrying tool definitions. Defaults to `false`."};
+const RouteArg kTurns{"turns", ArgIn::JsonBody, {{"type", "integer"}, {"minimum", 0}}, false, Support::Available,
+                      "Simulate conversation depth for `min_turns` and `max_turns` conditions. Defaults to `1`. "
+                      "An explicit `0` counts as `1`, like every real request."};
 const RouteArg kMetadata{"metadata", ArgIn::JsonBody,
                          {{"type", "object"}, {"additionalProperties", {{"type", "string"}}}}, false, Support::Available,
                          "String-valued metadata pairs matched by `metadata` conditions."};
+
+// The integer check also admits integral floats such as 1e20, and casting one at or
+// above 2^64 to an integer is undefined, so a float saturates instead.
+std::size_t simulated_turns(const json& value) {
+    if (value.is_number_float()) {
+        const double turns = value.get<double>();
+        if (turns >= static_cast<double>(std::numeric_limits<std::uint64_t>::max())) {
+            return std::numeric_limits<std::size_t>::max();
+        }
+        return static_cast<std::size_t>(turns);
+    }
+    return static_cast<std::size_t>(value.get<std::uint64_t>());
+}
 
 class RoutingValidateRoute : public ApiRoute {
 public:
@@ -116,7 +135,7 @@ public:
             "`routing.router` has no rules of its own, only the generated `__route_0`, "
             "`__route_1`, etc.",
         };
-        s.args = {kPolicy, kPrompt, kHasImages, kHasTools, kMetadata};
+        s.args = {kPolicy, kPrompt, kHasImages, kHasTools, kTurns, kMetadata};
 
         const ordered_json decision = {
             {"type", "object"},
@@ -169,6 +188,11 @@ public:
         const std::string prompt = req.value(kPrompt, std::string());
         const bool has_images = req.value(kHasImages, false);
         const bool has_tools = req.value(kHasTools, false);
+        // A request that reaches the engine is always at least one turn, and this
+        // simulates that request, so an explicit 0 counts as 1 instead of giving a
+        // 0-turn result no real request can produce.
+        const std::size_t turns =
+            req.has(kTurns) ? std::max<std::size_t>(1, simulated_turns(req.arg(kTurns))) : 1;
 
         std::map<std::string, std::string> metadata;
         if (req.has(kMetadata)) {
@@ -208,6 +232,7 @@ public:
             route_context.params.total_chars = prompt.size();
             route_context.params.has_images = has_images;
             route_context.params.has_tools = has_tools;
+            route_context.params.turn_count = turns;
             route_context.metadata = std::move(metadata);
 
             Decision decision = engine.route(route_context, /*want_trace=*/true);

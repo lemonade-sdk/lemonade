@@ -354,6 +354,21 @@ the request; `min_chars` sees only the latest user turn.
 | With `route_trace`, the hit is recorded under `min_total_chars`, not under `min_chars`, which shares its implementation. | `min_total_chars-trace` |
 | The trace lists `min_total_chars` false, `min_chars` false, then `max_total_chars` true. | `max_total_chars-trace` |
 
+**`conditions_turn_bounds`** — `min_turns: 3` then `max_turns: 1`. The turn count
+is the number of `role: "user"` entries, not the number of messages, and it is
+never below 1.
+
+| Behavior | Case |
+|----------|------|
+| Three user turns among five messages satisfy `min_turns: 3`. The bound is inclusive, and the two assistant replies are not counted. | `min_turns-inclusive-boundary` |
+| One user turn fails `min_turns` and satisfies `max_turns: 1`. The upper bound is inclusive too. | `max_turns-inclusive-boundary` |
+| Two user turns are above 1 and below 3, so neither rule matches and the request falls back. | `between-bounds-default` |
+| An empty `messages` array still reached the router, so the count is 1 and `max_turns: 1` matches. | `floor-at-least-one-turn-empty-messages` |
+| A conversation with only an assistant message also counts as 1 turn. | `floor-at-least-one-turn-no-user-role` |
+| A Responses `input` array is counted the same way: three user items among four match `min_turns: 3`. | `responses-input-array-counts-user-role-items` |
+| With `route_trace`, a `min_turns` hit is recorded under the condition name `min_turns`. | `min_turns-trace` |
+| The trace lists `min_turns` false, then `max_turns` true. | `max_turns-trace` |
+
 **`conditions_features`** — `has_tools: true` then `has_images: true`.
 
 | Behavior | Case |
@@ -380,7 +395,7 @@ the request; `min_chars` sees only the latest user turn.
 **`conditions_metadata`** — here `default_model` is `cloud` and every rule routes
 to `local`. Rules in order: an `any` of `task_class any: ["payment", "checkout"]`
 and `consent equals: "denied"`; `consent exists: false`; `region exists: true`;
-`note equals: ""`.
+`note equals: ""`; `tool_error_streak gte: 2`; `budget_remaining lte: 5`.
 
 | Behavior | Case |
 |----------|------|
@@ -395,6 +410,14 @@ and `consent equals: "denied"`; `consent exists: false`; `region exists: true`;
 | `region: "eu-west"` is present and non-blank, so `exists: true` matches. | `metadata-exists-true` |
 | `consent: "   "` is whitespace only and counts as absent, so `exists: false` matches. | `metadata-whitespace-counts-absent` |
 | With `route_trace`, the first rule's `any` stops at its first matching child, so the trace has one entry `{"condition": "metadata", "result": true}`. | `metadata-trace` |
+| `tool_error_streak: "2"` is read as a number and satisfies `gte: 2`. The bound is inclusive. | `metadata-gte-inclusive-boundary` |
+| `tool_error_streak: "1"` is below 2, so the request falls back. | `metadata-gte-below-threshold-no-match` |
+| No `tool_error_streak` key is sent. A missing value never satisfies `gte`, as with `equals` and `any`. | `metadata-gte-absent-key-no-match` |
+| `tool_error_streak: "many"` is not a number, so `gte` misses instead of failing the request. | `metadata-gte-non-numeric-value-no-match` |
+| `tool_error_streak: "3,5"` is not split on commas the way `any` splits it. The whole value is not a number, so `gte` misses, although 3 alone would match. | `metadata-gte-comma-list-value-no-match` |
+| `budget_remaining: "5"` satisfies `lte: 5`. The bound is inclusive. | `metadata-lte-inclusive-boundary` |
+| `budget_remaining: "6"` is above 5, so the request falls back. | `metadata-lte-above-threshold-no-match` |
+| With `route_trace`, a `gte` leaf is recorded under `metadata`, the same condition name as `equals`, `any` and `exists`. The five metadata leaves before it miss, then it matches. | `metadata-gte-lte-trace` |
 
 **`input_forms`** — `keywords_any: ["escalate"]` then
 `keywords_all: ["alpha", "omega"]`. The two rules tell which text was used as the
