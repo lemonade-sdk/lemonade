@@ -39,6 +39,12 @@ The values shown in the form are sent by **Load** or **Get & Load**, even if the
 
 These are persistent, pre-load model settings. They are not the same as the request-time controls in Chat.
 
+### Use a different inference engine
+
+The model catalog groups registered engine variants when their checkpoint, companion files, source, and capability match. Select **Inference Engine** in Configuration to view a particular registered variant and its own load settings. Selecting an engine does not rewrite a model definition, load or unload a model, or change its saved options.
+
+**Add engine variant** opens the existing custom-model editor with the selected model's information filled in. Choose a unique name, engine and compatible artifacts before saving. Not every engine can use the same files, and engine-specific load options are not copied. Different checkpoints or quantizations remain separate entries. The original model and its files are not changed by registration. Load, unload, favorite, pin, and delete still act on the individual registered model; shared files follow the existing server cache rules.
+
 ### Register custom models, collections, and routers
 
 Select **Open custom models** in the Models toolbar to register a checkpoint that is not in the catalog. Choose the capability and a compatible recipe, enter the checkpoint and any required companion artifacts, then save. The server registers it with a `user.<name>` identifier.

@@ -4,7 +4,7 @@ import { copyTextToClipboard } from '../clipboard';
 import { capabilityFromModelInfo, modelCapabilityTags, modelSupportsChatImageInput } from '../modelCapabilities';
 import { Icon } from './Icon';
 import { storageKey } from '../storage';
-import { CUSTOM_CAPABILITIES, CustomModelCapability, generatedLabelsFor, buildCustomModelRecord, CustomOmniToolDefinition, customLoadOptions, customModelToModelInfo, customRegistrationOptions, customImageCompanionCheckpoints, customImagePurpose, customImageLabelsForPurpose, type CustomImagePurpose, exportCustomModelsPayload, parseCustomModelsImport, type CustomOmniToolTargetType } from '../features/customModels/customModelStore';
+import { CUSTOM_CAPABILITIES, CustomModelCapability, normalizeModelName, generatedLabelsFor, buildCustomModelRecord, CustomOmniToolDefinition, customLoadOptions, customModelToModelInfo, customRegistrationOptions, customImageCompanionCheckpoints, customImagePurpose, customImageLabelsForPurpose, type CustomImagePurpose, exportCustomModelsPayload, parseCustomModelsImport, type CustomOmniToolTargetType } from '../features/customModels/customModelStore';
 import { getCollectionComponents, isCollectionModel, isCollectionFullyDownloaded, withVirtualLoadedCollections } from '../features/collections/collectionModels';
 import {
   detectHuggingFaceBackend,
@@ -12,6 +12,7 @@ import {
   isCompatibleHuggingFaceVariantResult,
 } from '../features/models/huggingFaceSearch';
 import { DEFAULT_CONTEXT_SIZE } from '../modelConfiguration';
+import { canAddEngineVariant, engineVariantGroups, variantNameTaken, variantSource, type VariantSource } from '../features/models/engineVariants';
 import { DownloadListItem, activeDownloadForModel, downloadStore, isDownloadActive } from '../features/downloadManager/downloadStore';
 import { isModelSyncRunning, modelSyncFailureText, modelSyncStore, openServerLogs, type ModelSyncSnapshot } from '../features/models/modelSyncStore';
 import { ModelListPanel, capabilityTagIconTarget, modelIsCustom, modelMatchesBackends, modelMatchesTags, modelMatchesTasks } from './ModelListPanel';
@@ -567,6 +568,7 @@ type OmniCustomToolDraft = {
   maxTokens: string;
 };
 type CustomModelDraftState = {
+  variantSource?: VariantSource;
   name: string;
   displayName: string;
   checkpoint: string;
@@ -1829,17 +1831,26 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       const message = isCollectionModel(model)
         ? `Delete Omni collection "${displayName}"? This removes only the collection definition. Component model files will not be removed.`
         : `Delete custom model "${displayName}"? This removes the model definition and downloaded model files, if present.`;
-      if (!confirm(message)) return;
+      const sibling = variantGroups.get(name)?.find(candidate => modelName(candidate) !== name);
+      const confirmation = sibling ? `${message}
+
+${t('Shared model files are kept while another registration references them.')}` : message;
+      if (!confirm(confirmation)) return;
       try {
         if (!api.isConnected) throw new Error('Connect to the Lemonade server before deleting a custom model.');
         await api.deleteModel(name);
         await refresh();
+        if (sibling) setSelectedDetailModelId(current => current === name ? modelName(sibling) : current);
       } catch (err) {
         console.error('Custom model delete failed:', err);
       }
       return;
     }
-    if (!confirm(`Delete "${model.display_name || name}"? This removes the downloaded files. If the model is loaded, it will be unloaded first.`)) return;
+    const confirmation = `Delete "${model.display_name || name}"? This removes the downloaded files. If the model is loaded, it will be unloaded first.`;
+    if (!confirm(variantGroups.has(name)
+      ? `${confirmation}
+
+${t('Shared model files are kept while another registration references them.')}` : confirmation)) return;
     markBusy(name);
     try {
       await api.deleteModel(name);
@@ -2078,6 +2089,20 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     setShowCustomForm(true);
     setMobileDetailOpen(true);
     void refreshCustomRecipeAvailability();
+  };
+
+  const openEngineVariantForm = (model: ModelInfo) => {
+    const source = variantSource(model);
+    const capability = capabilityFromModelInfo(model);
+    if (!source || !canAddEngineVariant(model) || !CUSTOM_CAPABILITIES.some(c => c.value === capability)) return;
+    const draft = customDraftFromModel({ ...model, type: capability });
+    const baseName = `${draft.displayName} variant`;
+    let displayName = baseName;
+    for (let n = 2; variantNameTaken(normalizeModelName(displayName), visibleServerModels); n++) {
+      displayName = `${baseName} ${n}`;
+    }
+    openCustomForm('model');
+    setCustomDraft({ ...draft, name: '', displayName, variantSource: source });
   };
 
   const openCustomCollectionEditor = (model: ModelInfo) => {
@@ -2382,7 +2407,18 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
           }
         }
       }
-      const registration = await api.registerModelDefinition(saved.name, customRegistrationOptions(savedInfo));
+      const definition = customRegistrationOptions(savedInfo);
+      if (customDraft.variantSource) {
+        // Register is an upsert. Check the latest server list before creating a
+        // variant, rather than silently replacing an existing definition.
+        const latest = await api.models(true);
+        if (variantNameTaken(saved.name, latest.data)) {
+          throw new Error(t('This model name already exists. Choose a different name.'));
+        }
+      }
+      const registration = await api.registerModelDefinition(saved.name, customDraft.variantSource
+        ? { ...definition, source: customDraft.variantSource }
+        : definition);
       const persistedName = typeof registration.model_name === 'string' && registration.model_name.trim()
         ? registration.model_name.trim()
         : saved.name;
@@ -2418,6 +2454,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     }
     return merged;
   }, [visibleServerModels, loadedModels]);
+  const variantGroups = useMemo(() => engineVariantGroups(allModels), [allModels]);
 
   useEffect(() => {
     const knownNames = new Set(visibleServerModels.map(model => customModelNameKey(modelName(model))));
@@ -2742,7 +2779,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     modelscope: hasModelScopeActivity ? filteredModelScopeResults.length : 0,
   };
   const isCustomOmniCollectionDraft = customDraft.capability === 'omni' && customDraft.omniSource === 'collection';
-  const customFormTitle = editingCustomModelName ? 'Edit Omni collection' : (isCustomOmniCollectionDraft ? 'Custom Omni collection' : 'Custom model');
+  const customFormTitle = customDraft.variantSource ? t('Add engine variant') : editingCustomModelName ? 'Edit Omni collection' : (isCustomOmniCollectionDraft ? 'Custom Omni collection' : 'Custom model');
   const customRecipeOptions = recipeOptionsForDraft(customDraft.capability, customDraft.omniSource);
   const selectedCustomRecipe = customRecipeOptions.find(option => option.value === customDraft.recipe) || customRecipeOptions[0];
   const selectedCustomRecipeName = selectedCustomRecipe?.recipe || optionRecipe(customDraft.recipe);
@@ -2975,6 +3012,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       {/* Middle panel: searchable model list; filtering lives in the left rail. */}
       <ModelListPanel
         allModels={allModels}
+        engineVariants={variantGroups}
         loadedNames={loadedNames}
         pulling={pulling}
         downloadItems={downloadItems}
@@ -3038,7 +3076,9 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
             metadata={editingCustomModelName ? (
               <WorkspaceMetadataChip emphasis="medium">{t('Editing saved definition')}</WorkspaceMetadataChip>
             ) : undefined}
-            description={<p>{t('Register a model or collection that is not included in the Lemonade catalog.')}</p>}
+            description={<p>{customDraft.variantSource
+              ? t('Review the checkpoint and choose an inference engine. Compatibility is not guaranteed.')
+              : t('Register a model or collection that is not included in the Lemonade catalog.')}</p>}
             descriptionPlacement="identity"
             actions={(
               <WorkspaceActionGroup className="custom-model-editor__actions" label={`${customFormTitle} actions`}>
@@ -3098,6 +3138,16 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
 
               {!isCustomOmniCollectionDraft && (
                 <>
+                  {customDraft.variantSource && (
+                    <label className="custom-model-form__field">{t('Model source')}
+                      <select className="select" value={customDraft.variantSource}
+                        onChange={e => handleCustomDraftChange({ variantSource: e.target.value as VariantSource })}>
+                        <option value="huggingface">Hugging Face</option>
+                        <option value="modelscope">ModelScope</option>
+                        <option value="local_path">{t('Local path')}</option>
+                      </select>
+                    </label>
+                  )}
                   <label className="custom-model-form__field">Capability
                     <select className="select" value={customDraft.capability} onChange={e => {
                       const nextCapability = e.target.value as CustomModelCapability;
@@ -3371,6 +3421,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         <ModelDetailPanel
           model={selectedDetailModel}
           models={allModels}
+          engineVariants={selectedDetailModelId ? variantGroups.get(selectedDetailModelId) : undefined}
+          onSelectEngineVariant={setSelectedDetailModelId}
+          onAddEngineVariant={fullModelStateReady && selectedDetailModel && canAddEngineVariant(selectedDetailModel)
+            && CUSTOM_CAPABILITIES.some(c => c.value === capabilityFromModelInfo(selectedDetailModel))
+            ? openEngineVariantForm : undefined}
           loadedModel={selectedDetailModelId
             ? (displayLoadedModels.find(m => m.model_name === selectedDetailModelId) ?? null)
             : null}
@@ -3416,7 +3471,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
             setMobileDetailOpen(false);
             if (selectedDetailModelId) {
               requestAnimationFrame(() => {
-                const sel = document.querySelector<HTMLElement>(`[data-model-id="${CSS.escape(selectedDetailModelId)}"]`);
+                const sel = document.querySelector<HTMLElement>(`[data-model-id="${CSS.escape(selectedDetailModelId)}"]`)
+                  ?? document.querySelector<HTMLElement>('[data-model-id][aria-selected="true"]');
                 sel?.focus();
               });
             }
