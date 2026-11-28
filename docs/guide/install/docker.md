@@ -553,6 +553,8 @@ docker run -d \
   -p 9000:9000 \
   -v lemonade-cache:/opt/lemonade/.cache/huggingface \
   -v lemonade-llama:/opt/lemonade/llama \
+  -v lemonade-data:/opt/lemonade/.cache/lemonade \
+  -v lemonade-config:/opt/lemonade/.config/lemonade \
   ghcr.io/lemonade-sdk/lemonade-server:latest
 ```
 
